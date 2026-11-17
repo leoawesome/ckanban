@@ -202,7 +202,7 @@ export async function startDaemon(): Promise<void> {
       return withSnooze(t, s, a, Date.now(), h).snoozed?.until ?? null;
     },
     onScreen: () => push.anyVisible(), phoneDevices: () => push.phoneDevices(),
-    checkinOffer: () => mcp.state().servers.some((x) => x.status === "connected")
+    checkinOffer: () => (satellite ? mirror.mcpConnected() : mcp.state().servers.some((x) => x.status === "connected"))
       && !store.listProfiles().some((p) => store.listSchedules(p.slug).some((x) => x.quiet)),
     emit: (e) => bus.emit(e),
   });
@@ -218,7 +218,7 @@ export async function startDaemon(): Promise<void> {
   const phone = (phoneRemote = new RemoteAccess(store.root, () => (satellite ? remotePort : (server.remoteServer?.port ?? 0))));
   const server = createServer({ store, bus, board, port: listenPort, remotePort: satellite ? undefined : remotePort, webDir,
     remote: phone,
-    ...(edge && front ? { satellite: { replay: rustReplay(front) } } : {}), sessions, terminals, shells, mcp, scheduler, jobs, huddles, learner, quickChats, loops, sideCall, passes, assets: WEB_ASSETS, restart, awake: () => awake.held(), notifier, push, ...(helper ? { helper } : {}) });
+    ...(edge && front ? { satellite: { replay: rustReplay(front), mcpConnected: () => mirror.mcpConnected() } } : {}), sessions, terminals, shells, mcp, scheduler, jobs, huddles, learner, quickChats, loops, sideCall, passes, assets: WEB_ASSETS, restart, awake: () => awake.held(), notifier, push, ...(helper ? { helper } : {}) });
   console.log(`ckanban v${VERSION} listening on http://localhost:${front ? port : server.port} (data: ${store.root})${front ? ` behind the front server (internal port ${server.port})` : ""}${satellite ? " as the Rust board's satellite" : ""}`);
   // Running from source (developing ckanban): a freeze of seconds raises a Mac banner naming what ran. Installed
   // copies only log it; their users can't act on it.
@@ -277,13 +277,14 @@ export async function startDaemon(): Promise<void> {
   const listRecheckTimer = trackedInterval("list-recheck", recheckLists, JSON_DIR_RECHECK_MS);
   const stopHuddleWatcher = full ? startHuddleSessionWatcher(store, bus, (id) => sessions.version(id), 2000, { feed }) : off;
   const stopTerminals = full ? terminals.start() : off;
-  const stopMcp = mcp.start();
+  // Satellite mode: the Rust board runs the MCP checks and the phone link check (P2, rust/src/outside).
+  const stopMcp = full ? mcp.start() : off;
   // After recover(): what already waits when the daemon starts doesn't notify again.
   const stopNotifier = notifier.start();
   const stopHelper = helper ? helper.start() : () => {};
   const stopAwake = awake.start();
   // Phone access on: Tailscale's link to the board is checked and put back when something removed it.
-  const stopServeWatch = watchServe(phone);
+  const stopServeWatch = full ? watchServe(phone) : off;
 
   const shutdown = async () => {
     console.log("ckanban shutting down");

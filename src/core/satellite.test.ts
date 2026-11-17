@@ -105,3 +105,16 @@ test("the satellite's store refuses ticket writes and still reads", () => {
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("the mirror keeps the Rust board's word on MCP servers (the helper's check-in offer)", () => {
+  const m = new RuntimeMirror();
+  expect(m.mcpConnected()).toBe(false);
+  m.apply({ running: [] });
+  expect(m.mcpConnected()).toBe(false);
+  m.apply({ mcpConnected: true });
+  expect(m.mcpConnected()).toBe(true);
+  m.apply({ running: ["b/x"] });
+  expect(m.mcpConnected()).toBe(true);
+  m.apply({ mcpConnected: false });
+  expect(m.mcpConnected()).toBe(false);
+});

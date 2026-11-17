@@ -136,7 +136,8 @@ export interface ServerDeps {
    * Satellite mode (core/satellite.ts): the Rust board owns the board. The front desk's Confirm replays a held request
    * through it (`replay`), and its edge calls reach `edge` (core/satellite-edge.ts).
    */
-  satellite?: { replay: Replay };
+  /** mcpConnected: an MCP server in Connections works (the Rust board runs them since P2; the helper's check-in offer). */
+  satellite?: { replay: Replay; mcpConnected?: () => boolean };
   /** Parent suggestions and Find links (linker.ts); tests pass one on a fake side call. */
   linker?: Pick<Linker, "suggest" | "find">;
 }
@@ -560,7 +561,7 @@ export function createContext(deps: ServerDeps) {
     helperSend: (m, only) => notifier.sendFromRust(m, only),
     helperFacts: () => ({
       onScreen: push.anyVisible(), phoneDevices: push.phoneDevices(),
-      connected: mcp.state().servers.some((x) => x.status === "connected"),
+      connected: deps.satellite?.mcpConnected?.() ?? mcp.state().servers.some((x) => x.status === "connected"),
     }),
   };
   const helperRunner = deps.helper ?? null;

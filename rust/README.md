@@ -66,7 +66,11 @@ browser this server didn't start (not a descendant of `ckanban-rs`, so not the B
 driven by a program. Every JSON answer of these routes goes through Bun's `maskSavedJson` (`src/mask.rs`). A body declared
 over 1 MB goes to Bun unread; one over 1 MB sent without a length gets 413 (Bun accepts up to 128 MB).
 
-Still on Bun, and why: `/api/mcp/*` (Bun keeps the servers' state, background checks and sign-in terminals in memory),
+In board mode (P2, `src/outside/`) Rust also answers everything below that front mode leaves to Bun: `/api/mcp*`,
+`/api/agents*`, `/api/remote`, every `/api/passes*` route (sign-in, callback, `tools`, every kind of pass), the
+automations' pass calls and `/api/bug-report*`; see "Outside services" below.
+
+Still on Bun in front mode, and why: `/api/mcp/*` (Bun keeps the servers' state, background checks and sign-in terminals in memory),
 `POST /api/agents/*/install|uninstall` (refreshes that in-memory list), `/api/remote` (phone access: Tailscale state
 and live checks; the phone port is Bun's), the passes sign-in and `tools` (sign-in states and token renewal in memory),
 `/api/automation-call` and `loops/test` (check tokens and the scheduler), the ask_keys box (`key-cards`, a ticket
@@ -187,3 +191,29 @@ both through the same usage scenarios (a fake Anthropic) and spend data, and che
 match; `bun run test` skips it. `bun run test` never runs cargo. To try it by hand, use a temp `CKANBAN_HOME` and a project folder outside the real
 repo (a daemon on the real data folder sweeps ticket worktrees):
 `CKANBAN_HOME=/tmp/ck-try CKANBAN_PORT=47811 rust/target/release/ckanban-rs dev`.
+
+## Outside services in board mode (P2, `src/outside/`)
+
+Ported from `src/integrations/` and the routes of `src/api/connections.ts`, `remote.ts`, `passes.ts` and
+`system.ts`; the satellite answered them until P2. `outside/routes.rs` takes them after the request gate, on both
+listeners (the owner's phone is the user after its gate, as in Bun), then the Telegram front desk's gate and the
+JSON-only rule, as Bun's `api()`. JSON answers are masked with the saved keys.
+- `mcp/`: the Connections window's MCP servers (`claude mcp list|get|add|remove|add-json|login|logout`, the probe
+  session, sign-ins on a pseudo-terminal, board-only tools in `board-tools.json`, `mcp-seen.json`,
+  `claude-ai-connectors.json` and the runs' connector list), refreshed at start and every 10 minutes; `mcp.updated`
+  on the board's stream. The satellite runs no MCP checks in board mode; it hears `runtime {"mcpConnected": …}` for
+  the helper's check-in offer.
+- `signin/`: every `/api/passes*` route (keys reuse `src/passes.rs`), the OAuth sign-in (discovery, registration,
+  PKCE, renewal) with states in memory, the MCP clients (streamable HTTP, stdio in its own process group) and
+  `pass_call` for `automation-call`. Writes to `automation-passes.json` under the same lock; Bun hears of them.
+- `phone.rs`: `GET`/`POST /api/remote` (`tailscale serve`, `remote.json`, the QR code byte for byte as
+  `qrcode-generator`), `lastVisit`, and the link check (10 s after start, then every 3 minutes while on).
+  `CKANBAN_TAILSCALE` points it at a stand-in; tests never run the real Tailscale.
+- `agents_admin.rs`: `POST /api/agents/:id/install|uninstall` (Claude Code through `claude mcp`, Codex's
+  `config.toml`), then the MCP list is refreshed.
+- `bugreport.rs`: `POST /api/bug-report/draft` and `POST /api/bug-report` (`gh issue create`, the prefilled link
+  when gh can't).
+- `edge.rs`: the board's `Satellite` with pass calls and the Share menu's publishing done here
+  (`ckanban_board::git::publish`, which runs `bun src/cli.ts artifact publish-output` until P3 ports the helper).
+  Still asked of the satellite: the front desk gate and Telegram's turn end (the helper, P1).
+

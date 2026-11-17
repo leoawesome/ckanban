@@ -15,6 +15,7 @@ pub mod share;
 pub mod landing;
 pub mod routes;
 pub mod fileops;
+pub mod publish;
 
 use std::sync::Arc;
 

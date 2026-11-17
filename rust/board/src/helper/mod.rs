@@ -128,8 +128,15 @@ impl Helper {
                 if !core_busy.swap(true, std::sync::atomic::Ordering::SeqCst) {
                     let (core, busy) = (me.core.clone(), core_busy.clone());
                     tokio::spawn(async move {
+                        // Cleared even if the tick panics, so the safety net keeps running.
+                        struct Clear(Arc<std::sync::atomic::AtomicBool>);
+                        impl Drop for Clear {
+                            fn drop(&mut self) {
+                                self.0.store(false, std::sync::atomic::Ordering::SeqCst);
+                            }
+                        }
+                        let _clear = Clear(busy);
                         core.tick().await;
-                        busy.store(false, std::sync::atomic::Ordering::SeqCst);
                     });
                 }
             }

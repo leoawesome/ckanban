@@ -1,12 +1,13 @@
 #!/usr/bin/env bun
-import { chmodSync, existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { sha256, sumFor } from "./checksum";
 import { BoardClient, boardPort, ClientError } from "./client";
 import { serveStdio } from "../mcp/server";
 import { serveBrowserMcp } from "../browser/browser-mcp";
-import { runArtifactJob } from "../runs/artifact";
+import { type ArtifactOutcome, runArtifactJob } from "../runs/artifact";
+import { markdownPage, markdownTitle } from "../board/share";
 import { LABEL, PLIST_PATH, plistXml } from "./launchd";
 import { RESTART_MAX_WAIT_MS } from "../board/board";
 import { startDaemon } from "./daemon";
@@ -214,6 +215,12 @@ function flag(args: string[], name: string): string | undefined {
 async function artifact(args: string[]) {
   const [action, target] = args;
   const opts = { bin: process.env.CKANBAN_CLAUDE_BIN, model: process.env.CKANBAN_ARTIFACT_MODEL };
+  // The Rust board's Share menu (rust/board/src/git/publish.rs): an output file published as a page, the outcome as
+  // one JSON line (exit 0 either way). Markdown is made into a standalone page first, as the Bun board did.
+  if (action === "publish-output" && target) {
+    console.log(JSON.stringify(await publishOutput(resolve(target), flag(args, "--name") ?? basename(target), flag(args, "--url"), opts)));
+    return;
+  }
   if (action === "publish" && target) {
     const file = resolve(target);
     if (!existsSync(file)) {
@@ -244,6 +251,29 @@ async function artifact(args: string[]) {
   }
   console.error("usage: ckanban artifact publish <file> [--url <artifact url>] [--title <title>]\n       ckanban artifact read <url> [--out <file>]");
   process.exit(1);
+}
+
+async function publishOutput(file: string, name: string, url: string | undefined, opts: { bin?: string; model?: string }): Promise<ArtifactOutcome> {
+  let tmp: string | null = null;
+  try {
+    let page = file;
+    let title: string | undefined;
+    if (/\.(md|markdown)$/i.test(name)) {
+      const md = readFileSync(file, "utf8");
+      const dir = mkdtempSync(join(tmpdir(), "ckanban-share-"));
+      tmp = dir;
+      page = join(dir, "page.html");
+      writeFileSync(page, markdownPage(md, name));
+      title = markdownTitle(md, name);
+    } else if (!/\.html?$/i.test(name)) {
+      return { ok: false, error: "only Markdown and HTML files can be published" };
+    }
+    return await runArtifactJob({ kind: "publish", file: page, ...(url ? { url } : {}), ...(title ? { title } : {}) }, opts);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  } finally {
+    if (tmp) rmSync(tmp, { recursive: true, force: true });
+  }
 }
 
 /** `ckanban remote on|off|status`: writes remote.json, which the daemon picks up on its next request. */

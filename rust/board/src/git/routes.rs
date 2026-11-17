@@ -163,6 +163,8 @@ pub struct GitRoutes {
     runs: Arc<dyn RunControl>,
     /// Tells the board a folder's kind after version history was turned on (`board.noteRepo`), once R7a has a board.
     note_repo: Option<Arc<dyn Fn(&str, RepoKind) + Send + Sync>>,
+    /// The Share menu's Publish (P2); None: the request goes on to Bun, as before.
+    publisher: Option<Arc<super::publish::Publisher>>,
 }
 
 /// A refusal with Bun's `{error}` body (errors are not masked, as in Bun).
@@ -192,12 +194,19 @@ fn file_err(e: FileError) -> Out {
 
 impl GitRoutes {
     pub fn new(root: &Path, port: u16, mask: Mask, runs: Arc<dyn RunControl>) -> Arc<GitRoutes> {
-        Arc::new(GitRoutes { root: root.to_path_buf(), port, mask, runs, note_repo: None })
+        Arc::new(GitRoutes { root: root.to_path_buf(), port, mask, runs, note_repo: None, publisher: None })
     }
 
     pub fn with_note_repo(mut self: Arc<Self>, f: Arc<dyn Fn(&str, RepoKind) + Send + Sync>) -> Arc<Self> {
         if let Some(me) = Arc::get_mut(&mut self) {
             me.note_repo = Some(f);
+        }
+        self
+    }
+
+    pub fn with_publisher(mut self: Arc<Self>, p: Arc<super::publish::Publisher>) -> Arc<Self> {
+        if let Some(me) = Arc::get_mut(&mut self) {
+            me.publisher = Some(p);
         }
         self
     }
@@ -367,8 +376,14 @@ impl GitRoutes {
                 let r = match query_param(query, "action").as_deref() {
                     Some("reveal") => share::reveal_file(&file).await,
                     Some("copy") => share::copy_file_to_clipboard(&file).await,
-                    // Publishing goes through the satellite's claude.ai publisher (plan 3.3).
-                    Some("publish") => return Out::Bun,
+                    // Publishing runs in the background (`startPublish`): the job answers 202.
+                    Some("publish") => {
+                        let Some(p) = &self.publisher else { return Out::Bun };
+                        return match p.start(slug, &id, name, file) {
+                            Ok(job) => Out::Json(202, job),
+                            Err((status, e)) => Out::Err(status, e),
+                        };
+                    }
                     _ => return Out::Err(400, "action must be reveal, copy or publish".into()),
                 };
                 match r {

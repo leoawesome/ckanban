@@ -14,6 +14,7 @@ mod guard;
 mod js;
 mod mask;
 mod mcp;
+mod outside;
 mod passes;
 mod phone;
 mod proxy;
@@ -198,6 +199,10 @@ async fn dev() -> u8 {
     }
     eprintln!("ckanban-rs {} listening on http://localhost:{public_port}, daemon on internal port {internal_port}", env!("CARGO_PKG_VERSION"));
 
+    // P2: the outside services in board mode (MCP servers, passes and sign-ins, phone access, agents, bug reports).
+    if let Some(b) = &board {
+        b.connect_outside(&bun, &repo, notify.clone());
+    }
     let native = routes::Native::new(root.clone(), public_port, notify, &bun, &repo);
     let phone_accept = match (phone, &board) {
         (Some(l), Some(b)) => Some(tokio::spawn(phone::serve(l, proxy.clone(), native.clone(), b.clone()))),
