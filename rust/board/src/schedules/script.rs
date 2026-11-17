@@ -73,12 +73,12 @@ pub fn script_env(shim_dir: &Path, port: u16, token: &str, keys: &[(String, Stri
     out
 }
 
+/// Signals the process group the child leads (its pid is the group id). Only the group: once the child has been
+/// waited for, its pid may belong to another process, while the group id stays the child's group's until it is empty.
 fn kill_group(pid: u32, sig: i32) {
-    // SAFETY: plain signal sends to a process group we started (its pid is the group id).
+    // SAFETY: a plain signal send to the group this server started.
     unsafe {
-        if libc::kill(-(pid as i32), sig) != 0 {
-            libc::kill(pid as i32, sig);
-        }
+        libc::kill(-(pid as i32), sig);
     }
 }
 

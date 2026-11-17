@@ -190,6 +190,8 @@ impl Schedules {
     }
 
     pub fn create_schedule(&self, slug: &str, input: &Obj, by: &Value) -> Result<Obj, Fail> {
+        // Edits wait for a tick or run now in progress, which re-reads each schedule before it moves it on.
+        let _g = self.fire_lock.lock();
         let fields = self.validate_schedule(input, None)?;
         self.check_part_of(slug, input, &fields)?;
         let at = now_iso();
@@ -211,6 +213,7 @@ impl Schedules {
     }
 
     pub fn update_schedule(&self, slug: &str, id: &str, input: &Obj, by: &Value) -> Result<Obj, Fail> {
+        let _g = self.fire_lock.lock();
         let current = self.get_schedule(slug, id)?;
         let fields = self.validate_schedule(input, Some(&current))?;
         self.check_part_of(slug, input, &fields)?;
@@ -263,6 +266,7 @@ impl Schedules {
 
     /// `remove`: the schedule and its history go (the server's log is the only trace).
     pub fn remove_schedule(&self, slug: &str, id: &str, by: &Value) -> Result<String, Fail> {
+        let _g = self.fire_lock.lock();
         let s = self.get_schedule(slug, id)?;
         eprintln!("schedule {slug}/{id} ({}) deleted by {}", st(&s, "name"), editor_text(by));
         self.files.delete_schedule(slug, id);
@@ -399,7 +403,9 @@ impl Schedules {
         let _g = self.fire_lock.lock();
         let now = self.now();
         for (slug, _) in self.files.boards() {
-            for s in self.files.list_schedules(&slug) {
+            for listed in self.files.list_schedules(&slug) {
+                // The file as it is now: a schedule paused, changed or deleted since the list was read isn't brought back.
+                let Some(s) = self.files.get_schedule(&slug, st(&listed, "id")) else { continue };
                 if s.get("enabled") != Some(&Value::Bool(true)) || !js::truthy(s.get("nextRunAt")) {
                     continue;
                 }

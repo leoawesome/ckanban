@@ -850,12 +850,13 @@ impl BoardMode {
     pub async fn answer_schedules(&self, req: Request<Incoming>, peer: SocketAddr, via: Listener) -> Result<Response<Body>, Request<Incoming>> {
         use ckanban_board::schedules::routes as sr;
         let h = req.headers();
-        if wants_upgrade(h) {
-            return Err(req);
-        }
         let Some(parts) = req.uri().path().strip_prefix("/api/").and_then(api_parts) else { return Err(req) };
         if !sr::claims(&parts) {
             return Err(req);
+        }
+        // These routes are the board owner's alone: an upgrade request on them never goes on to the satellite.
+        if wants_upgrade(h) {
+            return Ok(self.json(400, &json!({ "error": "not a WebSocket route" }), false));
         }
         let host_ok = joined(h, HOST.as_str()).is_some_and(|host| ["localhost", "127.0.0.1"].iter().any(|l| host == format!("{l}:{}", self.public_port)));
         let mutation = req.method() != Method::GET && req.method() != Method::HEAD;

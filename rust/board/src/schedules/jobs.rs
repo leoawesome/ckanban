@@ -246,6 +246,7 @@ impl Schedules {
     /// `runNow`: fires a scheduled job ahead of its time; a command keeps running after the answer.
     pub fn run_job_now(self: &Arc<Self>, slug: &str, id: &str, by: Option<&str>) -> Result<Obj, Fail> {
         let _g = self.job_lock.lock();
+        self.recover_once();
         let j = self.credit(self.open_job(slug, id)?, by, "run now");
         Ok(self.fire_job(slug, j, false))
     }
@@ -391,6 +392,13 @@ impl Schedules {
         }
     }
 
+    /// `recover` once, before any job fires (under `job_lock`).
+    fn recover_once(&self) {
+        if !self.jobs_recovered.swap(true, std::sync::atomic::Ordering::SeqCst) {
+            self.recover_jobs();
+        }
+    }
+
     /// `recover`: after a restart, a command left running was cut off (failed); a ticket job left running either made
     /// its ticket (done) or never got that far (scheduled again).
     pub fn recover_jobs(&self) {
@@ -425,10 +433,8 @@ impl Schedules {
 
     /// `tick`: fire every job that is due; one seen more than LATE_AFTER_MS after its time fires late.
     pub fn tick_jobs(self: &Arc<Self>) {
-        if !self.jobs_recovered.swap(true, std::sync::atomic::Ordering::SeqCst) {
-            self.recover_jobs();
-        }
         let _g = self.job_lock.lock();
+        self.recover_once();
         let now = self.now();
         for (slug, _) in self.files.boards() {
             for j in self.files.open_jobs(&slug) {

@@ -403,7 +403,10 @@ impl Schedules {
     /// `runWith`: runs a script with a grant for its passes; the grant ends with the run.
     fn run_with(&self, slug: &str, file: &std::path::Path, cwd: &std::path::Path, passes: &[String], allowed: Option<Vec<String>>) -> (ScriptRun, Grant) {
         let mut raw = [0u8; 24];
-        let _ = getrandom::fill(&mut raw);
+        if let Err(e) = getrandom::fill(&mut raw) {
+            let run = ScriptRun { items: None, error: Some(format!("Could not start the check: no random token ({e})")), stderr: String::new(), duration_ms: 0.0 };
+            return (run, Grant::default());
+        }
         let token = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(raw);
         let grant = Grant { passes: passes.to_vec(), allowed, used: BTreeSet::new(), expires: self.now() + 10.0 * 60_000.0, rate_limit_ms: 0.0 };
         self.grants.lock().insert(token.clone(), grant);
@@ -462,6 +465,14 @@ impl Schedules {
         if self.ticking.swap(true, Ordering::SeqCst) {
             return;
         }
+        // Cleared however the tick ends (a panic in a check included), as Bun's `finally`.
+        struct Done<'a>(&'a std::sync::atomic::AtomicBool);
+        impl Drop for Done<'_> {
+            fn drop(&mut self) {
+                self.0.store(false, Ordering::SeqCst);
+            }
+        }
+        let _done = Done(&self.ticking);
         for (slug, _) in self.files.boards() {
             for l in self.files.list_loops(&slug) {
                 if l.get("enabled") != Some(&Value::Bool(true)) {
@@ -475,7 +486,6 @@ impl Schedules {
                 }
             }
         }
-        self.ticking.store(false, Ordering::SeqCst);
     }
 
     /// `checkNow`: checks one automation now, ignoring its timer and its wait after a failure.
