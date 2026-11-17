@@ -126,8 +126,11 @@ fn clip(s: &str, max: usize) -> String {
 /// `brokenReason`: why a ticket failed or found a problem, in one line. results: the family's result cards, oldest first.
 pub fn broken_reason(t: &Tk, results: &[(String, String)]) -> Option<String> {
     if t.outcome_is("blocked") && t.is("capHit") {
-        let cap = t.get("capHit").and_then(|c| c.get("capUsd")).and_then(Value::as_f64).unwrap_or(f64::NAN);
-        return Some(format!("Stopped at its ${cap:.2} cap."));
+        // toFixed rounds a tie up (0.125 → 0.13). Without a number Bun's toFixed throws; here it says so plainly.
+        return Some(match t.get("capHit").and_then(|c| c.get("capUsd")).and_then(Value::as_f64).filter(|c| c.is_finite()) {
+            Some(cap) => format!("Stopped at its ${} cap.", crate::prompts::js::to_fixed(cap, 2)),
+            None => "Stopped at its cost cap.".into(),
+        });
     }
     let summary = results.iter().rev().find(|(id, _)| *id == t.id).map(|(_, s)| last_line(s)).unwrap_or_default();
     let error = last_line(&or_empty(t.get("error")));
@@ -535,8 +538,25 @@ pub fn status_markdown(id: &str, title: &str, saved: Option<&Map<String, Value>>
 }
 
 /// `writeStatus`: status.json (only with saved and write_json) and status.md (only when it changed); the markdown.
+/// A status.json that is there but can't be read as a status (broken JSON, no updatedAt, a read error) is moved to
+/// `status.json.bad-<ms>` before a fresh one is written, so its goal, notes and milestones aren't lost. Only a missing
+/// file means "no status yet". Bun's `writeStatus` does the same.
+fn set_aside_unreadable(dir: &Path) -> std::io::Result<()> {
+    let json = status_json(dir);
+    match std::fs::symlink_metadata(&json) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        _ if read_status(dir).is_some() => return Ok(()),
+        _ => {}
+    }
+    let aside = dir.join(format!("status.json.bad-{}", ckanban_core::time::now_ms()));
+    std::fs::rename(&json, &aside)?;
+    eprintln!("[board] {} couldn't be read as a status: kept as {}", json.display(), aside.display());
+    Ok(())
+}
+
 pub fn write_status(dir: &Path, id: &str, title: &str, saved: Option<&Map<String, Value>>, f: &Map<String, Value>, write_json: bool) -> std::io::Result<String> {
     if let (true, Some(saved)) = (write_json, saved) {
+        set_aside_unreadable(dir)?;
         let text = ckanban_core::datafile::to_text(&Value::Object(saved.clone()), ckanban_core::datafile::Layout::Indent(2));
         let tmp = dir.join("status.json.tmp");
         std::fs::write(&tmp, text)?;
@@ -562,6 +582,30 @@ mod tests {
         assert!(c.ends_with(CUT_SHORT));
         assert!(len16(&c) <= 40);
         assert_eq!(c, format!("word word word word word{CUT_SHORT}"));
+    }
+
+    #[test]
+    fn an_unreadable_status_is_kept_aside() {
+        let d = tempfile::tempdir().unwrap();
+        std::fs::write(status_json(d.path()), "{ \"goal\": \"keep me\", broken").unwrap();
+        let mut saved = Map::new();
+        saved.insert("updatedAt".into(), "now".into());
+        write_status(d.path(), "a", "A", Some(&saved), &Map::new(), true).unwrap();
+        let aside: Vec<String> = std::fs::read_dir(d.path()).unwrap().flatten().map(|e| e.file_name().to_string_lossy().into_owned()).filter(|n| n.starts_with("status.json.bad-")).collect();
+        assert_eq!(aside.len(), 1);
+        assert!(std::fs::read_to_string(d.path().join(&aside[0])).unwrap().contains("keep me"));
+        assert!(read_status(d.path()).is_some());
+        // A good status is simply replaced.
+        write_status(d.path(), "a", "A", Some(&saved), &Map::new(), true).unwrap();
+        assert_eq!(std::fs::read_dir(d.path()).unwrap().flatten().filter(|e| e.file_name().to_string_lossy().starts_with("status.json.bad-")).count(), 1);
+    }
+
+    #[test]
+    fn cap_text_rounds_like_to_fixed() {
+        let tk = |cap: Value| Tk::from_json(serde_json::json!({ "id": "a", "title": "A", "status": "review", "outcome": "blocked", "capHit": { "capUsd": cap } }).as_object().unwrap().clone(), false);
+        assert_eq!(broken_reason(&tk(0.125.into()), &[]).unwrap(), "Stopped at its $0.13 cap.");
+        assert_eq!(broken_reason(&tk(5.into()), &[]).unwrap(), "Stopped at its $5.00 cap.");
+        assert_eq!(broken_reason(&tk(Value::Null), &[]).unwrap(), "Stopped at its cost cap.");
     }
 
     #[test]

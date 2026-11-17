@@ -1,9 +1,9 @@
 // A feature's "Saved changes": the board lists the version history entries that carry the feature's line (newest
 // first), or the files its tickets changed in a folder without history; sections Claude writes say where they were cut.
 import { expect, test } from "bun:test";
-import { readFileSync, writeFileSync } from "node:fs";
+import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { applyPatch, CUT_SHORT, clipText, readStatus, STATUS_FIELD_MAX, statusFacts, statusFiles, statusMarkdown, statusSections } from "./feature";
+import { applyPatch, CUT_SHORT, clipText, readStatus, STATUS_FIELD_MAX, statusFacts, statusFiles, statusMarkdown, statusSections, writeStatus } from "./feature";
 import { run } from "../runs/git";
 import { featureMemberNote, featureTrailerRule } from "../runs/prompts";
 import { board, setup, store, useBoardEnv } from "../../test/support/board-env";
@@ -38,6 +38,20 @@ test("update_status keeps a long section with a cut short mark; an old one cut a
   const read = readStatus(dir)!;
   expect(read.done!.endsWith(CUT_SHORT)).toBe(true);
   expect(read.goal).toBe("Short.");
+});
+
+test("a status.json that can't be read is kept aside before a fresh one is written, so its goal and notes aren't lost", () => {
+  const dir = tempDir("ck-status-");
+  writeFileSync(statusFiles(dir).json, '{ "goal": "keep me", broken');
+  const f = statusFacts([], "x", () => false);
+  writeStatus(dir, { id: "x", title: "X" }, { updatedAt: "now" }, f, true);
+  const aside = readdirSync(dir).filter((n) => n.startsWith("status.json.bad-"));
+  expect(aside).toHaveLength(1);
+  expect(readFileSync(join(dir, aside[0]!), "utf8")).toContain("keep me");
+  expect(readStatus(dir)?.updatedAt).toBe("now");
+  // A good status is simply replaced.
+  writeStatus(dir, { id: "x", title: "X" }, { updatedAt: "later" }, f, true);
+  expect(readdirSync(dir).filter((n) => n.startsWith("status.json.bad-"))).toHaveLength(1);
 });
 
 test("the Saved changes section shows the first 30 and says how many more and where the full list is", () => {

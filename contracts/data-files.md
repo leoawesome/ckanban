@@ -491,10 +491,19 @@ Fix it.
   - `status.json` (feature status, `SavedStatus` in `feature.ts`): pretty JSON, **no** final newline, fixed-tmp
     (`status.json.tmp`). Written by `update_status` (`POST .../status`), status notes and their delivery
     (`board-features.ts`) and `landMilestone` (`board-main.ts`). Only `updatedAt` is always there; a section Claude
-    clears is removed, not set to null. Schema: `schemas/feature-status.schema.json`. Every read. CORE.
-  - `status.md`: Markdown made from `status.json` (`# Where we are: <title>` + `##` sections), plain write, only when
+    clears is removed, not set to null. Schema: `schemas/feature-status.schema.json`. Every read. CORE. Only a missing
+    file means "no status yet": one that is there but can't be read as a status (broken JSON, no `updatedAt`, a read
+    error) is renamed to `status.json.bad-<ms>` before a fresh one is written, by Bun and the Rust board alike.
+  - `status.md`: Markdown made from `status.json` (`# Where we are: <title>` + `##` sections), plain write (in place,
+    not temp+rename, on both sides: a reader may catch it half written; it is rewritten from `status.json`), only when
     the text changed. CACHE.
-  - `saved-changes.md`: `# <label>: <title>` + `- <shortsha> <subject>` lines (`board.ts`), plain write. CACHE.
+  - `saved-changes.md`: `# <label>: <title>` + `- <shortsha> <subject>` lines (`board.ts`), plain write in place on
+    both sides, like `status.md`. CACHE.
+  - Known differences of the Rust board (board mode): text cut to a length (status notes, sections, result card
+    summaries, landing messages) that would end inside an emoji drops the whole emoji, where Bun keeps half of it (a
+    lone UTF-16 surrogate, shown as a broken character); when `git log` fails while the saved changes are read, the
+    Rust board keeps the last list it had, where Bun shows none (`changes: null`) until the next read; a blocked
+    ticket's `capHit` without a number reads "Stopped at its cost cap." where Bun's status fails.
   - `mockups/<name>.html`: mockups from a planning reply (`mockups.ts`), plain write. CORE.
   - `huddles/<h_id>/proposal.md` and `huddles/<h_id>/summary.md` (`huddle.ts`), plain write; an older
     `huddle-summary.md` is still read. CORE.

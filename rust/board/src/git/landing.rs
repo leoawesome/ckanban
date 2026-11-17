@@ -600,6 +600,9 @@ impl Git {
         let Some(main_branch) = set(&main, "branch") else {
             return Err("the main ticket has no copy of its own to merge into; end with your branch as it is and say so in your summary".into());
         };
+        if let Some(b) = [tool_branch, main_branch].into_iter().find(|b| b.starts_with('-')) {
+            return Err(option_like(b));
+        }
         let dirty = git(&["status", "--porcelain"], Path::new(tool_wt)).await;
         if dirty.ok() && !dirty.out().is_empty() {
             return Err("you have changes that aren't committed yet: commit them, then call merge_into_main again".into());
@@ -664,6 +667,9 @@ impl Git {
             self.ops.record_milestone(slug, id, &text, "already in the project folder")?;
             return Ok("Recorded the milestone: the tool tickets already edited the project folder itself, so there is nothing else to land.".into());
         };
+        if branch.starts_with('-') {
+            return Err(option_like(branch));
+        }
         let wt = Path::new(wt);
         let dirty = git(&["status", "--porcelain"], wt).await;
         if dirty.ok() && !dirty.out().is_empty() {
@@ -826,6 +832,11 @@ impl Landing for Git {
             Ok(json!(repo::repo_kind(&path, false).await.as_str()))
         })
     }
+}
+
+/// A branch name git would read as an option: never passed to git (Bun's git would fail on it the same way).
+fn option_like(branch: &str) -> String {
+    format!("the branch name \"{branch}\" starts with \"-\", so git would read it as an option; the board won't pass it to git")
 }
 
 #[cfg(test)]

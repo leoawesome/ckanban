@@ -118,11 +118,18 @@ impl Core {
             // (fallback 2). Waits for the load above, which a board's first page waits for anyway.
             Step::new("old plans", |c| async move {
                 let index = c.index.clone();
+                let root = c.root.clone();
                 let refusal = tokio::task::spawn_blocking(move || {
                     index.wait_loaded(std::time::Duration::from_secs(600));
+                    // Only real boards (a readable profile.json), as Bun's migration takes them: a half-deleted
+                    // folder under profiles/ can't keep board mode off.
+                    let real: std::collections::HashSet<String> = ckanban_core::DataDir::new(root)
+                        .list_profiles()
+                        .map(|ps| ps.iter().filter_map(|p| p.slug().map(str::to_string)).collect())
+                        .unwrap_or_default();
                     let boards: Vec<(String, Arc<crate::index::store::BoardList>)> =
-                        index.board_slugs().into_iter().map(|s| (s.clone(), index.list(&s))).collect();
-                    crate::families::old_plans::refusal(&boards)
+                        index.board_slugs().into_iter().filter(|s| real.contains(s)).map(|s| (s.clone(), index.list(&s))).collect();
+                    crate::families::old_plans::refusal(&boards, &|slug, id| index.ticket_dir(slug, id).join("ticket.md"))
                 })
                 .await
                 .map_err(|e| e.to_string())?;
@@ -280,8 +287,13 @@ mod tests {
             let md = format!("---\nid: {id}\ntitle: {id}\nstatus: backlog\norder: 1\ncreatedAt: 2026-01-01T00:00:00.000Z\nupdatedAt: 2026-01-01T00:00:00.000Z\n{extra}---\n");
             std::fs::write(dir.join(id).join("ticket.md"), md).unwrap();
         }
+        // Without a readable profile.json it isn't a real board (a half-deleted folder): the start goes on.
+        let core = Core::new(d.path(), Services::stand_ins());
+        core.start(Core::steps()).await.unwrap();
+        std::fs::write(d.path().join("profiles/b/profile.json"), r#"{"name":"B","slug":"b","path":"/tmp","createdAt":"2026-01-01T00:00:00.000Z"}"#).unwrap();
         let core = Core::new(d.path(), Services::stand_ins());
         let err = core.start(Core::steps()).await.unwrap_err();
         assert!(err.starts_with("startup: old plans: board b has 1 old-style plan"), "{err}");
+        assert!(err.contains("t_20260101_aaaa/ticket.md"), "{err}");
     }
 }

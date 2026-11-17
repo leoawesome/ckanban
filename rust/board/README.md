@@ -290,6 +290,13 @@ Ported from `src/board/board-families.ts`, `board-plans.ts`, `board-main.ts` (wi
   thread of its own. status.json is changed under one lock. What needs a run goes through `PlanRuns` (wake, dispatch,
   auto-fresh, the Planning interview, notifications); R7a sets it with `Families::set_runs`. Until then nothing runs:
   a plan moves its tool tickets to Ready and records its wakes, and Ready work waits.
+- Running at once (Bun is single-threaded; here routes, hooks and the wake timer run in parallel): every plan write
+  goes through `Tickets::update_with` (`Families::change`). Pause, Mark done, start, ensure and a pushed event change
+  only their own fields of the plan in the file; a pass writes only while the file still holds the plan it read, and
+  moves a task to Ready only while it is still in Backlog and the plan unchanged, otherwise it goes again. A panic in
+  one plan's step is caught (the others go on, the board isn't left marked as advancing). Links (`set_part_of`,
+  `make_own_work`, `gather`) hold the board's link lock across check and write, taken before the board's write lock.
+  `tests/families_race.rs` makes a second thread act in the middle of a pass or a link.
 - Plugged into the ticket writes through `tickets::wiring::Wired` (`place_in_feature`, `set_part_of`, `new_step`,
   `gather`, `after_create`, `after_update`, `board_changed`) and `TicketOps` (`push_event`, `holds_review`,
   `record_milestone`). The create route places a run's `partOf` in its feature (Bun's own-feature, open-feature and
@@ -298,7 +305,8 @@ Ported from `src/board/board-families.ts`, `board-plans.ts`, `board-main.ts` (wi
   `POST plan`, `POST merge-into-main`, `POST land` (through `tickets::routes::Writes`).
 - `old_plans`: a board with an old-style plan (a planned ticket that is neither main nor tool) makes the start step
   "old plans" fail, so board mode falls back to Bun (fallback 2), whose one-time migration (`retire-plans.ts`)
-  turns it into main tickets; the next start finds none. The step waits for the start-up load.
+  turns it into main tickets; the next start finds none. Only real boards (a readable profile.json) count, and the
+  refusal names the ticket file. The step waits for the start-up load.
 - Checked against Bun: `tests/fixtures/families.json` (written by `test/rust-board-families-fixtures.test.ts`,
   `UPDATE_RUST_FIXTURES=1`; `tests/families.rs`), and `test/contract/board-family-writes.test.ts` (one script of
   family writes on both servers: the same answers and the same bytes of ticket.md, comments, status.json, status.md).

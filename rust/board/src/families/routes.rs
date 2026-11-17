@@ -302,10 +302,13 @@ fn update_status(f: &Families, req: &Req, slug: &str, id: &str) -> Result<Reply,
         let board = f.tickets.list(slug);
         if let (Some(top), false) = (feature_root(&board, id).map(|i| board.tickets[i].clone()), list.is_empty()) {
             let urls: Vec<String> = list.into_iter().take(20).collect();
-            let add = crate::git::pr::add_prs(&Value::Object(top.json.clone()), &urls);
-            if add.contains_key("prs") {
-                f.tickets.patch(slug, &top.id, add)?;
-            }
+            // Worked out from the file under the board's lock, so a PR list written meanwhile (the PR poller, a
+            // landing) isn't lost.
+            f.change(slug, &top.id, |meta| {
+                let add = crate::git::pr::add_prs(&Value::Object(meta.clone()), &urls);
+                Ok(add.contains_key("prs").then_some(add))
+            })
+            .map_err(bad)?;
             added_prs = true;
         }
     }

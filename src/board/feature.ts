@@ -3,7 +3,7 @@
 // Claude writes the words (goal, done, broken, waiting on you, next step, a note per pull request) with update_status;
 // the board adds the facts it knows from ticket data (counts per group, test results per round, pull requests). Both
 // are saved in the top ticket's outputs folder: status.json (what the block renders from) and status.md (to read).
-import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { childrenByParent, familyState, featureRows, featureTasks, settled, STATE_WORDS, type FamilyState } from "../../web/src/features/family/family";
 import { ticketPrs } from "./prs";
@@ -322,10 +322,29 @@ export function statusMarkdown(top: Pick<Ticket, "id" | "title">, saved: SavedSt
   return lines.join("\n");
 }
 
+/**
+ * A status.json that is there but can't be read as a status (broken JSON, no updatedAt, a read error) is moved to
+ * `status.json.bad-<ms>` before a fresh one is written, so its goal, notes and milestones aren't lost. Only a missing
+ * file means "no status yet". The Rust board does the same.
+ */
+function setAsideUnreadable(outputsDir: string): void {
+  const { json } = statusFiles(outputsDir);
+  try {
+    lstatSync(json);
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") return;
+  }
+  if (readStatus(outputsDir)) return;
+  const aside = `${json}.bad-${Date.now()}`;
+  renameSync(json, aside);
+  console.error(`[board] ${json} couldn't be read as a status: kept as ${aside}`);
+}
+
 /** Writes status.json (only with saved) and status.md; returns the markdown. */
 export function writeStatus(outputsDir: string, top: Pick<Ticket, "id" | "title">, saved: SavedStatus | null, f: StatusFacts, writeJson: boolean): string {
   const { json, md } = statusFiles(outputsDir);
   if (writeJson && saved) {
+    setAsideUnreadable(outputsDir);
     writeFileSync(`${json}.tmp`, JSON.stringify(saved, null, 2));
     renameSync(`${json}.tmp`, json);
   }
