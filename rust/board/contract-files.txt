@@ -32,7 +32,7 @@ board-files.test.ts
 
 # R11b: teammates and role notes; squads (their card on a ticket goes through R2a's ticket writes).
 huddle.test.ts | built-ins, a board teammate|save, change and delete a squad
-huddle-team.test.ts | role notes
+huddle-team.test.ts | role notes|learned: the view
 
 # R8: quick chats saved before the start (list, pages, one chat, conversation, tool details) and who may change them.
 # quickchat.test.ts needs the phone access port in Rust (R13: its user actions come that way), ticket writes (R2a),
@@ -60,3 +60,9 @@ tickets.test.ts | ^(?!.*a message starts a run)
 board-items.test.ts | ^(?!.*GET /api/inbox)
 board-cards.test.ts | ^(?!.*follow-up: set)
 passes.test.ts | ^(?!.*(ask_keys box|saved value is masked|check scripts|bug reports))
+
+# R12: what the board learned (view, seen, save, drop, keep, undo, redo), Find links, a ticket's Usage tab and team
+# usage, on files written before the start (board-extras.test.ts), and the learned test of huddle-team.test.ts
+# (above; its team-usage test counts the huddles of the room tests before it, which need R11a). The usage tests of
+# chat-session.test.ts and runs-control.test.ts need runs (R7a).
+board-extras.test.ts
