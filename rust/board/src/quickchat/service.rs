@@ -8,8 +8,7 @@
 //! File work runs on blocking threads; a run's callbacks only queue events and append one log line.
 //!
 //! Not here yet, each marked `STAND-IN` below: board browsers for the runs (R9: none), the Telegram front desk's
-//! hooks (R13/P1: a front desk chat refuses to run, as Bun does when the front desk isn't plugged in), and the Context
-//! panel's refresh after a run (R7b).
+//! hooks (R13/P1: a front desk chat refuses to run, as Bun does when the front desk isn't plugged in).
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};

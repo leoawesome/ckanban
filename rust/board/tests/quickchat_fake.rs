@@ -218,10 +218,10 @@ async fn a_chat_from_first_message_to_delete() {
     assert_eq!(chat_file(&e, &id)["title"], "Folder tour");
     assert_eq!(call(&e, "PATCH", &format!("{}/{id}", base()), Some(json!({ "title": "x" })), false).await.status, 403);
 
-    // Later tasks' routes answer plainly for now.
+    // Without board mode's chat extras and ticket writes: the Context panel answers plainly, Make ticket waits for them.
     assert_eq!(call(&e, "GET", &format!("{}/{id}/context", base()), None, false).await.status, 501);
     assert_eq!(call(&e, "POST", &format!("{}/{id}/ticket", base()), Some(json!({})), false).await.status, 403);
-    assert_eq!(call(&e, "POST", &format!("{}/{id}/ticket", base()), Some(json!({})), true).await.status, 501);
+    assert_eq!(call(&e, "POST", &format!("{}/{id}/ticket", base()), Some(json!({})), true).await.status, 503);
 
     // Stop when idle; delete removes its files.
     assert_eq!(call(&e, "POST", &format!("{}/{id}/stop", base()), Some(json!({})), false).await.status, 403);

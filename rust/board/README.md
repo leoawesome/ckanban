@@ -52,7 +52,7 @@ Bun in full mode takes the same `board.lock` (`src/core/board-lock.ts`), so two 
   names only, go to `<data>/rust-shadow.log`, counts to `<data>/rust-shadow.json`. Read only. To run it on the real
   board: add `CKANBAN_RUST_SHADOW=1` to the front's launchd environment and `ckanban restart`; remove it to stop.
 - One empty folder per later task (filled as each lands): `index` (R1, done), `tickets` (R2a, done), `families` (R2b, done), `runs` (R3), `prompts` (R4, done),
-  `sessions` (R5), `git` (R6, done), `runloop` (R7a, done), `chat` (R7b), `quickchat` (R8), `browsers` (R9), `schedules` (R10),
+  `sessions` (R5), `git` (R6, done), `runloop` (R7a, done), `chat` (R7b, done), `quickchat` (R8), `browsers` (R9), `schedules` (R10),
   `huddles` (R11a, done), `team` (R11b, done), `huddle_agents` (R11c), `extras` (R12, done), `gate` (R13).
 
 ## The run engine (R3, `src/runs/`)
@@ -162,9 +162,8 @@ in Bun's exact format (key order kept), so Bun and Rust read each other's chats.
 
 Stand-ins, each marked `STAND-IN` in the code: the restart gate (`RestartGate`, R7a: never "pending" until then; R7a
 also counts `restart_busy()` among what a restart waits for), board browsers for the runs (R9), the Telegram front desk
-hooks (R13/P1: a front desk chat refuses to run, as Bun does without them), and the routes Context panel, Say it
-simpler, Rewind, Undo rewind, Fork (R7b) and Make ticket (R2a, R7b), which answer 501 for now (the satellite has no
-quick chats to hand them to). User actions from the phone come through the phone access port, which Bun still holds
+hooks (R13/P1: a front desk chat refuses to run, as Bun does without them). The Context panel, Say it simpler, Rewind,
+Undo rewind, Fork and Make ticket are R7b's (`src/chat/`). User actions from the phone come through the phone access port, which Bun still holds
 until R13.
 
 Checked: `tests/quickchat_text.rs` against Bun's answers in `tests/fixtures/quickchat.json`
@@ -372,9 +371,9 @@ follow-ups (`CKANBAN_TICK_MS`), the PR poller, keep-awake, run log compression (
 satellite's mirror gets `runtime` lines when the running tickets or a session summary change. A first prompt gets
 R12's "What we did before" block (`RunLoop::set_recall`).
 
-STAND-INs, each marked in the code: slash commands and the rewind snapshot (R7b), a quiet
+STAND-INs, each marked in the code: a quiet
 schedule's open items and its history line (R10), the Mac banner of a plan event (the satellite), closing a session
-open in the board's own terminal on Take over (R9/R7b).
+open in the board's own terminal on Take over (R9).
 
 ## R12: board extras (`src/extras/`)
 
@@ -414,3 +413,29 @@ bun run test:contract:rust-board tickets.test.ts       # any contract file in bo
 `contract-files.txt` lists the contract test files (or `file | test name pattern`) that pass in board mode; a listed
 one that fails, fails the run. Each task adds what it makes pass; the flip needs every file listed whole.
 `test/contract/rust-board-mode.test.ts` covers the switch and the three fallbacks (only in this run).
+
+## R7b: chat extras (`src/chat/`)
+
+Ported from `src/chat/commands.ts`, `rewind.ts`, `fork.ts`, `simplify.ts`, `explain.ts`, `context-usage.ts`, the chat
+parts of `src/board/board-queue.ts`, `board-rewind.ts`, `board-main.ts` and `quickchat.ts`, and the routes of
+`src/api/ticket-files.ts`, `ticket-info.ts` (context), `ticket-actions.ts` (planning-command), `profiles.ts` (commands)
+and `chats.ts`. Drafts, fresh chat and session, take-over and link-session came with R7a.
+- `commands`: what `/` can run (built-ins, project, user and plugin skills and commands, Claude Code's bundled skills
+  learned from a run's init event and kept in `<data>/claude-commands.json`, Bun's file), cached 30 s per folder;
+  `parse_slash`, `slash_message`. `slash`: `RunLoop::commands` and the board's /model and /effort. The run loop's
+  `chat` refuses /clear, /resume, /exit, /quit, runs /model and /effort itself and sends a known command alone
+  (`slash: "local"` or `"prompt"`); the list is read before the board's choice lock is taken.
+- `rewind`: hidden snapshots under `refs/ckanban/rewind/<ticket>/` taken before each message to an idle ticket
+  (CKANBAN_SNAPSHOT_LIMIT_MS), the cut with a `.before-rewind` copy, Undo with `refs/ckanban/rewind-undo/`.
+  `board`: `rewind_dir`, `rewind_blocked`, `begin_rewind` (one at a time, under the choice lock), `rewound`, Undo,
+  Fork (`copy_ticket_before` in `runloop/branch.rs`, shared with Branch), `planning_command`; a ticket's rewind copies
+  are dropped at Done and on delete, report-only unless `CKANBAN_RUST_DELETE=1` (plan 5.3). `quick`: the same for a
+  quick chat (the chat only) and Make ticket (board mode plugs in `make_ticket_hook`: create, link-session, back to
+  Backlog, note, parent suggestion). `routes`: `commands`, `rewind`, `rewind-undo`, `fork`, `planning-command` and the
+  board's `GET commands`.
+- `simplify`, `explain`, `context`, `extras` (`ChatExtras`): Say it simpler, Help me understand and the Context panel
+  for tickets and quick chats (`simplified`, `simplify`, `help`, `context`), with the side calls' spend logged.
+- Branch and Fork make their ticket without the start-of-work hooks (`Tickets::create_quiet`, Bun's
+  `store.createTicket`), so no Planning interview starts before the copied chat is in place.
+- Checked: `chat.test.ts`, `chat-session.test.ts` and `quickchat.test.ts` whole in board mode; unit tests in the
+  modules. Not yet: `data-files.test.ts` waits for a huddle helper's spend (R11c).

@@ -88,11 +88,18 @@ runs-restart.test.ts
 runs-git.test.ts
 rust-board-switch.test.ts
 cli-board.test.ts
-chat.test.ts | ^(?!.*slash commands)
-chat-session.test.ts | ^(?!.*rewind and fork)
+chat.test.ts
+chat-session.test.ts
 
 # R12: what the board learned (view, seen, save, drop, keep, undo, redo), Find links, a ticket's Usage tab and team
 # usage, on files written before the start (board-extras.test.ts), and the learned test of huddle-team.test.ts
 # (above; its team-usage test counts the huddles of the room tests before it, which need R11a). The usage tests of
 # chat-session.test.ts and runs-control.test.ts need runs (R7a).
 board-extras.test.ts
+
+# R7b: slash commands (the / list, /model and /effort, refused commands, a project command sent to Claude), rewind,
+# undo and fork, Say it simpler, Help me understand, the Context panel and the Planning chat's terminal command for
+# tickets (chat.test.ts and chat-session.test.ts above lost their filters), and a quick chat's context, simplify,
+# rewind, undo, fork and Make ticket (quickchat.test.ts, whole). data-files.test.ts gets past the chat extras now and
+# waits for a huddle helper's spend (R11c).
+quickchat.test.ts

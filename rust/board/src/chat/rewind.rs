@@ -157,14 +157,15 @@ pub async fn take_snapshot(dir: &Path, ticket_id: &str, text: &str, at: u64, lim
 
 /// `saveFolder`: the folder saved under `r`.
 async fn save_folder(dir: &Path, r: &str, message: &str, limit_ms: u64) -> Option<String> {
-    let end = Some(Instant::now() + Duration::from_millis(limit_ms));
+    let deadline = Instant::now() + Duration::from_millis(limit_ms);
+    let end = Some(deadline);
     history_top(dir).await?;
     let idx = TempIndex::new(Some(dir)).await.ok()?;
     let env = idx.env();
     let tree = current_tree(dir, &env, end).await?;
     let ct: Vec<&str> = GIT.iter().copied().chain(["commit-tree", tree.as_str(), "-m", message]).collect();
     let commit = run(&ct, dir, &env, left(end)).await;
-    if !commit.ok() || Instant::now() >= end.unwrap() {
+    if !commit.ok() || Instant::now() >= deadline {
         return None;
     }
     let set = git(&["git", "update-ref", r, commit.out()], dir).await;
@@ -207,7 +208,7 @@ pub async fn list_snapshots(dir: &Path, ticket_id: &str) -> Vec<Snapshot> {
 pub fn snapshot_for(snaps: &[Snapshot], text: &str, read_at: &str) -> Option<Snapshot> {
     let key = text_key(text);
     let t = ckanban_core::time::parse_date(read_at).unwrap_or(f64::NAN);
-    snaps.iter().filter(|s| s.key == key && (t.is_nan() || (s.at as f64) <= t + 1000.0)).next_back().cloned()
+    snaps.iter().rfind(|s| s.key == key && (t.is_nan() || (s.at as f64) <= t + 1000.0)).cloned()
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -437,6 +438,7 @@ pub struct Applied {
 
 /// `applyRewind`: files first (when asked and a snapshot exists), then the chat is cut before the message. Before files
 /// change, the folder is saved so Undo can put it back. `still` is asked right before the cut: a reason stops it.
+#[allow(clippy::too_many_arguments)]
 pub async fn apply_rewind(
     dir: Option<&Path>, ticket_id: &str, uuid: &str, text: &str, at: &str, session_file: &Path, files: bool, session_id: &str,
     still: &(dyn Fn() -> Option<String> + Send + Sync),

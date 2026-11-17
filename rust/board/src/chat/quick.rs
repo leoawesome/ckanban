@@ -127,7 +127,7 @@ impl QuickChats {
         let sid = s(&c, "sessionId");
         let u_sid = u.and_then(|u| u.get("sessionId")).and_then(Value::as_str);
         let started = sid != u_sid && (js::truthy(c.get("started")) || sid.is_some_and(|x| self.session_exists(x)));
-        let file = u.and_then(|_| u_sid).and_then(session_file);
+        let file = u.and(u_sid).and_then(session_file);
         block(rewind::undo_blocked(u, file.as_deref(), (sid, started), false))
     }
 

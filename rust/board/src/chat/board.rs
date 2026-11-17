@@ -127,7 +127,7 @@ impl RunLoop {
         let sid = ts(&t, "sessionId");
         let u_sid = u.and_then(|u| u.get("sessionId")).and_then(Value::as_str);
         let started = sid.is_some() && sid != u_sid && (t.is("sessionStarted") || sid.is_some_and(|s| self.session_exists(s)));
-        let file = u.and_then(|_| u_sid).and_then(session_file);
+        let file = u.and(u_sid).and_then(session_file);
         block(rewind::undo_blocked(u, file.as_deref(), (sid, started), files))
     }
 
