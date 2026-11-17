@@ -60,7 +60,7 @@ ask_questions, propose_ticket, propose_branch, propose_teammate and propose_squa
 propose_helper_rule suggests a line for what the helper knows about the user, only when the user asked for that alert rule in a message they typed; the user's Add on its card saves it.";
 
 /// Tools whose calls still go to Bun, and why (the Bun modules they need aren't ported yet).
-pub const ON_BUN: [&str; 13] = [
+pub const ON_BUN: &[&str] = &[
     "ask_keys",               // keysAsk (src/integrations/ask-keys.ts)
     "backup_file",            // backupFile: copies and prunes files in the data folder (src/integrations/file-backup.ts)
     "propose_teammate",       // teammateProposal (src/huddle/teammate-proposal.ts)

@@ -148,7 +148,10 @@ pub fn run(argv: &[String]) -> Option<u8> {
         Some("ticket" | "tickets") => board_cmd(board::ticket(rest, &client())),
         Some("call") => board_cmd(board::call(rest, &client())),
         Some("mcp") if !rest.is_empty() => board_cmd(agents::mcp_command(rest)),
-        Some("browser-mcp" | "artifact" | "remote" | "update") => to_bun(argv),
+        Some("browser-mcp") => to_bun(argv),
+        Some("artifact") => to_bun(argv),
+        Some("remote") => to_bun(argv),
+        Some("update") => to_bun(argv),
         Some("--version" | "-v" | "version") => {
             out(VERSION);
             0
