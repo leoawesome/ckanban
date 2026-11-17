@@ -16,16 +16,16 @@ import type { SessionSummary } from "../runs/session";
 import type { Store } from "../core/store";
 import type { Ticket } from "../core/types";
 import { nowIso } from "../core/util";
-import { Channels, macChannel, pushChannel, webhookChannel, type ChannelResult } from "./channels";
-import { HelperCore } from "./core";
-import { botId, DEFAULT_TELEGRAM, maskToken, scrub, TelegramBot, telegramChannel, TOKEN_RE, type TelegramSettings } from "./telegram";
+import { Channels, macChannel, pushChannel, webhookChannel, type ChannelResult, type OutMessage } from "./channels";
+import { HelperCore, type HelperEdge } from "./core";
+import { botId, DEFAULT_TELEGRAM, maskToken, scrub, TelegramBot, telegramChannel, TOKEN_RE, type TelegramActions, type TelegramSettings } from "./telegram";
 import { waitIdentity, type NewWait } from "./waits";
 import { TelegramReplies } from "./tgreply";
 import { telegramSpendToday } from "../usage/spend";
 import { PendingActions, TelegramLinks } from "./tgstores";
 import { TelegramForms } from "./tgforms";
 import { FrontDesk } from "./frontdesk";
-import { HelperSettingsStore } from "./settings";
+import { HelperSettingsStore, nightQuestion } from "./settings";
 
 /** What the Telegram reply router needs from the board (Board implements it; plugged in with Notifier.plugBoard). */
 export interface TelegramBoard {
@@ -407,6 +407,12 @@ export interface NotifierOptions {
   typingMs?: number;
   /** Writes a comment on a ticket (default: the Store; satellite mode: the Rust board, core/satellite-edge.ts). */
   addComment?: (slug: string, id: string, author: "ai", text: string) => void;
+  /**
+   * Satellite mode: the Rust board runs the helper (what waits, its runner, messages) and owns its files, notify.json
+   * included. This notifier then only sends what Rust asks (sendFromRust), runs Telegram and the front desk, and
+   * passes Telegram's taps and its own settings writes to Rust.
+   */
+  helperEdge?: HelperEdge;
 }
 
 /** A main ticket's step waiting on a question it asked: its wait, recorded under the main ticket. */
@@ -442,6 +448,8 @@ export class Notifier {
   readonly frontDesk: FrontDesk;
   private board: TelegramBoard | null = null;
   private ntfyTopic = `https://ntfy.sh/ckanban-${randomBytes(12).toString("base64url").replace(/[-_]/g, "x")}`;
+  /** Satellite mode: settings sent to Rust and not written yet (read back from here until then). */
+  private pendingSettings: NotifySettings | null = null;
 
   constructor(private store: Store, private bus: Bus, private o: NotifierOptions) {
     this.tracker = new TransitionTracker<string>(o.debounceMs ?? 5000);
@@ -458,9 +466,9 @@ export class Notifier {
       settings: () => this.settings().telegram,
       save: (patch) => {
         const s = this.settings();
-        writeNotifySettings(this.o.root, { ...s, telegram: { ...s.telegram, ...patch } });
+        this.saveSettings({ ...s, telegram: { ...s.telegram, ...patch } });
       },
-      actions: () => ({
+      actions: () => (o.helperEdge ? this.edgeActions(o.helperEdge) : {
         gotIt: (id) => this.helper.gotIt(id, "telegram"),
         notUrgent: (id) => this.helper.notUrgent(id, "telegram"),
         waiting: () => this.helper.waitingText(),
@@ -487,6 +495,7 @@ export class Notifier {
       root: o.root, store, channels: new Channels([macChannel(deps), webhookChannel(deps), pushChannel(deps), telegramChannel(this.telegram)]),
       settings: () => this.settings(), link: (slug, id) => this.link(slug, id), now: this.now, onResults: (r) => this.noteResults(r),
       onMessages: (unread) => this.bus.emit({ type: "messages.updated", unread }),
+      ...(o.helperEdge ? { edge: o.helperEdge } : {}),
     });
     const taking = () => {
       const t = this.settings().telegram;
@@ -563,7 +572,44 @@ export class Notifier {
   }
 
   settings(): NotifySettings {
+    if (this.pendingSettings) return structuredClone(this.pendingSettings);
     return readNotifySettings(this.o.root);
+  }
+
+  /** Saves notify.json: here, or in satellite mode through the Rust board (its only writer then). */
+  private saveSettings(s: NotifySettings): void {
+    const edge = this.o.helperEdge;
+    if (!edge) return writeNotifySettings(this.o.root, s);
+    this.pendingSettings = s;
+    edge.writeSettings(s);
+  }
+
+  /** Satellite mode: Rust wrote these settings (or failed to): read the file again. */
+  settingsWritten(s: NotifySettings): void {
+    if (this.pendingSettings === s) this.pendingSettings = null;
+  }
+
+  /** Telegram's taps in satellite mode: the Rust board's helper answers them. */
+  private edgeActions(edge: HelperEdge): TelegramActions {
+    return {
+      gotIt: (id) => edge.action("got-it", { messageId: id }),
+      notUrgent: (id) => edge.action("not-urgent", { messageId: id }),
+      waiting: () => edge.action("waiting", {}),
+      night: (id, allow) => edge.action("night", { messageId: id, allow }),
+      // Read here (sync): the message's practice mark and the user's night choice, as the Rust runner does.
+      nightAfter: (id) => {
+        const m = this.helper.messages.get(id);
+        const s = new HelperSettingsStore(this.o.root, this.now).get();
+        return m?.practice && s.nightOptIn === null ? nightQuestion(s.night) : null;
+      },
+    };
+  }
+
+  /** Satellite mode: a message the Rust board's helper stored, sent to these channels (helper-send). */
+  async sendFromRust(m: OutMessage, only: string[]): Promise<ChannelResult[]> {
+    const results = await this.helper.channels.sendAll(m, this.settings(), only);
+    this.noteResults(results);
+    return results;
   }
 
   /** The settings API's view: the Telegram token masked, each channel's state, and the setup hints. */
@@ -618,8 +664,9 @@ export class Notifier {
         throw new MacOnlyError(TG_ON_FROM_MAC);
       }
     }
-    writeNotifySettings(this.o.root, next);
-    if (before.helper !== next.helper) void this.helper.switched(next.helper).catch((e) => console.error("helper: switch", e));
+    this.saveSettings(next);
+    // Satellite mode: the Rust board switches its helper when it writes the file.
+    if (before.helper !== next.helper && !this.o.helperEdge) void this.helper.switched(next.helper).catch((e) => console.error("helper: switch", e));
     if (before.telegram.token !== next.telegram.token) this.telegram.reset();
     // Stopped taking messages (Pause, the channel off, a new bot): nothing Telegram left waiting reaches a ticket.
     if (taking(before.telegram) && !taking(next.telegram)) this.dropTelegramWork();
@@ -652,7 +699,7 @@ export class Notifier {
   /** /lock from the paired chat: "Take messages from Telegram" off at once; only Settings on the Mac turns it back on. */
   telegramLock(): void {
     const s = this.settings();
-    writeNotifySettings(this.o.root, { ...s, telegram: { ...s.telegram, takeMessages: false, lockedAt: new Date(this.now()).toISOString() } });
+    this.saveSettings({ ...s, telegram: { ...s.telegram, takeMessages: false, lockedAt: new Date(this.now()).toISOString() } });
     this.dropTelegramWork();
   }
 
@@ -678,7 +725,7 @@ export class Notifier {
     const r = this.telegram.startPairing();
     // The front desk lives on the board paired from, unless Settings already chose one.
     const s = this.settings();
-    if (board && this.store.getProfile(board) && !s.telegram.frontDesk) writeNotifySettings(this.o.root, { ...s, telegram: { ...s.telegram, frontDesk: board } });
+    if (board && this.store.getProfile(board) && !s.telegram.frontDesk) this.saveSettings({ ...s, telegram: { ...s.telegram, frontDesk: board } });
     return r;
   }
 
@@ -694,6 +741,7 @@ export class Notifier {
    * ticket, session and huddle changes.
    */
   start(): () => void {
+    if (this.o.helperEdge) return this.startSatellite();
     let stopped = false;
     let timer: ReturnType<typeof setInterval> | null = null;
     const off = this.bus.on((e) => {
@@ -764,6 +812,33 @@ export class Notifier {
       stopped = true;
       off();
       if (timer) clearInterval(timer);
+      this.telegram.stop();
+      this.frontDesk.stop();
+    };
+  }
+
+  /**
+   * Satellite mode: the Rust board follows what waits and runs the helper. This notifier keeps Telegram going and,
+   * for a changed ticket, takes a form shown on Telegram that the ticket no longer asks off the chat.
+   */
+  private startSatellite(): () => void {
+    const off = this.bus.on((e) => {
+      if (e.type === "ticket.updated") this.dirty.add(`${e.profile}/${e.ticket.id}`);
+      else if (e.type === "session.updated") this.dirty.add(`${e.profile}/${e.id}`);
+    });
+    this.telegram.refresh();
+    void this.telegram.briefOnce().catch((e) => console.error("telegram: briefing", e));
+    const timer = trackedInterval("notifier", () => {
+      const keys = [...this.dirty];
+      this.dirty.clear();
+      for (const k of keys) {
+        const [slug, id] = k.split("/");
+        void this.forms.sync(slug, id).catch((e) => console.error("telegram: form", e));
+      }
+    }, this.o.tickMs ?? 1000);
+    return () => {
+      off();
+      clearInterval(timer);
       this.telegram.stop();
       this.frontDesk.stop();
     };

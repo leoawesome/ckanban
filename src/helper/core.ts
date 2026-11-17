@@ -111,6 +111,19 @@ export interface HelperCoreDeps {
   onResults?: (results: ChannelResult[]) => void;
   /** A message was stored or read: the new unread count. */
   onMessages?: (unread: number) => void;
+  /**
+   * Satellite mode (core/satellite.ts): the Rust board owns the helper's files. The stores only read them, the front
+   * desk's seenInChatAt goes to Rust, and a message the satellite sends itself is stored by Rust (sendMessage).
+   */
+  edge?: HelperEdge;
+}
+
+/** What the satellite asks of the Rust board's helper (core/satellite-edge.ts rustHelperEdge). */
+export interface HelperEdge {
+  waitSeen(key: string, at: string): void;
+  sendMessage(m: NewMessage, out: Omit<OutMessage, "messageId" | "ticket">): Promise<{ message: StoredMessage; results: ChannelResult[] }>;
+  writeSettings(s: NotifySettings): void;
+  action(name: string, b: Record<string, unknown>): Promise<string>;
 }
 
 export class HelperCore {
@@ -126,8 +139,11 @@ export class HelperCore {
 
   constructor(private d: HelperCoreDeps) {
     this.now = d.now ?? Date.now;
-    this.waits = new WaitStore(d.root, this.now);
-    this.messages = new MessageStore(d.root, this.now, d.onMessages);
+    const edge = d.edge;
+    this.waits = new WaitStore(d.root, this.now, edge ? (key, patch) => {
+      if (typeof patch.seenInChatAt === "string") edge.waitSeen(key, patch.seenInChatAt);
+    } : undefined);
+    this.messages = new MessageStore(d.root, this.now, d.onMessages, !!edge);
     this.channels = d.channels;
   }
 
@@ -374,6 +390,11 @@ export class HelperCore {
    * a function of the stored message's id (a link to its message page).
    */
   async send(m: NewMessage, out: OutBody, only?: string[]): Promise<{ message: StoredMessage; results: ChannelResult[] }> {
+    // Satellite mode: the Rust board stores it and asks this daemon to send it (helper-send).
+    if (this.d.edge) {
+      if (typeof out.url === "function") throw new Error("satellite: a message sent through the Rust board needs a fixed link");
+      return this.d.edge.sendMessage(m, { ...out, url: out.url });
+    }
     const message = this.messages.add(m);
     const results = await this.deliver(message, out, only);
     return { message, results };

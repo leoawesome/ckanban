@@ -557,6 +557,11 @@ export function createContext(deps: ServerDeps) {
     passCall: (b) => loops.callForBoard(b),
     publish: (job) => publishArtifact(job),
     turnEnded: (slug, id, text) => notifier.turnEnded(slug, id, text),
+    helperSend: (m, only) => notifier.sendFromRust(m, only),
+    helperFacts: () => ({
+      onScreen: push.anyVisible(), phoneDevices: push.phoneDevices(),
+      connected: mcp.state().servers.some((x) => x.status === "connected"),
+    }),
   };
   const helperRunner = deps.helper ?? null;
   const helperOr503 = (): HelperRunner => {

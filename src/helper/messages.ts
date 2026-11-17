@@ -2,7 +2,7 @@
 // finds the full text: `<root>/messages.json`, newest last. Sent messages keep 30 days or 500 entries; the helper's
 // held log rows ("Kept quiet") have their own, smaller cap (7 days or 200), so they never push real alerts out.
 import { randomBytes } from "node:crypto";
-import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 /** What kind of message it is (the page and history show it). */
@@ -123,9 +123,15 @@ export type NewMessage = Pick<StoredMessage, "level" | "oneLine" | "text"> & Par
 export class MessageStore {
   readonly file: string;
   private list: StoredMessage[] | null = null;
+  /** The file as last read (follow mode). */
+  private stamp = "";
 
-  /** onChange: a message was added or read (the board's "Messages, N new" count follows it). */
-  constructor(root: string, private now: () => number = Date.now, private onChange?: (unread: number) => void) {
+  /**
+   * onChange: a message was added or read (the board's "Messages, N new" count follows it). follow: satellite mode
+   * (core/satellite.ts): the Rust board owns messages.json; this store reads it again each time it changed and never
+   * writes it (a message the satellite sends itself is stored by Rust, HelperCore.send).
+   */
+  constructor(root: string, private now: () => number = Date.now, private onChange?: (unread: number) => void, private follow = false) {
     this.file = join(root, "messages.json");
   }
 
@@ -136,6 +142,17 @@ export class MessageStore {
   }
 
   private items(): StoredMessage[] {
+    if (this.follow) {
+      let stamp = "";
+      try {
+        const s = statSync(this.file);
+        stamp = `${s.size}:${s.mtimeMs}:${s.ino}`;
+      } catch {}
+      if (stamp !== this.stamp) {
+        this.stamp = stamp;
+        this.list = null;
+      }
+    }
     if (this.list) return this.list;
     let list: StoredMessage[] = [];
     if (existsSync(this.file)) {
@@ -150,6 +167,7 @@ export class MessageStore {
   }
 
   private save(): void {
+    if (this.follow) throw new Error("messages.json belongs to the Rust board: the satellite can't write it");
     const tmp = `${this.file}.tmp`;
     writeFileSync(tmp, JSON.stringify({ version: 1, messages: this.items() }) + "\n");
     renameSync(tmp, this.file);

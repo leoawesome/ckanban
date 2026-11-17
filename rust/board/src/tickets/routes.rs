@@ -117,7 +117,12 @@ pub struct Writes {
     runs: std::sync::OnceLock<Arc<crate::runloop::RunLoop>>,
     /// Say it simpler, Help me understand and the Context panel (R7b).
     chat_extras: std::sync::OnceLock<Arc<crate::chat::extras::ChatExtras>>,
+    /// The helper (P1a): the user opened a ticket (its reminders stop); true when a reminder was pending.
+    opened: std::sync::OnceLock<Opened>,
 }
+
+/// `notifier.opened(slug, id)`.
+pub type Opened = Arc<dyn Fn(&str, &str) -> bool + Send + Sync>;
 
 /// `body(req)`: the JSON body; 400 when it isn't JSON.
 fn body(req: &Req) -> Result<Value, Refusal> {
@@ -134,7 +139,7 @@ pub(crate) fn body_obj(req: &Req) -> Result<Map<String, Value>, Refusal> {
 
 impl Writes {
     pub fn new(tickets: Arc<Tickets>, reads: Arc<Reads>, sessions: Arc<dyn SessionInfo>, save_keys: SaveKeys) -> Writes {
-        Writes { tickets, reads, sessions, save_keys, in_flight: Default::default(), families: Default::default(), runs: Default::default(), chat_extras: Default::default() }
+        Writes { tickets, reads, sessions, save_keys, in_flight: Default::default(), families: Default::default(), runs: Default::default(), chat_extras: Default::default(), opened: Default::default() }
     }
 
     /// The chat extras (R7b): their routes answer from them.
@@ -150,6 +155,11 @@ impl Writes {
     /// The run loop (R7a): its routes answer from it.
     pub fn set_runs(&self, r: Arc<crate::runloop::RunLoop>) {
         let _ = self.runs.set(r);
+    }
+
+    /// The helper's `opened` (P1a): opening a ticket stops its reminders.
+    pub fn set_opened(&self, f: Opened) {
+        let _ = self.opened.set(f);
     }
 
     /// `view(profile, t)` for the run loop's routes.
@@ -987,15 +997,19 @@ impl Writes {
         Ok(Reply::Json(200, self.view(slug, &t)))
     }
 
-    /// `POST .../seen`: the user opened the ticket (`markSeen`, at most every 5 minutes). The helper's reminders
-    /// (`notifier.opened`) stay with the satellite until P1.
+    /// `POST .../seen`: the user opened the ticket (`markSeen`, at most every 5 minutes). Opening it stops its
+    /// helper reminders (`notifier.opened`); a pending reminder skips the 5-minute throttle.
     fn seen(&self, req: &Req, slug: &str, id: &str) -> Result<Reply, Refusal> {
         if req.run.is_some() {
             return Err((403, "only the user's board marks a ticket seen".into()));
         }
+        let reminded = self.opened.get().is_some_and(|f| f(slug, id));
+        if reminded {
+            self.tickets.bus.emit_json(serde_json::json!({ "type": "helper.updated" }));
+        }
         let t = self.tickets.get(slug, id).ok_or_else(|| bad(format!("ticket {id} not found")))?;
         let now_ms = ckanban_core::time::now_ms();
-        let recent = t.get("seenAt").and_then(Value::as_str).and_then(ckanban_core::time::parse_date).is_some_and(|at| now_ms - at < 5.0 * 60_000.0);
+        let recent = !reminded && t.get("seenAt").and_then(Value::as_str).and_then(ckanban_core::time::parse_date).is_some_and(|at| now_ms - at < 5.0 * 60_000.0);
         let t = if recent {
             t
         } else {
