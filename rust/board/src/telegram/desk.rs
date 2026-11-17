@@ -41,6 +41,8 @@ pub const DESK_UNMEASURED_USD: f64 = 0.05;
 pub const PAUSED_EVERY_MS: f64 = 60_000.0;
 /// A Confirm card longer than this isn't shown.
 const CARD_MAX: usize = TELEGRAM_MAX - 96;
+/// The answer to a front desk request that changes or deletes a whole board.
+pub const BOARD_LEVEL: &str = "Changing or deleting a whole board is done on the board, not from Telegram. Ask the user to do it there.";
 /// `FRONT_DESK_ENV`.
 pub const FRONT_DESK_ENV: &str = "CKANBAN_FRONTDESK";
 
@@ -610,6 +612,11 @@ impl Telegram {
             return Some((403, json!({ "error": "This front desk identity isn't valid (the board restarted or the chat changed). Ask the user to send the message again." })));
         };
         let held = text::held_kind(method, path, body)?;
+        // A board's own settings (its folder, the commands every copy runs) and deleting a whole board are the
+        // user's, on the board: a Confirm card can't show what such a change does.
+        if text::board_level(path) {
+            return Some((403, json!({ "error": BOARD_LEVEL })));
+        }
         if !self.taking() {
             return Some((403, json!({ "error": "Telegram isn't taking messages right now (paused or locked), so nothing can be started from here. The user can turn it back on from the Mac." })));
         }
@@ -952,7 +959,10 @@ impl Telegram {
         }
         let mut running = a.clone();
         running["running"] = true.into();
-        self.pending.update(id, running, self.now());
+        // Saved before it runs: a restart meanwhile must never run it a second time.
+        if let Err(e) = self.pending.update_checked(id, running, self.now()) {
+            return finish(format!("Couldn't do it: {}", short(&e, 300)), "Not done").await;
+        }
         let (status, rbody) = self.env.replay(s(&a, "method").to_string(), s(&a, "path").to_string(), a.get("body").cloned().unwrap_or(Value::Null)).await;
         if status >= 400 {
             let err = rbody.get("error").map(js::to_string).unwrap_or_else(|| format!("error {status}"));

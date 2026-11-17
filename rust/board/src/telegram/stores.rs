@@ -354,6 +354,15 @@ impl Pending {
         self.save_logged(map, now);
     }
 
+    /// `update`, Err when the file couldn't be written.
+    pub fn update_checked(&self, id: &str, data: Value, now: f64) -> Result<(), String> {
+        let mut g = self.map.lock();
+        let map = self.items(&mut g);
+        let Some(Value::Object(a)) = map.get_mut(id) else { return Err("the button is gone".into()) };
+        a.insert("data".into(), data);
+        self.save(map, now).map_err(|e| e.to_string())
+    }
+
     /// `shown`: the Telegram message that shows the action's buttons.
     pub fn shown(&self, id: &str, card: i64, now: f64) {
         let mut g = self.map.lock();

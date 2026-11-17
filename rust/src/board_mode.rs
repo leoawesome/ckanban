@@ -1726,12 +1726,12 @@ impl BoardMode {
             };
             return self.json_at(StatusCode::OK, &json!({ "status": status, "body": data }));
         }
+        // Everything else through this server's own order (Rust's routes, then Bun): Bun's confirmed mark only
+        // ever let a schedule's delete through, which runs above.
+        let _ = (native, proxy, peer);
         let res = match own_route(&m, path) {
             Some(own) => self.own(own, req, Listener::Local).await,
-            None => {
-                let _ = native;
-                proxy.forward_as(req, peer, &[(edge::CONFIRMED_HEADER, "1")]).await
-            }
+            None => self.send_again(req).await,
         };
         let status = res.status().as_u16();
         let text = match res.into_body().collect().await {

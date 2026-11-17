@@ -11,7 +11,6 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use bytes::Bytes;
-use ckanban_board::gate::edge;
 use ckanban_board::gate::request::{self, Listener};
 use ckanban_board::sessions::routes::{HUDDLE_HEADER, RUN_HEADER};
 use ckanban_board::telegram::{self, Telegram};
@@ -122,6 +121,10 @@ impl BoardMode {
         if request::has(h, RUN_HEADER) || request::has(h, HUDDLE_HEADER) {
             return self.error(StatusCode::FORBIDDEN, "a board run can't also be the front desk");
         }
+        // The front desk's runs are on this Mac: its header never comes in through phone access.
+        if via == Listener::Remote {
+            return self.error(StatusCode::FORBIDDEN, "This front desk identity isn't valid (the board restarted or the chat changed). Ask the user to send the message again.");
+        }
         let bytes = match Limited::new(body, MAX_BODY).collect().await {
             Ok(b) => b.to_bytes(),
             Err(e) if e.is::<http_body_util::LengthLimitError>() => return self.error(StatusCode::PAYLOAD_TOO_LARGE, "request body too large"),
@@ -145,11 +148,23 @@ impl BoardMode {
             return self.json_at(StatusCode::from_u16(status).unwrap_or(StatusCode::OK), &v);
         }
         // Goes ahead: to this server again, as the same request without the header.
-        let _ = via;
+        let mut again = Request::from_parts(parts, full(bytes));
+        again.headers_mut().remove(FRONT_DESK_HEADER);
+        self.send_again(again).await
+    }
+
+    /// A request sent to this server again (on this Mac's listener, Host this Mac's), so every route answers it in
+    /// `route()`'s order. Its caller is this server itself, which is never the user (`guard::user_only`).
+    pub(super) async fn send_again(&self, req: Request<Body>) -> Response<Body> {
+        let (parts, body) = req.into_parts();
+        let bytes = match Limited::new(body, MAX_BODY).collect().await {
+            Ok(b) => b.to_bytes(),
+            Err(_) => return crate::proxy::plain(StatusCode::BAD_REQUEST, "bad request"),
+        };
         let target = parts.uri.path_and_query().map(|p| p.as_str()).unwrap_or("/");
         let mut rb = Request::builder().method(parts.method.clone()).uri(format!("http://127.0.0.1:{}{target}", self.public_port));
         for (k, v) in parts.headers.iter() {
-            if k.as_str().eq_ignore_ascii_case(FRONT_DESK_HEADER) || k == HOST || k.as_str() == "connection" || k.as_str() == "content-length" || k.as_str() == "transfer-encoding" {
+            if k.as_str().eq_ignore_ascii_case(FRONT_DESK_HEADER) || k == HOST || matches!(k.as_str(), "connection" | "content-length" | "transfer-encoding") {
                 continue;
             }
             rb = rb.header(k, v);

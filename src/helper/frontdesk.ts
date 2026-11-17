@@ -279,6 +279,9 @@ export function heldKind(method: string, path: string, body: any): { kind: DeskA
   return { kind: "other", slug, ticketId: null };
 }
 
+/** The answer to a front desk request that changes or deletes a whole board. */
+export const BOARD_LEVEL = "Changing or deleting a whole board is done on the board, not from Telegram. Ask the user to do it there.";
+
 /** replyTo as saved: a list per chat (a single number from before the list is kept as one). */
 function readReplyTo(v: Record<string, unknown>): Record<string, number[]> {
   const out: Record<string, number[]> = {};
@@ -640,6 +643,10 @@ export class FrontDesk {
     if (!who) return { status: 403, body: { error: "This front desk identity isn't valid (the board restarted or the chat changed). Ask the user to send the message again." } };
     const held = heldKind(method, path, body);
     if (!held) return null;
+    // A board's own settings (its folder, the commands every copy runs) and deleting a whole board are the user's,
+    // on the board: a Confirm card can't show what such a change does.
+    const rp = routeParts(path);
+    if (rp && rp.length === 2 && rp[0] === "profiles") return { status: 403, body: { error: BOARD_LEVEL } };
     if (!this.d.taking()) return { status: 403, body: { error: "Telegram isn't taking messages right now (paused or locked), so nothing can be started from here. The user can turn it back on from the Mac." } };
     // A main ticket that gathers others is the board's to make: the card can't show all that.
     if (held.kind === "create" && (a_main(body))) return { status: 403, body: { error: "A new main ticket (or one that gathers other tickets) is made on the board, not from Telegram. Make a plain ticket instead, or ask the user to do it on the board." } };

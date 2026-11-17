@@ -334,6 +334,12 @@ pub fn held_kind(method: &str, path: &str, body: &Value) -> Option<Held> {
     held("other", slug, None)
 }
 
+/// A request on a whole board (`/api/profiles/<slug>`, any method but reads): the front desk can't hold it for a
+/// Confirm, it is refused.
+pub fn board_level(path: &str) -> bool {
+    route_parts(path).is_some_and(|p| p.len() == 2 && p[0] == "profiles")
+}
+
 /// `deskDenyRules`: files the front desk can't read.
 pub fn desk_deny_rules(data_root: &Path) -> Vec<String> {
     let mut roots = vec![data_root.to_string_lossy().into_owned()];
