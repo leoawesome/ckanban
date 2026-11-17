@@ -94,6 +94,8 @@ pub fn wanted(method: &str, path: &str) -> bool {
         ("POST", ["profiles", _, "tickets", _, "key-cards", _]) => true,
         (m, ["profiles", _, "tickets", _, rest @ ..]) if crate::families::routes::wanted(m, rest) => true,
         (m, ["profiles", _, "tickets", _, rest @ ..]) if crate::runloop::routes::wanted(m, rest) => true,
+        (m, ["profiles", _, "tickets", _, rest @ ..]) if crate::chat::routes::wanted(m, rest) => true,
+        ("GET", ["profiles", _, "commands"]) => true,
         ("PUT", ["profiles", _, "tickets", _, "automation-cards" | "squad-cards" | "teammate-cards" | "closed-forms" | "schedule-delete-cards" | "helper-rule-cards", _]) => {
             true
         }
@@ -210,6 +212,9 @@ impl Writes {
                     return Some(super::profiles::routes(self, req, slug).unwrap_or_else(err));
                 }
                 if p.len() == 3 {
+                    if p[2] == "commands" {
+                        return Some(crate::chat::routes::board_commands(&self.profile(slug).unwrap_or_default()));
+                    }
                     return Some(self.create(req, slug).unwrap_or_else(err));
                 }
                 let id = p[3];
@@ -219,6 +224,12 @@ impl Writes {
                 if crate::runloop::routes::wanted(m, &p[4..]) {
                     return Some(match self.runs.get() {
                         Some(r) => crate::runloop::routes::answer(r, self, req, slug, id, &p[4..]).unwrap_or_else(err),
+                        None => err((503, "the board is still starting; try again in a moment".into())),
+                    });
+                }
+                if crate::chat::routes::wanted(m, &p[4..]) {
+                    return Some(match self.runs.get() {
+                        Some(r) => crate::chat::routes::answer(r, self, req, slug, id, &p[4..]).unwrap_or_else(err),
                         None => err((503, "the board is still starting; try again in a moment".into())),
                     });
                 }

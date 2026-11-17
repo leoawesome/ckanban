@@ -221,6 +221,8 @@ pub async fn prepare(root: &Path, public_port: u16, remote_port: u16, internal_p
     let json_mask = masker(root);
     opts.mask_json = Arc::new(move |t: &str| json_mask(t));
     opts.tools_version = crate::mcp::tools_version();
+    // R7b: Claude Code's bundled skills (learned from a run's init event) are kept in Bun's file.
+    ckanban_board::chat::commands::use_bundled_file(Some(root.join("claude-commands.json")));
     let runs = RunLoop::new(RunLoopDeps {
         root: root.to_path_buf(),
         tickets: core.tickets.clone(),

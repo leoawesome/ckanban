@@ -226,9 +226,9 @@ pub struct RunLoop {
     pub devices: Arc<dyn DeviceInfo>,
     pub satellite: Arc<dyn Satellite>,
     pub opts: RunLoopOptions,
-    pub(super) rt: tokio::runtime::Handle,
-    pub(super) state: Mutex<State>,
-    pub(super) decide: ReentrantMutex<()>,
+    pub(crate) rt: tokio::runtime::Handle,
+    pub(crate) state: Mutex<State>,
+    pub(crate) decide: ReentrantMutex<()>,
     /// Other work a restart waits for (huddle agents mid-turn, quick chats), by board, repeats included.
     pub(super) restart_busy: Mutex<Vec<BusyList>>,
     pub(super) run_ended: Mutex<Vec<RunEnded>>,
@@ -340,7 +340,7 @@ impl RunLoop {
         (self.opts.now)()
     }
 
-    pub(super) fn get(&self, slug: &str, id: &str) -> Option<Arc<Tk>> {
+    pub(crate) fn get(&self, slug: &str, id: &str) -> Option<Arc<Tk>> {
         self.tickets.get(slug, id)
     }
 
@@ -356,7 +356,7 @@ impl RunLoop {
         self.state.lock().restart_pending
     }
 
-    pub(super) fn profile(&self, slug: &str) -> Option<Map<String, Value>> {
+    pub(crate) fn profile(&self, slug: &str) -> Option<Map<String, Value>> {
         ckanban_core::DataDir::new(self.root.clone()).profile(slug).map(|p| p.record.0)
     }
 
@@ -369,7 +369,12 @@ impl RunLoop {
 
     /// `Board.patch`: written and sent; Done drops the rewind copies (R7b).
     pub fn patch(&self, slug: &str, id: &str, patch: Map<String, Value>) -> Result<Arc<Tk>, RunError> {
-        Ok(self.tickets.patch(slug, id, patch)?)
+        let done = patch.get("status").and_then(Value::as_str) == Some("done");
+        let t = self.tickets.patch(slug, id, patch)?;
+        if done {
+            self.drop_rewind_copies(slug, &t.json);
+        }
+        Ok(t)
     }
 
     /// A patch whose failure is only logged (Bun's `try { this.patch(...) } catch {}` places and patches that
@@ -397,7 +402,17 @@ impl RunLoop {
         if self.state.lock().rewinding.contains(&Self::key(slug, id)) {
             return Err(RunError::conflict(rules::REWINDING));
         }
-        // STAND-IN (R7b): the rewind snapshot of the folder before the message (`takeSnapshot`).
+        // A command's list is read from disk (cached 30 s) before the board's choice is taken, not under it.
+        if crate::runs::js::trim(text).starts_with('/') && !opts.peer && opts.slash.is_none() {
+            let _ = self.commands(slug, id);
+        }
+        // Rewind needs the folder as it is right before this message: saved quietly, the user's own history untouched.
+        // Only when Claude is idle: a message sent while it works steers the run and can't be rewound to anyway.
+        if !opts.peer && !opts.host_wake && !opts.follow_up && !crate::runs::js::trim(text).is_empty() && self.run_of(slug, id).is_none()
+            && let Some(dir) = self.rewind_dir(slug, id)
+        {
+            let _ = crate::tickets::writer::block(crate::chat::rewind::take_snapshot(&dir, id, text, crate::chat::rewind::now_ms(), crate::chat::rewind::snapshot_limit_ms()));
+        }
         let _g = self.decide.lock();
         self.chat_now(slug, id, text, opts)
     }
@@ -448,10 +463,20 @@ impl RunLoop {
             }
             t = self.start_fresh_chat(slug, id, false)?;
         }
+        let mut opts = opts;
         if !opts.peer && opts.slash.is_none() && !opts.host_wake && !opts.follow_up {
-            // STAND-IN (R7b): slash commands (`parseSlash`, `slashMessage`, the board's /model and /effort); until
-            // then a message starting with "/" goes to Claude as typed.
-            let _ = &mut text;
+            if let Some((name, _)) = crate::chat::commands::parse_slash(&text)
+                && crate::chat::commands::is_refused(&name)
+            {
+                return Err(RunError::other(format!("/{name} isn't available here: start a new ticket for a fresh conversation.")));
+            }
+            if let Some((command, args, sent)) = crate::chat::commands::slash_message(&text, &self.commands(slug, id)) {
+                if crate::chat::commands::is_board_command(&command.name) {
+                    return self.board_command(slug, id, &command.name, &args);
+                }
+                text = sent;
+                opts.slash = Some(if command.local { "local" } else { "prompt" }.to_string());
+            }
         }
         if self.repeated_answer(slug, id, &t, &text, &opts) {
             return Ok(t);

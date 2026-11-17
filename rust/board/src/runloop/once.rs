@@ -457,8 +457,11 @@ impl RunLoop {
         let run_no = prep.run_no;
         let refine = prep.refine;
         let mut chrome_watch = self.browsers.as_ref().map(|b| crate::browsers::chromes::ChromeWatch::new(b.chromes.clone()));
+        let init_cwd = session.dir.to_string_lossy().into_owned();
+        let init_projects = vec![prep.profile.get("path").and_then(Value::as_str).unwrap_or("").to_string()];
         let on_event: runner::OnEvent = Box::new(move |ev: &Value| {
             me.on_event(&r, &lv, &sp, run_no, refine, ev);
+            crate::chat::commands::remember_init(&init_cwd, ev, &init_projects);
             if ev.get("type").and_then(Value::as_str) != Some("stream_event")
                 && let Some(w) = chrome_watch.as_mut()
             {
@@ -556,7 +559,7 @@ impl RunLoop {
         if self.versions.learn(ev) {
             // Learned a newer model version: nothing else to do here (the file is saved).
         }
-        // STAND-IN (R7b): rememberInit (the slash command list from the init event).
+        // rememberInit (the slash command list from the init event) runs in the run's event callback.
         if refine && ty == Some("assistant") {
             self.save_mockups(slug, id, ev);
         }
