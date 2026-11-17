@@ -518,6 +518,7 @@ No HTTP and no daemon. Runs a Claude Code session in a pseudo-terminal (or tmux 
 
 - publish: file must exist, else stderr `no such file: <abs path>`, exit 1. Failure: stderr `artifact publish failed: <error>`, exit 1. Success stdout: the Artifact tool's own line, matched by `/Published (\S+) at (https:\/\/claude\.ai\/(?:code\/)?artifact\/[A-Za-z0-9-]+)/`, e.g. `Published /tmp/page.html at https://claude.ai/artifact/AbC123` (fallback `Published <file> at <url>`).
 - read: failure stderr `artifact read failed: <error>`, exit 1. Writes the HTML to `--out` or `<tmpdir>/artifact-<last url segment>.html`; stdout `Saved <url> to <path>`.
+- `artifact publish-output <file> [--name <output name>] [--url <artifact url>]` (internal: the Rust board's Share menu runs it until P3 ports the helper): a Markdown file (by `--name`, else the file name) is made into a standalone page first, as the Share menu always did; anything but Markdown and HTML is refused. Prints the outcome as one JSON line and exits 0 either way: `{"ok":true,"kind":"publish","url":...,"text":...}` or `{"ok":false,"error":...}`.
 - Anything else: stderr (two lines) `usage: ckanban artifact publish <file> [--url <artifact url>] [--title <title>]` / `       ckanban artifact read <url> [--out <file>]`, exit 1.
 
 ### `ckanban remote on|off|status`
