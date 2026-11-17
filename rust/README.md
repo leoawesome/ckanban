@@ -164,11 +164,20 @@ secret. See `src/core/front.ts` and "Behind a front server" in `contracts/api.md
 Rust is pinned in `rust-toolchain.toml` (rustup installs it on first use). Use rustup's cargo (`~/.cargo/bin/cargo`).
 
 ```sh
+scripts/build-rust.sh                # release build: rust/target/release/ckanban-rs, signed on macOS (below)
 cd rust
-~/.cargo/bin/cargo build --release   # target/release/ckanban-rs
 ~/.cargo/bin/cargo test              # unit tests of the server and of core/ (fixtures shared with Bun)
 cd .. && bun run test:contract:rust  # every test/contract test through ckanban-rs, plus the parity test
 ```
+
+Build the release binary with `scripts/build-rust.sh` (extra arguments go to `cargo build --release`), not cargo
+directly. On macOS it signs the binary with a fixed local certificate, "ckanban local signing" (self-signed, made once
+in the login keychain on first use), and the identifier `io.ckanban.rs`. A plain cargo build is only ad-hoc signed, and
+macOS privacy settings remember an ad-hoc binary by its exact hash, so after every build launchd's `ckanban-rs` would
+ask again for the Desktop or Documents folder. With the fixed signature one "Allow" lasts across builds. If signing
+can't be done the build still succeeds, ad-hoc signed, with a warning; `CKANBAN_SIGN=0` skips it. Check with
+`codesign -d -r- rust/target/release/ckanban-rs` (it names the certificate, not a hash). The test scripts
+(`test:contract:rust`, `test:contract:rust-board`) and `scripts/rust-trial.sh` build through it too.
 
 The parity test (`test/contract/rust-parity.test.ts`) starts Bun alone and `ckanban-rs` on the same data, walks
 both through the same usage scenarios (a fake Anthropic) and spend data, and checks the answers and the shared files

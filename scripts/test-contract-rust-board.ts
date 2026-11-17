@@ -3,8 +3,7 @@
 // rust/board/contract-files.txt (a file in test/contract, optionally `| <test name pattern>`) as its own `bun test`;
 // any listed file that fails, fails the run. Arguments run those files instead (listed or not), e.g. to see how far a
 // file gets: `bun run test:contract:rust-board tickets.test.ts`. Kept out of `bun run test`: it needs cargo.
-import { existsSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
+import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 const REPO = resolve(import.meta.dir, "..");
@@ -31,9 +30,8 @@ export function parseList(text: string): Entry[] {
 }
 
 if (import.meta.main) {
-  const home = join(homedir(), ".cargo", "bin", "cargo");
-  const cargo = process.env.CARGO ?? (existsSync(home) ? home : "cargo");
-  const build = Bun.spawnSync([cargo, "build", "--release"], { cwd: join(REPO, "rust"), stdout: "inherit", stderr: "inherit" });
+  // scripts/build-rust.sh: the release build (rustup's cargo, or $CARGO), signed on macOS so folder access sticks.
+  const build = Bun.spawnSync(["/bin/bash", join(REPO, "scripts", "build-rust.sh")], { cwd: REPO, stdout: "inherit", stderr: "inherit" });
   if (build.exitCode !== 0) process.exit(build.exitCode ?? 1);
 
   const bin = join(REPO, "rust", "target", "release", "ckanban-rs");
