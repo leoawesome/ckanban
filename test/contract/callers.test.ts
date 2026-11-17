@@ -64,18 +64,8 @@ test("a board run gets 403 on user-only routes; a program outside the board may 
   expect((await d.api("DELETE", `/api/profiles/${SLUG}/schedules/${s.id}`)).status).toBe(204);
 }, 60_000);
 
-test("behind a front server, its internal port refuses requests without the secret", async () => {
-  const m = /internal port (\d+)/.exec(d.log());
-  // Bun alone: there is no internal port. Another daemon command (a front server) must log one.
-  if (!process.env.CKANBAN_CONTRACT_DAEMON && !m) return;
-  expect(m).not.toBeNull();
-  const internal = Number(m![1]);
-  expect(internal).not.toBe(d.port);
-  const tries: Record<string, string>[] = [{ host: `127.0.0.1:${d.port}` }, { host: `127.0.0.1:${d.port}`, "x-ckanban-front": "0".repeat(64), "x-ckanban-peer-port": "1" }];
-  for (const headers of tries) {
-    const r = await fetch(`http://127.0.0.1:${internal}/api/profiles`, { headers });
-    expect(r.status).toBe(403);
-  }
+test("the server listens on the board's port alone: no internal port for a Bun daemon behind it", () => {
+  expect(d.log()).not.toMatch(/internal port/);
 });
 
 /** Opens the event stream; `readUntil` reads it until a pattern shows up. */
