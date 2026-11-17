@@ -53,7 +53,7 @@ Bun in full mode takes the same `board.lock` (`src/core/board-lock.ts`), so two 
   board: add `CKANBAN_RUST_SHADOW=1` to the front's launchd environment and `ckanban restart`; remove it to stop.
 - One empty folder per later task (filled as each lands): `index` (R1, done), `tickets` (R2a, done), `families` (R2b), `runs` (R3), `prompts` (R4, done),
   `sessions` (R5), `git` (R6, done), `runloop` (R7a), `chat` (R7b), `quickchat` (R8), `browsers` (R9), `schedules` (R10),
-  `huddles` (R11a), `team` (R11b, done), `huddle_agents` (R11c), `extras` (R12), `gate` (R13).
+  `huddles` (R11a, done), `team` (R11b, done), `huddle_agents` (R11c), `extras` (R12), `gate` (R13).
 
 ## The run engine (R3, `src/runs/`)
 
@@ -199,11 +199,35 @@ statuses; `routes.rs` answers `/api/profiles/:p/huddle-presets`, `/huddle-templa
 `/learned` and `/api/team-usage` are R12's.
 
 - The built-in teammates and squads and the long texts are `src/team/builtins.json`, written by Bun.
-- A squad card on a ticket needs R2a, a huddle's proposed squad R11a: until they call `Team::set_ticket_cards` and
-  `set_learning_cards`, such a save answers 503 before writing anything.
+- A squad card on a ticket (R2a) and a huddle's proposed squad (R11a) are marked saved through
+  `Team::set_ticket_cards` and `set_learning_cards`; without them such a save answers 503 before writing anything.
 - `tests/fixtures/team.json` is the parity table (about 400 cases with Bun's answer or error text);
   `test/rust-team-fixtures.test.ts` checks Bun, `tests/team.rs` Rust, `tests/team_store.rs` the files and routes.
   After a deliberate change in Bun: `UPDATE_RUST_FIXTURES=1 bun test test/rust-team-fixtures.test.ts`.
+
+## Huddle rooms (R11a)
+
+`src/huddles/`: `src/huddle/huddle.ts` and its `huddle-*.ts` parts (types, roster, routing, messages, changing,
+hand-ins, stop, resume, close) and the routes of `src/api/huddles.ts`, answered by Rust in board mode
+(`/api/profiles/:p/huddles...`, after the same Host, Origin and JSON type checks as the team routes). `Huddles`
+(`service.rs`) is `api::HuddleInfo` (`hostStates`, a ticket's teammates and their spend) and the team's
+`LearningCards` (a huddle's proposed squad saved from `POST /squads`). Files as Bun writes them (`files.rs`: the
+huddle JSON pretty with a newline, the message log one masked line each, read only as far as it grew).
+
+- One change at a time, under one lock, like Bun's event loop; what Bun queued for after a change (the host-moved
+  note, the note about a file edited outside the board) runs once the change is over. Reads (lists, one huddle) take
+  no lock. Calls block: the server runs them on the blocking pool.
+- What runs is not here: helpers' runs and copies of the folder (R11c) and the ticket sessions' huddle replies (R7a)
+  go through `HuddleRunner`, whose stand-in runs nothing. A wake then leaves the messages unread (the cursor stays),
+  so the first board that can run them delivers them (`wake_if_owed` at the next start, as Bun after a restart).
+  Until then a closed huddle gets the board's own summary (`fallbackSummary`) instead of asking @main.
+- Hand-ins (`copies.rs`): saving what changed in a helper's copy and bringing it into the host's folder, all or
+  nothing, a file both changed being a conflict. Making the copies is R11c's.
+- Answered 503 until their step: `POST /huddles/auto` (R7a, R11c), a participant's session (R11c), "Save as
+  squad…" (`generic-squad`). Lessons a helper proposes with done go to R12's learner (`Huddles::set_learn`); until
+  then they are dropped, as Bun does without a learner.
+- `tests/huddles.rs` drives the routes on a temp data folder; `huddle.test.ts` and `huddle-team.test.ts` check the
+  same answers against Bun (the room tests that need no helper run are in `contract-files.txt`).
 
 ## Browsers, devices and the terminal (R9)
 

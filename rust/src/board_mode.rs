@@ -27,7 +27,8 @@
 //! Origin and JSON type checks Bun makes); the quick chat routes (R8: `/api/profiles/:p/chats...`; quick chats
 //! replying when board mode stops are continued at the next start); the ticket and board writes (R2a,
 //! `ckanban_board::tickets::routes`: create, change, delete, move, comments, snooze, seen, the chat's cards, boards
-//! POST/PATCH/DELETE, attachments, avatars, snippets).
+//! POST/PATCH/DELETE, attachments, avatars, snippets); the huddle rooms (R11a, `ckanban_board::huddles::routes`:
+//! `/api/profiles/:p/huddles...`, after the team routes' gate).
 //! Everything else goes on to the usage, spend, passes and agents routes, then to Bun, as in front mode.
 
 use std::net::SocketAddr;
@@ -54,6 +55,7 @@ use ckanban_board::quickchat::{QuickChatOptions, QuickChats};
 use ckanban_board::satellite;
 use ckanban_board::sessions::routes::{self as session_routes, HUDDLE_HEADER, RUN_HEADER};
 use ckanban_board::sessions::service::Sessions;
+use ckanban_board::huddles::{self as huddle_mod, Huddles};
 use ckanban_board::team::{self, Team};
 use ckanban_board::tickets::routes::{self as write_routes, Reply, Writes};
 use ckanban_board::tickets::wiring::{TicketOps, Wired};
@@ -85,6 +87,8 @@ pub struct BoardMode {
     pub core: Arc<Core>,
     /// Teammates, squads and role notes (R11b).
     pub team: Arc<Team>,
+    /// Huddle rooms (R11a).
+    pub huddles: Arc<Huddles>,
     /// R9: devices, board browsers, named Chromes and the terminal.
     browsers: Arc<Browsers>,
     browser_routes: browsers::routes::RouteCtx,
@@ -137,6 +141,11 @@ pub async fn prepare(root: &Path, public_port: u16, remote_port: u16, internal_p
     let browsers = Browsers::new(root, Arc::new(FileLookup::new(root)), services.sessions.clone());
     services.devices = browsers.clone();
     services.satellite = Arc::new(SatelliteClient::new(internal_port, public_port, secret));
+    // R11a: huddle rooms (their live state goes into every ticket view).
+    let team = Arc::new(Team::new(root));
+    let huddles = Huddles::new(root, team.clone());
+    huddles.files.set_mask(masker(root));
+    services.huddles = huddles.clone();
     let core = Core::new(root, services);
     browsers.attach(core.bus.clone());
     browsers.set_linked(browsers::linked_from_index(core.index.clone(), browsers.lookup.clone()));
@@ -165,7 +174,6 @@ pub async fn prepare(root: &Path, public_port: u16, remote_port: u16, internal_p
     browsers.start(&core);
     let mask = masker(root);
     let hooks = Arc::new(EventHooks { views: core.services.views.clone(), cut: core.services.cut.clone(), mask: mask.clone() });
-    let team = Arc::new(Team::new(root));
     let browser_routes = browsers::routes::RouteCtx {
         public_port,
         mask: mask.clone(),
@@ -183,7 +191,26 @@ pub async fn prepare(root: &Path, public_port: u16, remote_port: u16, internal_p
     let s = sessions.clone();
     core.tickets.on_written(move |slug, id| s.ticket_changed(slug, id));
     let landing = git::landing::Git::new(root, Arc::new(TicketOps { tickets: core.tickets.clone() }));
-    core.tickets.set_hooks(Arc::new(Wired { git: Some(landing), browsers: Some(browsers.clone()), root: root.to_path_buf() }));
+    core.tickets.set_hooks(Arc::new(Wired { git: Some(landing), browsers: Some(browsers.clone()), huddles: Some(huddles.clone()), root: root.to_path_buf() }));
+    // R11a: huddles see ticket changes (a host moved to Done closes its huddles), wakes owed from before the start are
+    // delivered, and the idle watchdog looks at the live ones every 30 s, off the runtime.
+    huddles.attach(core.tickets.clone(), sessions.clone());
+    team.set_learning_cards(huddles.clone());
+    let h = huddles.clone();
+    let _ = tokio::task::spawn_blocking(move || h.op(|h| h.recover())).await;
+    let h = huddles.clone();
+    let watchdog = tokio::spawn(async move {
+        let mut tick = tokio::time::interval(Duration::from_millis(ckanban_board::huddles::model::IDLE_SWEEP_MS));
+        tick.tick().await;
+        loop {
+            tick.tick().await;
+            let h = h.clone();
+            let _ = tokio::task::spawn_blocking(move || h.idle_sweep()).await;
+        }
+    });
+    core.on_stop("huddle idle sweep", move || watchdog.abort());
+    let h = huddles.clone();
+    core.on_stop("huddles", move || h.shutting_down.store(true, std::sync::atomic::Ordering::Relaxed));
     let passes: Arc<std::sync::OnceLock<Arc<passes::Passes>>> = Arc::new(std::sync::OnceLock::new());
     let p = passes.clone();
     let save_keys: write_routes::SaveKeys = Arc::new(move |slug, keys| match p.get() {
@@ -195,6 +222,7 @@ pub async fn prepare(root: &Path, public_port: u16, remote_port: u16, internal_p
     Some(Arc::new(BoardMode {
         core,
         team,
+        huddles,
         sessions,
         chats,
         browsers,
@@ -526,6 +554,60 @@ impl BoardMode {
         })
     }
 
+    /// The huddle routes (R11a, `ckanban_board::huddles::routes`), after the same gate as the team routes: the Host
+    /// (403), the Origin of a change (403), a JSON body type for POST, PATCH and PUT (415).
+    #[allow(clippy::result_large_err)]
+    pub async fn answer_huddles(&self, req: Request<Incoming>) -> Result<Response<Body>, Request<Incoming>> {
+        let h = req.headers();
+        if h.contains_key(FRONT_DESK_HEADER) || wants_upgrade(h) {
+            return Err(req);
+        }
+        let Some(parts) = req.uri().path().strip_prefix("/api/").and_then(api_parts) else { return Err(req) };
+        if !huddle_mod::routes::claims(&parts) {
+            return Err(req);
+        }
+        let host_ok = joined(h, HOST.as_str()).is_some_and(|host| ["localhost", "127.0.0.1"].iter().any(|l| host == format!("{l}:{}", self.public_port)));
+        let mutation = req.method() != Method::GET && req.method() != Method::HEAD;
+        let origin_ok = match joined(h, ORIGIN.as_str()) {
+            None => true,
+            Some(o) if o.is_empty() => true,
+            Some(o) => ["localhost", "127.0.0.1"].iter().any(|l| o == format!("http://{l}:{}", self.public_port)),
+        };
+        if !host_ok || (mutation && !origin_ok) {
+            return Ok(plain(StatusCode::FORBIDDEN, "forbidden"));
+        }
+        let wants_body = matches!(*req.method(), Method::POST | Method::PATCH | Method::PUT);
+        let ctype = joined(h, CONTENT_TYPE.as_str()).unwrap_or_default();
+        if wants_body && crate::js::trim(ctype.split(';').next().unwrap_or("")).to_lowercase() != "application/json" {
+            return Ok(self.json(415, &serde_json::json!({ "error": "content-type must be application/json" }), false));
+        }
+        let text = |n: &str| request::header_text(h, n).filter(|v| !v.is_empty());
+        let (run, agent, source) = (text(RUN_HEADER), text(HUDDLE_HEADER), text(write_routes::SOURCE_HEADER));
+        let method = req.method().as_str().to_string();
+        let query = req.uri().query().unwrap_or("").to_string();
+        let body: Bytes = if wants_body {
+            match Limited::new(req.into_body(), MAX_BODY).collect().await {
+                Ok(b) => b.to_bytes(),
+                Err(e) if e.is::<http_body_util::LengthLimitError>() => {
+                    return Ok(self.json(413, &serde_json::json!({ "error": "request body too large" }), false));
+                }
+                Err(_) => return Ok(plain(StatusCode::BAD_REQUEST, "bad request")),
+            }
+        } else {
+            Bytes::new()
+        };
+        let hs = self.huddles.clone();
+        let answer = tokio::task::spawn_blocking(move || {
+            let r = huddle_mod::routes::Req { method: &method, parts: &parts, query: &query, run, agent, source, body: &body };
+            huddle_mod::routes::answer(&hs, &r)
+        })
+        .await;
+        Ok(match answer {
+            Ok((status, v)) => self.json(status, &v, status < 400),
+            Err(e) => self.json(500, &serde_json::json!({ "error": e.to_string() }), false),
+        })
+    }
+
     /// A JSON answer as Bun writes it (`JSON.stringify`); a success is masked with the saved keys (`ctx.json`).
     fn json(&self, status: u16, v: &serde_json::Value, success: bool) -> Response<Body> {
         let text = ckanban_core::datafile::to_text(v, ckanban_core::datafile::Layout::Compact);
@@ -705,6 +787,10 @@ impl BoardMode {
             Ok(res) => return res,
             Err(r) => r,
         };
+        let req = match self.answer_huddles(req).await {
+            Ok(res) => return res,
+            Err(r) => r,
+        };
         let req = match self.answer_async(req).await {
             Ok(res) => return res,
             Err(Next::Untouched(r)) => r,
@@ -864,6 +950,40 @@ impl BoardMode {
             let _ = notify_tell.send(format!("changed {file}\n"));
         });
         let _ = self.passes.set(Arc::new(passes::Passes::new(self.root.clone(), notify)));
+        // A huddle changed: the helper's mirror gets that board's host states again (worked out off the bus, a
+        // board at a time, several changes in a row at once).
+        let (hx, mut hrx) = tokio::sync::mpsc::unbounded_channel::<String>();
+        self.core.bus.on(move |e| {
+            if (e.ty == "huddle.updated" || e.ty == "huddle.message")
+                && let Some(p) = e.body.get("profile").and_then(Value::as_str)
+            {
+                let _ = hx.send(p.to_string());
+            }
+        });
+        let (huddles, htell) = (self.huddles.clone(), tell.clone());
+        tokio::spawn(async move {
+            while let Some(first) = hrx.recv().await {
+                let mut slugs = vec![first];
+                while let Ok(s) = hrx.try_recv() {
+                    if !slugs.contains(&s) {
+                        slugs.push(s);
+                    }
+                }
+                let h = huddles.clone();
+                let line = tokio::task::spawn_blocking(move || {
+                    let mut by = serde_json::Map::new();
+                    for s in slugs {
+                        let states = h.host_states(&s);
+                        by.insert(s, Value::Object(states.iter().map(|(k, v)| (k.clone(), v.clone())).collect()));
+                    }
+                    satellite::runtime_line(&json!({ "hostHuddles": by }))
+                })
+                .await;
+                if let Ok(line) = line {
+                    let _ = htell.send(line);
+                }
+            }
+        });
         let views = s.views.clone();
         self.core.bus.on(move |e| {
             if let Some(line) = satellite::event_line(e, &*views) {
