@@ -7,3 +7,4 @@ pub mod slash;
 pub mod board;
 pub mod rewind;
 pub mod routes;
+pub mod quick;

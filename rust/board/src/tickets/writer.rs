@@ -328,7 +328,17 @@ impl Tickets {
     }
 
     /// `Board.createTicket`. `input` holds `createTicket`'s fields by Bun's names.
-    pub fn create(&self, slug: &str, mut input: Map<String, Value>) -> Result<Arc<Tk>, Refusal> {
+    pub fn create(&self, slug: &str, input: Map<String, Value>) -> Result<Arc<Tk>, Refusal> {
+        self.create_with(slug, input, true)
+    }
+
+    /// `store.createTicket`: written and sent, with no start of work after it (no dispatch, Planning interview or
+    /// plan pass); Branch and Fork fill the ticket in before anything may run on it.
+    pub fn create_quiet(&self, slug: &str, input: Map<String, Value>) -> Result<Arc<Tk>, Refusal> {
+        self.create_with(slug, input, false)
+    }
+
+    fn create_with(&self, slug: &str, mut input: Map<String, Value>, after: bool) -> Result<Arc<Tk>, Refusal> {
         if input.get("status").and_then(Value::as_str) == Some("in_progress") {
             input.insert("status".into(), "ready".into());
         }
@@ -381,7 +391,9 @@ impl Tickets {
         if let Some(p) = parent_id.as_deref().and_then(|p| self.get(slug, p)) {
             self.emit(slug, &p);
         }
-        self.hooks().after_create(slug, &t.id, &status, parent_id.is_some());
+        if after {
+            self.hooks().after_create(slug, &t.id, &status, parent_id.is_some());
+        }
         Ok(self.get(slug, &t.id).unwrap_or(t))
     }
 

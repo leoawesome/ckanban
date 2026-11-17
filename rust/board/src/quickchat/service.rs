@@ -127,13 +127,15 @@ pub struct QuickChats {
     opts: QuickChatOptions,
     rt: tokio::runtime::Handle,
     runs: Mutex<HashMap<String, Arc<ActiveChat>>>,
-    /// Chats Make ticket is turning into tickets right now (R2a/R7b: Make ticket isn't in Rust yet).
-    making: Mutex<HashSet<String>>,
+    /// Chats Make ticket is turning into tickets right now.
+    pub(crate) making: Mutex<HashSet<String>>,
     /// Chats with a rewind, undo or fork under way (R7b).
-    rewinding: Mutex<HashSet<String>>,
+    pub(crate) rewinding: Mutex<HashSet<String>>,
     shutting_down: AtomicBool,
     index: ChatIndex,
-    writes: Mutex<()>,
+    pub(crate) writes: Mutex<()>,
+    /// Make ticket: makes the ticket for a chat on the board (R7b; set by board mode).
+    pub(crate) make_ticket: Mutex<Option<crate::chat::quick::MakeTicket>>,
     gate: Mutex<RestartGate>,
     me: Weak<QuickChats>,
     draft_seq: AtomicU64,
@@ -182,6 +184,7 @@ impl QuickChats {
                 runs: Mutex::new(HashMap::new()),
                 making: Mutex::new(HashSet::new()),
                 rewinding: Mutex::new(HashSet::new()),
+                make_ticket: Mutex::new(None),
                 shutting_down: AtomicBool::new(false),
                 writes: Mutex::new(()),
                 gate: Mutex::new(RestartGate::default()),
@@ -231,7 +234,7 @@ impl QuickChats {
         self.dir.profile(slug).map(|p| p.record.0.clone())
     }
 
-    fn session_exists(&self, id: &str) -> bool {
+    pub(crate) fn session_exists(&self, id: &str) -> bool {
         match &self.opts.session_exists {
             Some(f) => f(id),
             None => files::find_session_file(&files::projects_dir(None), id).is_some(),
@@ -246,7 +249,7 @@ impl QuickChats {
         read_chat(&self.file(slug, id), id)
     }
 
-    fn get_or_404(&self, slug: &str, id: &str) -> Result<Chat, ChatError> {
+    pub(crate) fn get_or_404(&self, slug: &str, id: &str) -> Result<Chat, ChatError> {
         self.get(slug, id).map_or_else(|| fail(404, "chat not found"), Ok)
     }
 
@@ -297,7 +300,7 @@ impl QuickChats {
         self.runs.lock().values().map(|r| r.slug.clone()).collect()
     }
 
-    fn save(&self, slug: &str, c: Map<String, Value>) -> Chat {
+    pub(crate) fn save(&self, slug: &str, c: Map<String, Value>) -> Chat {
         let c = Arc::new(c);
         let file = self.file(slug, s(&c, "id").unwrap_or(""));
         let text = serde_json::to_string_pretty(&*c).unwrap_or_else(|_| "{}".into()) + "\n";
@@ -309,7 +312,7 @@ impl QuickChats {
     }
 
     /// Saves a change to a chat that still exists (a run ending after Delete must not bring it back).
-    fn patch(&self, slug: &str, id: &str, patch: Map<String, Value>) -> Option<Chat> {
+    pub(crate) fn patch(&self, slug: &str, id: &str, patch: Map<String, Value>) -> Option<Chat> {
         let next = {
             let _w = self.writes.lock();
             let mut c = (*self.get(slug, id)?).clone();
@@ -322,7 +325,7 @@ impl QuickChats {
         Some(next)
     }
 
-    fn emit(&self, slug: &str, c: &Map<String, Value>) {
+    pub(crate) fn emit(&self, slug: &str, c: &Map<String, Value>) {
         self.bus.emit_json(json!({ "type": "chat.updated", "profile": slug, "id": s(c, "id"), "chat": self.view(slug, c) }));
     }
 

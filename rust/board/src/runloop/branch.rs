@@ -123,7 +123,7 @@ impl RunLoop {
             if let Some(m) = mode.filter(|m| !m.is_null()) {
                 input.insert("mode".into(), m);
             }
-            me.tickets.create(&s, input)
+            me.tickets.create_quiet(&s, input)
         })
         .await
         .map_err(|e| RunError::other(e.to_string()))??;

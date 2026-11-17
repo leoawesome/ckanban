@@ -33,7 +33,7 @@ fn conflict_or(e: RewindError) -> RunError {
 }
 
 /// `forkTitle`: "<title> (fork)", then "(fork 2)"…; an earlier " (fork N)" dropped first.
-pub fn fork_title<'a>(title: &str, taken: impl IntoIterator<Item = &'a str>) -> String {
+pub fn fork_title<'a>(title: &str, taken: impl IntoIterator<Item = &'a str>, max: Option<usize>) -> String {
     static TAIL: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| regex::Regex::new(r"(?i)\s*\(fork(?: \d+)?\)\s*$").unwrap());
     let stripped = crate::runs::js::trim(&TAIL.replace(title, "")).to_string();
     let base = if stripped.is_empty() { crate::runs::js::trim(title).to_string() } else { stripped };
@@ -41,7 +41,15 @@ pub fn fork_title<'a>(title: &str, taken: impl IntoIterator<Item = &'a str>) -> 
     let mut n = 1;
     loop {
         let tail = if n == 1 { " (fork)".to_string() } else { format!(" (fork {n})") };
-        let t = format!("{base}{tail}");
+        let tl = crate::runs::js::len16(&tail);
+        let head = match max {
+            Some(max) if crate::runs::js::len16(&base) + tl > max => {
+                let keep = (max as i64 - tl as i64 - 1).max(1) as usize;
+                format!("{}…", crate::runs::js::head16(&base, keep).trim_end_matches(crate::runs::js::is_ws))
+            }
+            _ => base.clone(),
+        };
+        let t = format!("{head}{tail}");
         if !used.contains(&t.to_lowercase()) {
             return t;
         }
@@ -186,7 +194,7 @@ impl RunLoop {
         let src = self.get(slug, id).ok_or_else(|| RunError::other(format!("ticket {id} not found")))?;
         let _guard = self.begin_rewind(slug, id)?;
         let list = self.tickets.list(slug);
-        let title = fork_title(&src.title, list.tickets.iter().map(|t| t.title.as_str()));
+        let title = fork_title(&src.title, list.tickets.iter().map(|t| t.title.as_str()), None);
         block(self.copy_ticket_before(slug, id, &title, Some(uuid)))
     }
 

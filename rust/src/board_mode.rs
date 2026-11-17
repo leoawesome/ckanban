@@ -279,6 +279,8 @@ pub async fn prepare(root: &Path, public_port: u16, remote_port: u16, internal_p
     // Quick chats hold their messages while a restart waits, and the restart waits for their replies.
     let (r1, r2) = (runs.clone(), runs.clone());
     chats.set_gate(ckanban_board::quickchat::service::RestartGate { pending: Arc::new(move || r1.restart_pending()), work_changed: Arc::new(move || r2.restart_work_changed()) });
+    // R7b: Make ticket from a quick chat goes through the ticket writes and the run loop's link-session.
+    chats.set_make_ticket(ckanban_board::chat::quick::make_ticket_hook(runs.clone(), writes.clone()));
     let c = chats.clone();
     runs.on_restart_busy(Arc::new(move || c.restart_busy()));
     let h = core.services.huddles.clone();
