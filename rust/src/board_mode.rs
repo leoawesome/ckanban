@@ -127,6 +127,11 @@ pub struct BoardMode {
     updates: UpdateChecker,
     /// `learnedVersions` for `claude/defaults` (`<data>/model-versions.json`; R7a's runs will share one).
     versions: ModelVersions,
+    /// P2: the outside services (MCP servers, passes and sign-ins, phone access, agents, bug reports), once the server
+    /// knows its Bun (`connect_outside`); until then their requests go to the satellite.
+    outside: OnceLock<Arc<crate::outside::routes::Outside>>,
+    outside_sat: Arc<crate::outside::edge::OutsideSatellite>,
+    publish_run: Arc<OnceLock<ckanban_board::git::publish::PublishRun>>,
     /// Lines to the satellite's stdin, once it runs (`connect_satellite`).
     tell: OnceLock<tokio::sync::mpsc::UnboundedSender<String>>,
     _lock: BoardLock,
@@ -159,7 +164,9 @@ pub async fn prepare(root: &Path, public_port: u16, remote_port: u16, internal_p
     services.runs = late_runs.clone();
     let browsers = Browsers::new(root, Arc::new(FileLookup::new(root)), services.sessions.clone());
     services.devices = browsers.clone();
-    services.satellite = Arc::new(SatelliteClient::new(internal_port, public_port, secret));
+    // P2: pass calls and publishing are the board's own; the helper's calls still go to the satellite.
+    let outside_sat = crate::outside::edge::OutsideSatellite::new(Arc::new(SatelliteClient::new(internal_port, public_port, secret)));
+    services.satellite = outside_sat.clone();
     // R11a: huddle rooms (their live state goes into every ticket view).
     let team = Arc::new(Team::new(root));
     let huddles = Huddles::new(root, team.clone());
@@ -203,7 +210,18 @@ pub async fn prepare(root: &Path, public_port: u16, remote_port: u16, internal_p
         mask: mask.clone(),
         user_only: Arc::new(|h, _peer| Box::pin(async move { crate::guard::headers_allow(&h) })),
     };
-    let git = GitRoutes::new(root, public_port, mask, core.services.runs.clone());
+    // P2: the Share menu's Publish; the helper command is known once the server has its Bun (`connect_outside`).
+    let publish_run: Arc<OnceLock<ckanban_board::git::publish::PublishRun>> = Arc::new(OnceLock::new());
+    let pr = publish_run.clone();
+    let publisher = ckanban_board::git::publish::Publisher::new(
+        core.tickets.clone(),
+        Arc::new(move |ask: Value| match pr.get() {
+            Some(run) => run(ask),
+            None => Box::pin(async { json!({ "ok": false, "error": "the board is still starting; try again in a moment" }) }),
+        }),
+    );
+    let _ = outside_sat.publisher.set(publisher.clone());
+    let git = GitRoutes::new(root, public_port, mask, core.services.runs.clone()).with_publisher(publisher);
     git::start_jobs(&core);
     // R2a: ticket writes, with comments masked as they are saved and the steps already in Rust plugged in.
     core.tickets.set_mask(text_masker(root));
@@ -410,6 +428,9 @@ pub async fn prepare(root: &Path, public_port: u16, remote_port: u16, internal_p
         updates: UpdateChecker::new(),
         versions: ModelVersions::new(Some(root.join("model-versions.json"))),
         tell: OnceLock::new(),
+        outside: OnceLock::new(),
+        outside_sat,
+        publish_run,
         _lock: lock,
     }))
 }
@@ -1138,6 +1159,11 @@ impl BoardMode {
         {
             return self.own(own, req.map(|b| b.boxed()), via).await;
         }
+        // 3b. The outside services (P2), on both listeners: the phone is the user after its gate, as in Bun.
+        let req = match self.answer_outside(req, peer, via).await {
+            Ok(res) => return res,
+            Err(r) => r,
+        };
         // 4. The other tasks' routes. They check this Mac's Host and Origin themselves; a phone request that passed
         // the gate above is shown to them with this Mac's Host and Origin, and given back as it came. Their
         // user-only checks look at the caller, which for the phone is `tailscale serve`: they refuse the phone
@@ -1190,9 +1216,158 @@ impl BoardMode {
         }
     }
 
+    /// The outside services (P2), once the server knows how the Bun child runs (`bun`, `repo`): the helper command for
+    /// publishing, `ckanban mcp`'s command line for the agents, and `notify` (Bun hears of the passes file changing).
+    pub fn connect_outside(self: &Arc<Self>, bun: &Path, repo: &Path, notify: passes::Notify) {
+        use crate::outside::{self, routes::Outside};
+        let cli = repo.join("src").join("cli.ts");
+        let _ = self.publish_run.set(outside::edge::publish_run(bun.to_path_buf(), cli));
+        let bus = self.core.bus.clone();
+        let emit: outside::Emit = Arc::new(move |v: Value| bus.emit_json(v));
+        let home = ckanban_core::home::home_dir();
+        let claude_dir = std::env::var_os("CLAUDE_CONFIG_DIR").map(PathBuf::from).unwrap_or_else(|| home.clone());
+        let claude_config = claude_dir.join(".claude.json");
+        let claude_bin = std::env::var("CKANBAN_CLAUDE_BIN").unwrap_or_else(|_| "claude".into());
+        let mcp = outside::mcp::Mcp::new(
+            outside::mcp::McpOptions::new(claude_bin.clone(), home.clone(), claude_config.clone(), self.root.clone()),
+            emit.clone(),
+        );
+        let signin = outside::signin::SignIn::new(
+            self.root.clone(),
+            format!("http://localhost:{}/api/passes/oauth/callback", self.public_port),
+            notify,
+            home.clone(),
+            claude_config.clone(),
+        );
+        let phone = outside::phone::Phone::new(self.root.clone(), self.remote_port);
+        let agents = crate::agents::Agents::new(bun, repo).map(|a| outside::agents_admin::AgentsAdmin::new(Arc::new(a)));
+        let bun_version = std::process::Command::new(bun).arg("--version").output().ok().filter(|o| o.status.success()).map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
+        let bugs = outside::bugreport::BugReports::new(self.root.clone(), bun_version);
+        let _ = self.outside_sat.signin.set(signin.clone());
+        let o = Arc::new(Outside { mcp: mcp.clone(), signin, phone: phone.clone(), agents, bugs });
+        if self.outside.set(o).is_ok() {
+            mcp.start();
+            phone.watch();
+            // The satellite's helper offers a check-in only when some MCP server works (`checkinOffer`).
+            self.mirror_mcp(mcp);
+        }
+    }
+
+    /// Tells the satellite whether any MCP server is connected, at start and when that changes.
+    fn mirror_mcp(&self, mcp: Arc<crate::outside::mcp::Mcp>) {
+        let Some(tell) = self.tell.get().cloned() else { return };
+        let mut rx = self.core.bus.subscribe();
+        tokio::spawn(async move {
+            let mut last: Option<bool> = None;
+            loop {
+                let now = mcp.any_connected();
+                if last != Some(now) {
+                    last = Some(now);
+                    if tell.send(satellite::runtime_line(&json!({ "mcpConnected": now }))).is_err() {
+                        return;
+                    }
+                }
+                loop {
+                    match rx.recv().await {
+                        Ok(e) if e.ty == "mcp.updated" => break,
+                        Ok(_) => {}
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => break,
+                        Err(_) => return,
+                    }
+                }
+            }
+        });
+    }
+
+    /// The outside services' routes (P2, `crate::outside`): after the request gate, the Telegram front desk's gate and
+    /// the JSON-only rule, as Bun's `api()` runs them before its routes. Err gives the request back.
+    #[allow(clippy::result_large_err)]
+    async fn answer_outside(&self, req: Request<Incoming>, peer: SocketAddr, via: Listener) -> Result<Response<Body>, Request<Incoming>> {
+        use crate::outside::{Answer, Call, routes};
+        let Some(outside) = self.outside.get() else { return Err(req) };
+        if wants_upgrade(req.headers()) {
+            return Err(req);
+        }
+        let Some(parts) = req.uri().path().strip_prefix("/api/").and_then(api_parts) else { return Err(req) };
+        let method = req.method().as_str().to_string();
+        if !routes::claims(&method, &parts, outside.agents.is_some()) {
+            return Err(req);
+        }
+        let (head, body) = req.into_parts();
+        let h = &head.headers;
+        let bytes = if head.method != Method::GET && head.method != Method::HEAD {
+            match Limited::new(body, MAX_BODY).collect().await {
+                Ok(b) => b.to_bytes(),
+                Err(e) if e.is::<http_body_util::LengthLimitError>() => return Ok(self.error(StatusCode::PAYLOAD_TOO_LARGE, "request body too large")),
+                Err(_) => return Ok(plain(StatusCode::BAD_REQUEST, "bad request")),
+            }
+        } else {
+            Bytes::new()
+        };
+        if let Some(desk) = request::header_text(h, FRONT_DESK_HEADER) {
+            if request::has(h, RUN_HEADER) || request::has(h, HUDDLE_HEADER) {
+                return Ok(self.error(StatusCode::FORBIDDEN, "a board run can't also be the front desk"));
+            }
+            let b = if bytes.is_empty() { Value::Null } else { js::parse(&String::from_utf8_lossy(&bytes)).unwrap_or(Value::Null) };
+            let ask = json!({ "desk": desk, "method": method, "path": head.uri.path(), "body": b });
+            match self.core.services.satellite.frontdesk_gate(ask).await {
+                Ok(Some(held)) => {
+                    let status = held.get("status").and_then(Value::as_u64).and_then(|s| StatusCode::from_u16(s as u16).ok()).unwrap_or(StatusCode::OK);
+                    return Ok(self.json_at(status, held.get("body").unwrap_or(&Value::Null)));
+                }
+                Ok(None) => {}
+                Err(e) => return Ok(self.error(StatusCode::INTERNAL_SERVER_ERROR, &e)),
+            }
+        }
+        let ctype = request::header_text(h, CONTENT_TYPE.as_str());
+        if request::needs_json(&method) && !request::json_type(ctype.as_deref()) {
+            return Ok(self.error(StatusCode::UNSUPPORTED_MEDIA_TYPE, "content-type must be application/json"));
+        }
+        // `userOnly`: the phone that passed its gate is the user after the header checks; on this Mac, the user's own
+        // browser. Asked only where a route may need it (the check runs lsof).
+        let is_user = if routes::may_ask_user(&method, &parts) {
+            match via {
+                Listener::Remote => crate::guard::headers_allow(h),
+                Listener::Local => crate::guard::user_only(h, peer.port()).await,
+            }
+        } else {
+            false
+        };
+        let user = move |what: &str| -> Result<(), Answer> { if is_user { Ok(()) } else { Err(Answer::error(403, crate::guard::refusal(what))) } };
+        let query = head.uri.query().unwrap_or("").to_string();
+        let call = Call {
+            method: &method,
+            parts: &parts,
+            query: &query,
+            body: &bytes,
+            local: via == Listener::Local,
+            from_run: request::header_text(h, RUN_HEADER).is_some_and(|v| !v.is_empty()),
+            user: &user,
+        };
+        Ok(match outside.answer(&call).await {
+            Some(Answer::Json(status, v)) => self.json_at(StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR), &v),
+            Some(Answer::Html(status, page)) => {
+                let mut r = Response::new(Full::new(Bytes::from(page)).map_err(|never| match never {}).boxed());
+                *r.status_mut() = StatusCode::from_u16(status).unwrap_or(StatusCode::OK);
+                r.headers_mut().insert(CONTENT_TYPE, HeaderValue::from_static("text/html; charset=utf-8"));
+                r.headers_mut().insert(hyper::header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+                r
+            }
+            Some(Answer::Empty(status)) => {
+                let mut r = Response::new(Full::new(Bytes::new()).map_err(|never| match never {}).boxed());
+                *r.status_mut() = StatusCode::from_u16(status).unwrap_or(StatusCode::NO_CONTENT);
+                r
+            }
+            None => self.error(StatusCode::NOT_FOUND, "not found"),
+        })
+    }
+
     /// Phone access saw a visit (`noteVisit`): Bun keeps the time for `GET /api/remote`; requests it answers note
     /// it themselves.
     fn note_visit(&self) {
+        if let Some(o) = self.outside.get() {
+            o.phone.note_visit(iso(now_ms()));
+        }
         if let Some(t) = self.tell.get() {
             let _ = t.send(format!("remote-visit {}\n", iso(now_ms())));
         }

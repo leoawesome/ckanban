@@ -12,6 +12,7 @@
 
 pub mod agents_admin;
 pub mod bugreport;
+pub mod edge;
 pub mod mcp;
 pub mod phone;
 pub mod routes;
