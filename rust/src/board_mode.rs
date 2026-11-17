@@ -349,6 +349,8 @@ pub async fn prepare(root: &Path, public_port: u16, remote_port: u16, internal_p
     let h = huddles.clone();
     let _ = tokio::task::spawn_blocking(move || h.op(|h| h.recover())).await;
     let awake = start_run_timers(&core, &runs, ops.clone(), root);
+    // The worktree sweep, after recover() like Bun's (which starts it once recover has begun).
+    git::sweep_after_recover(landing.clone());
     // After recover(): a missed run's ticket must not be mistaken for an interrupted one. Only this owner of the
     // board fires schedules, jobs and automations (the satellite starts none of its timers).
     let stop = schedules.start();
@@ -1381,7 +1383,17 @@ impl BoardMode {
             eprintln!("ckanban-rs: the satellite's event stream: {e}");
         }
         let s = &self.core.services;
-        let snapshot = satellite::runtime_snapshot(&*s.runs, &*s.huddles, &*s.sessions, &boards(&self.root), &[]);
+        // With the summaries of every session the notifier's start-up stock-take reads (it waits for this snapshot),
+        // worked out off the async threads: the index may still be loading and summaries may need a transcript read.
+        let (runs, huddles, sessions, index, root) = (s.runs.clone(), s.huddles.clone(), s.sessions.clone(), self.core.index.clone(), self.root.clone());
+        let snapshot = tokio::task::spawn_blocking(move || {
+            let slugs = boards(&root);
+            let lists: Vec<_> = slugs.iter().map(|slug| index.list(slug)).collect();
+            let ids = satellite::waiting_sessions(lists.iter().flat_map(|l| l.tickets.iter().map(|t| (t.status.as_str(), t.s("sessionId")))));
+            satellite::runtime_snapshot(&*runs, &*huddles, &*sessions, &slugs, &ids)
+        })
+        .await
+        .unwrap_or_else(|_| json!({ "running": [], "hostHuddles": {}, "sessions": {} }));
         let _ = tell.send(satellite::runtime_line(&snapshot));
         let _ = self.tell.set(tell.clone());
         // The pass store for key cards: Bun hears of each change to the passes file on its stdin.

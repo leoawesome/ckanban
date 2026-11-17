@@ -536,6 +536,11 @@ impl Git {
                 }
                 let id = dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
                 let t = self.ops.ticket(&slug, &id);
+                // A ticket file the board couldn't load (unreadable, half written) still names a ticket: its copy is
+                // never treated as left behind (Bun would sweep it; keeping it costs only disk).
+                if t.is_none() && ckanban_core::DataDir::new(self.root.clone()).ticket_dir(&slug, &id).join("ticket.md").exists() {
+                    continue;
+                }
                 let busy = self.ops.busy(&slug, &id) || self.busy(&slug, &id);
                 if let Some(t) = &t {
                     if s(t, "status") != Some("done") || busy {
@@ -1051,6 +1056,12 @@ mod tests {
         // A copy whose ticket is gone.
         let orphan = repo::worktree_dir(&repo, "p", "gone");
         repo::add_worktree(&repo, &orphan, "ck/gone", "main").await.unwrap();
+        // A copy whose ticket file is there but wasn't loaded (unreadable): never treated as left behind.
+        let unread = repo::worktree_dir(&repo, "p", "unread");
+        repo::add_worktree(&repo, &unread, "ck/unread", "main").await.unwrap();
+        let tdir = ckanban_core::DataDir::new(data.clone()).ticket_dir("p", "unread");
+        fs::create_dir_all(&tdir).unwrap();
+        fs::write(tdir.join("ticket.md"), "not front matter").unwrap();
         let mut got: Vec<(String, String)> = g
             .sweep_worktrees()
             .await

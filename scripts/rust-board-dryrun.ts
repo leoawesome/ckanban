@@ -7,6 +7,7 @@
  *   bun scripts/rust-board-dryrun.ts run rust          ckanban-rs in board mode (background deletes report-only)
  *   bun scripts/rust-board-dryrun.ts run rust-delete   the same with CKANBAN_RUST_DELETE=1
  *   bun scripts/rust-board-dryrun.ts compare bun rust  the differences, grouped by route and file
+ *   bun scripts/rust-board-dryrun.ts run rust --serve   a fresh copy with the server left running, to look at by hand
  *   bun scripts/rust-board-dryrun.ts clean             removes <root> (the copy holds private data)
  *
  * Options: --root <dir> (default /private/tmp/ckanban-f1), --data <dir> (default ~/.claude-kanban), --settle <s>
@@ -19,10 +20,10 @@
  * push endpoints, the webhook and Telegram point at a closed local port, saved keys are dummies, board browsers'
  * running Chromes are dropped and Chrome, claude (the fake), gh, tailscale, open, osascript and caffeinate are stubs.
  * Automation check scripts are replaced by one that finds nothing. Each run starts from a fresh APFS clone of the
- * prepared copy (`cp -c`), so every server sees the same files.
+ * prepared copy (`cp -cp`, file times kept), so every server sees the same files.
  */
 import { createHash } from "node:crypto";
-import { chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 
@@ -90,7 +91,7 @@ function prepare(): void {
   mkdirSync(DATA);
   for (const n of readdirSync(REAL_DATA)) {
     if (n === "browsers") continue;
-    sh(["cp", "-cR", join(REAL_DATA, n), join(DATA, n)]);
+    sh(["cp", "-cpR", join(REAL_DATA, n), join(DATA, n)]);
   }
   // Board browsers' Chrome profiles: the folders only (what the browser jobs look at), not their 1.4 GB.
   if (existsSync(join(REAL_DATA, "browsers"))) {
@@ -108,7 +109,10 @@ function prepare(): void {
     if (lstatSync(f).isSymbolicLink()) continue;
     const buf = readFileSync(f);
     if (buf.indexOf(from) < 0) continue;
+    const st = lstatSync(f);
     writeFileSync(f, buf.toString("utf8").replaceAll(REAL_HOME + "/", HOME + "/"));
+    // Same times as the real file: caches keyed on size and mtime (session summaries, spend) see what they would.
+    utimesSync(f, st.atime, st.mtime);
     rewritten++;
   }
   console.log(`  ${rewritten} files rewritten`);
@@ -149,7 +153,7 @@ function prepare(): void {
   const fromName = claudeDirName(REAL_HOME + "/");
   const toName = claudeDirName(HOME + "/");
   for (const n of existsSync(realProjects) ? readdirSync(realProjects) : []) {
-    sh(["cp", "-cR", join(realProjects, n), join(CLAUDE, "projects", n.startsWith(fromName) ? toName + n.slice(fromName.length) : n)]);
+    sh(["cp", "-cpR", join(realProjects, n), join(CLAUDE, "projects", n.startsWith(fromName) ? toName + n.slice(fromName.length) : n)]);
   }
 
   console.log("the boards' folders");
@@ -159,13 +163,21 @@ function prepare(): void {
     const copy: string = json(pf).path;
     if (!copy?.startsWith(HOME + "/") || existsSync(copy)) continue;
     const real = REAL_HOME + copy.slice(HOME.length);
+    // macOS asks the user before a program reads Desktop, Documents or Downloads (and the read hangs until they
+    // answer): boards there get an empty folder instead.
+    if (/^(Desktop|Documents|Downloads)(\/|$)/.test(relative(REAL_HOME, real))) {
+      mkdirSync(copy, { recursive: true });
+      writeFileSync(join(copy, "README.md"), "Stand-in for a folder the dry run doesn't read.\n");
+      console.log(`  ${slug}: in a protected folder; an empty stand-in`);
+      continue;
+    }
     if (!existsSync(real)) {
       console.log(`  ${slug}: ${real} is missing; left missing`);
       continue;
     }
     mkdirSync(dirname(copy), { recursive: true });
     if (!existsSync(join(real, ".git"))) {
-      sh(["cp", "-cR", real, copy]);
+      sh(["cp", "-cpR", real, copy]);
       console.log(`  ${slug}: plain folder copied`);
       continue;
     }
@@ -209,7 +221,7 @@ function prepare(): void {
   }
 
   console.log("saving the template (APFS clone)");
-  sh(["cp", "-cR", LIVE, MASTER]);
+  sh(["cp", "-cpR", LIVE, MASTER]);
   console.log(`ready: ${MASTER}`);
 }
 
@@ -245,7 +257,7 @@ async function run(name: string): Promise<void> {
   rmSync(out, { recursive: true, force: true });
   mkdirSync(out, { recursive: true });
   rmSync(LIVE, { recursive: true, force: true });
-  sh(["cp", "-cR", MASTER, LIVE]);
+  sh(["cp", "-cpR", MASTER, LIVE]);
   const before = snapshot(LIVE);
 
   const port = await freePort();
@@ -278,6 +290,15 @@ async function run(name: string): Promise<void> {
     await Bun.sleep(50);
   }
   firstMs = performance.now() - t0;
+  if (args.includes("--serve")) {
+    // Left running on the fresh copy to look at by hand (stop it with Ctrl-C or a kill).
+    writeFileSync(join(out, "url.txt"), url + "\n");
+    console.log(`${name}: serving the copy on ${url} (logs in ${out})`);
+    process.on("SIGTERM", () => proc.kill("SIGTERM"));
+    process.on("SIGINT", () => proc.kill("SIGTERM"));
+    await proc.exited;
+    return;
+  }
   console.log(`${name}: answering after ${Math.round(firstMs)} ms; running ${SETTLE_S} s before reading the pages`);
   // Longest wait for a cheap answer while the start-up jobs run.
   let worst = 0;
@@ -370,9 +391,16 @@ async function run(name: string): Promise<void> {
 
 // ---------------------------------------------------------------------------------------------------------------- compare
 
+/** Times, durations, the ids of comments made during the run and random suggestions masked; numbers to 9 digits. */
 function masked(text: string): string {
   return text
+    // Transcripts keep their real paths (only the data folder's files are rewritten): a summary read again from a
+    // transcript names the real home folder where one from the copied cache names the copy's.
+    .replaceAll(REAL_HOME + "/", HOME + "/")
     .replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z/g, "<time>")
+    .replace(/(?<=[:,[]|: )-?\d+\.\d{10,}/g, (m) => String(Number(Number(m).toPrecision(9))))
+    .replace(/"id": ?"[0-9a-z]{8}"/g, '"id":"<id>"')
+    .replace(/"ntfyTopicSuggestion": ?"[^"]*"/g, '"ntfyTopicSuggestion":""')
     .replace(/"(durationMs|ms|pid|port|elapsedMs|ageMs|uptimeMs|uptime)": ?\d+(\.\d+)?/g, '"$1":0');
 }
 

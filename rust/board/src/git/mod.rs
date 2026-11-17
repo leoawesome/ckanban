@@ -23,15 +23,9 @@ use serde_json::{Value, json};
 use crate::bus::BusEvent;
 use crate::core::Core;
 
-/// Board mode's start jobs of R6, in the background like Bun's `startup: sweepWorktrees` and
-/// `startup: detectMissing`: the worktree sweep (report-only, `dryrun.rs`) and setup detection for boards that never
-/// had it (saves `profile.json`, sends `profile.updated`).
+/// Board mode's start job of R6, in the background like Bun's `startup: detectMissing`: setup detection for boards
+/// that never had it (saves `profile.json`, sends `profile.updated`). The worktree sweep is `sweep_after_recover`.
 pub fn start_jobs(core: &Arc<Core>) {
-    let (root, runs) = (core.root.clone(), core.services.runs.clone());
-    tokio::spawn(async move {
-        let git = landing::Git::new(&root, fileops::FileOps::new(&root, runs));
-        git.sweep_worktrees().await;
-    });
     let (root, bus) = (core.root.clone(), core.bus.clone());
     tokio::spawn(async move {
         let data = ckanban_core::home::DataDir::new(root);
@@ -50,5 +44,14 @@ pub fn start_jobs(core: &Arc<Core>) {
             },
         )
         .await;
+    });
+}
+
+/// Bun's `startup: sweepWorktrees`, on the board's own `Git` (its ticket writes clear a swept ticket's `worktree`,
+/// and a copy being set up right now is seen): started once the board index is loaded and `recover()` ran, so every
+/// ticket is known when its copy is looked at. Report-only until deletes are on (`dryrun.rs`).
+pub fn sweep_after_recover(git: Arc<landing::Git>) {
+    tokio::spawn(async move {
+        git.sweep_worktrees().await;
     });
 }

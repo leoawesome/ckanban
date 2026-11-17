@@ -40,6 +40,20 @@ pub fn event_line(e: &BusEvent, views: &dyn TicketViews) -> Option<String> {
     Some(format!("event {}\n", serde_json::to_string(&body).ok()?))
 }
 
+/// The sessions whose summaries the satellite's notifier needs at start-up: those of the tickets that can wait on the
+/// user (every column but Done and Backlog, `ownAttention`). Without them its stock-take sees no reply, question or
+/// proposal on any ticket and closes those waits. Each session once, in ticket order.
+pub fn waiting_sessions<'a>(tickets: impl IntoIterator<Item = (&'a str, Option<&'a str>)>) -> Vec<String> {
+    let mut seen = std::collections::HashSet::new();
+    tickets
+        .into_iter()
+        .filter(|(status, _)| *status != "done" && *status != "backlog")
+        .filter_map(|(_, sid)| sid.filter(|s| !s.is_empty()))
+        .filter(|sid| seen.insert(sid.to_string()))
+        .map(str::to_string)
+        .collect()
+}
+
 /// The start snapshot: what runs, each board's huddles by host ticket, and the summaries of `sessions`.
 pub fn runtime_snapshot(
     runs: &dyn RunControl,
@@ -169,5 +183,8 @@ mod tests {
     fn the_stand_in_snapshot_is_empty() {
         let s = runtime_snapshot(&StandIn, &StandIn, &StandIn, &["b".into()], &["s1".into()]);
         assert_eq!(runtime_line(&s), "runtime {\"running\":[],\"hostHuddles\":{},\"sessions\":{}}\n");
+        // The sessions sent at start: tickets that can wait on the user, each session once.
+        let t = [("review", Some("a")), ("done", Some("b")), ("backlog", Some("c")), ("planning", Some("a")), ("in_progress", Some("")), ("ready", None), ("in_progress", Some("d"))];
+        assert_eq!(waiting_sessions(t), ["a", "d"]);
     }
 }
