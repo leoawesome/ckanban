@@ -92,6 +92,7 @@ pub fn wanted(method: &str, path: &str) -> bool {
         ("GET" | "POST", ["profiles", _, "tickets", _, "comments"]) => true,
         ("POST" | "DELETE", ["profiles", _, "tickets", _, "snooze"]) => true,
         ("POST", ["profiles", _, "tickets", _, "key-cards", _]) => true,
+        (m, ["profiles", _, "tickets", _, rest @ ..]) if crate::families::routes::wanted(m, rest) => true,
         ("PUT", ["profiles", _, "tickets", _, "automation-cards" | "squad-cards" | "teammate-cards" | "closed-forms" | "schedule-delete-cards" | "helper-rule-cards", _]) => {
             true
         }
@@ -106,6 +107,8 @@ pub struct Writes {
     pub save_keys: SaveKeys,
     /// Key boxes being saved right now ("<board>/<ticket>/<box>").
     in_flight: parking_lot::Mutex<std::collections::HashSet<String>>,
+    /// Families, plans and the feature status (R2b), once board mode has made them.
+    families: std::sync::OnceLock<Arc<crate::families::Families>>,
 }
 
 /// `body(req)`: the JSON body; 400 when it isn't JSON.
@@ -114,7 +117,7 @@ fn body(req: &Req) -> Result<Value, Refusal> {
 }
 
 /// `(await body(req)) ?? {}` as an object (anything else reads as no fields, like property reads on it).
-fn body_obj(req: &Req) -> Result<Map<String, Value>, Refusal> {
+pub(crate) fn body_obj(req: &Req) -> Result<Map<String, Value>, Refusal> {
     Ok(match body(req)? {
         Value::Object(m) => m,
         _ => Map::new(),
@@ -123,7 +126,12 @@ fn body_obj(req: &Req) -> Result<Map<String, Value>, Refusal> {
 
 impl Writes {
     pub fn new(tickets: Arc<Tickets>, reads: Arc<Reads>, sessions: Arc<dyn SessionInfo>, save_keys: SaveKeys) -> Writes {
-        Writes { tickets, reads, sessions, save_keys, in_flight: Default::default() }
+        Writes { tickets, reads, sessions, save_keys, in_flight: Default::default(), families: Default::default() }
+    }
+
+    /// R2b's families: the family routes answer from them, and a run's ticket is placed in its feature.
+    pub fn set_families(&self, f: Arc<crate::families::Families>) {
+        let _ = self.families.set(f);
     }
 
     fn hooks(&self) -> Arc<dyn BoardHooks> {
@@ -191,6 +199,12 @@ impl Writes {
                 if self.tickets.get(slug, id).is_none() {
                     return Some(err((404, format!("ticket {id} not found"))));
                 }
+                if crate::families::routes::wanted(m, &p[4..]) {
+                    return Some(match self.families.get() {
+                        Some(f) => crate::families::routes::answer(f, req, slug, id, &p[4..]).unwrap_or_else(err),
+                        None => err((404, "not found".into())),
+                    });
+                }
                 let r = match (m, p.get(4).copied()) {
                     ("PATCH", None) => self.patch(req, slug, id),
                     ("DELETE", None) => self.delete(req, slug, id),
@@ -256,13 +270,68 @@ impl Writes {
             (Some(po), Some((rs, rid))) if rs == slug && rid == po => Some("chat"),
             _ => None,
         };
-        let placed: Vec<String> = Vec::new();
-        if part_of.is_some() && from_run.is_some() && !want_main {
-            // Where a run's ticket goes in a feature (its own feature, an open feature's top or group, depth) is
-            // R2b's (`featureRoot`, `isFeature`, `fitParent`): until then a run's partOf is refused by the family hook.
-            let _ = (&mut part_of, &mut part_of_via);
+        let own_run = match &from_run {
+            Some((rs, rid)) if rs == slug && !rid.is_empty() && !req.huddle => self.tickets.get(slug, rid),
+            _ => None,
+        };
+        // Where a run's ticket went instead of the partOf it asked for, and why: told to the run in the reply.
+        let mut placed: Vec<String> = Vec::new();
+        if let (Some(asked), Some(_), false) = (part_of.clone(), &from_run, want_main) {
+            use crate::families::rules::{MAX_LEVEL, fit_parent, groups_of, is_feature};
+            use crate::index::family::feature_root;
+            let all = self.tickets.list(slug);
+            let top = feature_root(&all, &asked);
+            // From a run, partOf is any ticket of the run's own feature, or another open feature's top or group.
+            let own_family = own_run.as_ref().is_some_and(|o| top.is_some() && feature_root(&all, &o.id) == top);
+            let feature = top.is_some_and(|t| is_feature(&all, all.at(t)) && (all.at(t).id == asked || groups_of(&all, &all.at(t).id).into_iter().any(|g| all.at(g).id == asked)));
+            if part_of_via.is_none() && !own_family && !feature {
+                (part_of, part_of_via) = match &own_run {
+                    Some(o) => (Some(o.id.clone()), Some("chat")),
+                    None => (None, None),
+                };
+                let to = own_run.as_ref().map(|o| format!("under this run's own ticket {}", o.id)).unwrap_or_else(|| "to the top level".into());
+                placed.push(format!("partOf {asked} isn't in this run's own feature or an open feature's top ticket or group, so the ticket went {to} instead."));
+            }
+            if let Some(po) = part_of.clone() {
+                let fit = fit_parent(&all, &po);
+                if fit != po {
+                    let title = all.get(&fit).map(|t| t.title.clone()).unwrap_or_default();
+                    placed.push(format!("Under {po} it would be more than {MAX_LEVEL} levels deep, so it went under {fit} (\"{title}\") instead."));
+                    part_of_via = if own_run.as_ref().is_some_and(|o| o.id == fit) { Some("chat") } else { None };
+                    part_of = Some(fit);
+                }
+            }
         }
-        let planner = if want_main { None } else { rights.planner.clone() };
+        // A ticket a run makes inside its own main ticket's family is a tool ticket of the nearest ticket above it that
+        // runs steps (a group or round, else the main ticket).
+        let mut step_of: Option<Arc<Tk>> = None;
+        if let (false, Some(po), Some(o)) = (want_main, &part_of, &own_run)
+            && rights.planner.as_ref().is_none_or(|p| is_manager(p))
+        {
+            use crate::families::rules::{MAX_LEVEL, level_of};
+            let all = self.tickets.list(slug);
+            if let Some(at) = self.tickets.get(slug, po) {
+                let main = self.tickets.main_of(slug, &at);
+                if let Some(main) = main.filter(|m| self.tickets.main_of(slug, o).is_some_and(|om| om.id == m.id)) {
+                    let mut pick = main.clone();
+                    let mut cur = Some(at.clone());
+                    let mut n = 0;
+                    while let Some(c) = cur.filter(|c| c.id != main.id && n < 50) {
+                        if is_manager(&c) && level_of(&all, &c.id) < MAX_LEVEL {
+                            pick = c.clone();
+                            break;
+                        }
+                        cur = c.parent_link().and_then(|(p, _)| all.get(p).cloned());
+                        n += 1;
+                    }
+                    if pick.id != o.id {
+                        placed.push(format!("It is a tool ticket of {} (\"{}\"): the board starts it on its own and its result goes there.", pick.id, pick.title));
+                    }
+                    step_of = Some(pick);
+                }
+            }
+        }
+        let planner = if want_main { None } else { step_of.clone().or_else(|| rights.planner.clone()) };
         let runner = rights.runner.clone().or_else(|| if want_main { rights.planner.clone() } else { None });
         let mut status = b.get("status").and_then(Value::as_str).filter(|s| STATUSES.contains(s)).unwrap_or("backlog").to_string();
         let mut mode = if b.get("mode").and_then(Value::as_str) == Some("auto") { "auto" } else { "interview" }.to_string();

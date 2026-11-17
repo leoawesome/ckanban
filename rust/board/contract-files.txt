@@ -14,7 +14,6 @@ callers.test.ts | event stream|internal port|terminal's WebSocket
 # answers as Bun on a board written as files, and shadow mode. Tests of the C1 files that create no ticket; the rest
 # need ticket writes (R2a).
 board-reads.test.ts
-board-families.test.ts | create errors
 
 # R5: a ticket's conversation, tool, agent and workflow details, chat search and read, the board folder's sessions and
 # session.updated, over transcripts written before the start. The run-based conversation tests (chat-session.test.ts,
@@ -60,6 +59,14 @@ tickets.test.ts | ^(?!.*a message starts a run)
 board-items.test.ts | ^(?!.*GET /api/inbox)
 board-cards.test.ts | ^(?!.*follow-up: set)
 passes.test.ts | ^(?!.*(ask_keys box|saved value is masked|check scripts|bug reports))
+
+# R2b: families, plans and the feature status in Rust: partOf, sub-features, groups, gather, own work, showOnBoard,
+# the feature status (status.json, status.md, notes), the family routes, and the rules of merge-into-main and land
+# (R6's landing behind them); the same answers and file bytes as Bun on one script (board-family-writes). The plans
+# part of board-families.test.ts (a main ticket's run makes tool tickets, which then run) and the C3 merge and land
+# tests in runs-git.test.ts need runs (R7a).
+board-family-writes.test.ts
+board-families.test.ts | feature status|partOf, sub-features, groups and gather
 
 # R12: what the board learned (view, seen, save, drop, keep, undo, redo), Find links, a ticket's Usage tab and team
 # usage, on files written before the start (board-extras.test.ts), and the learned test of huddle-team.test.ts

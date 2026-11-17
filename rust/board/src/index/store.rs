@@ -197,7 +197,7 @@ impl Index {
     }
 
     /// The boards (folders under `profiles/`).
-    fn board_slugs(&self) -> Vec<String> {
+    pub fn board_slugs(&self) -> Vec<String> {
         std::fs::read_dir(self.root.join("profiles"))
             .map(|d| d.flatten().filter_map(|e| e.file_name().into_string().ok()).collect())
             .unwrap_or_default()
