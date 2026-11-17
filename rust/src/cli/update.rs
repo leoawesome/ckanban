@@ -83,12 +83,25 @@ async fn download(http: &reqwest::Client, url: &str) -> Result<Vec<u8>, String> 
     r.bytes().await.map(|b| b.to_vec()).map_err(|e| format!("Download failed: {e}"))
 }
 
-/// The checks a downloaded binary passes before it replaces this one: macOS accepts its signature, and it starts and
-/// reports the release's version.
-fn check_new_binary(file: &Path, version: &str) -> Result<(), String> {
+/// The Apple team that signed `file` (`TeamIdentifier=` of `codesign -dv`), or None for an ad-hoc or unsigned one.
+fn team_of(file: &Path) -> Option<String> {
+    let o = Command::new("/usr/bin/codesign").arg("-dv").arg(file).stdin(Stdio::null()).output().ok()?;
+    let text = String::from_utf8_lossy(&o.stderr);
+    let team = text.lines().find_map(|l| l.strip_prefix("TeamIdentifier="))?.trim();
+    (!team.is_empty() && team != "not set" && team.chars().all(|c| c.is_ascii_alphanumeric())).then(|| team.to_string())
+}
+
+/// The checks a downloaded binary passes before it replaces this one: macOS accepts its signature (from the same
+/// Apple team as this binary when this one has a Developer ID, so replaced release files and checksums signed by
+/// anyone else are refused), and it starts and reports the release's version.
+fn check_new_binary(file: &Path, version: &str, team: Option<&str>) -> Result<(), String> {
     if cfg!(target_os = "macos") {
-        let ok = Command::new("/usr/bin/codesign")
-            .args(["--verify", "--strict"])
+        let mut verify = Command::new("/usr/bin/codesign");
+        verify.args(["--verify", "--strict"]);
+        if let Some(t) = team {
+            verify.arg(format!("-R=anchor apple generic and certificate leaf[subject.OU] = \"{t}\""));
+        }
+        let ok = verify
             .arg(file)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
@@ -110,16 +123,23 @@ fn check_new_binary(file: &Path, version: &str) -> Result<(), String> {
 /// Writes the new binary next to this one and renames it over it (same folder, so the swap is one rename).
 fn swap_in(exe: &Path, bin: &[u8], version: &str) -> Result<(), String> {
     use std::os::unix::fs::PermissionsExt;
+    use std::io::Write;
+    use std::os::unix::fs::OpenOptionsExt;
     let tmp = PathBuf::from(format!("{}.new", exe.display()));
+    // A fresh file (never through a link or file left there): a stale one goes first.
+    let _ = std::fs::remove_file(&tmp);
     let write = || -> std::io::Result<()> {
-        std::fs::write(&tmp, bin)?;
+        let mut f = std::fs::OpenOptions::new().write(true).create_new(true).mode(0o755).open(&tmp)?;
+        f.write_all(bin)?;
+        f.sync_all()?;
         std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o755))
     };
     if let Err(e) = write() {
         let _ = std::fs::remove_file(&tmp);
         return Err(format!("Can't write {}: {e}. Not updated.", tmp.display()));
     }
-    if let Err(e) = check_new_binary(&tmp, version) {
+    let team = if cfg!(target_os = "macos") { team_of(exe) } else { None };
+    if let Err(e) = check_new_binary(&tmp, version, team.as_deref()) {
         let _ = std::fs::remove_file(&tmp);
         return Err(e);
     }

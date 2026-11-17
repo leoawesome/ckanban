@@ -5,7 +5,7 @@ Local kanban web UI (Rust server, CLI and MCP server `ckanban-rs` in `rust/`, Re
 ## Where things live
 
 Each folder has a short `README.md`; read it before changing code there. Unit tests sit next to the file they test.
-- `rust/`: the server and CLI `ckanban-rs` (`dev`/`start` is the daemon launchd runs, `mcp` the stdio MCP server, every other `ckanban` command); it serves the built web page from `web/dist` ([README](rust/README.md)).
+- `rust/`: the server and CLI `ckanban-rs` (`dev`/`start` is the daemon launchd runs, `mcp` the stdio MCP server, every other `ckanban` command); a build from source serves the web page from `web/dist`, a release build (`scripts/build-bin.ts`) carries it inside the binary ([README](rust/README.md)).
 - `rust/board/`: the board, runs and chat, the helper (waits, messages, notifications, push), Telegram and the front desk, schedules, huddles, browsers and devices ([README](rust/board/README.md)).
 - `rust/core/`: usage, spend and the data folder, files read and written byte for byte as Bun did ([README](rust/core/README.md)).
 - `rust/src/outside/`: MCP servers and sign-ins, passes, phone access, agents, bug reports; `rust/src/mcp/`: the MCP tools; `rust/src/cli/`: the commands.

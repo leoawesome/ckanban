@@ -16,6 +16,7 @@ const positional = args.filter((_, i) => i !== archFlag && i !== archFlag + 1);
 const version = (positional[0] ?? process.env.CKANBAN_VERSION ?? "dev").replace(/^v/, "");
 
 const TARGETS: Record<string, string> = { arm64: "aarch64-apple-darwin", x64: "x86_64-apple-darwin" };
+if (archFlag >= 0 && !only) throw new Error("--arch needs arm64 or x64");
 if (only && !TARGETS[only]) throw new Error(`unknown --arch ${only} (arm64 or x64)`);
 const cargoHome = join(homedir(), ".cargo", "bin", "cargo");
 const cargo = process.env.CARGO || (existsSync(cargoHome) ? cargoHome : "cargo");
@@ -25,6 +26,8 @@ async function sh(cmd: string[], cwd = root, env: Record<string, string> = {}) {
   if ((await p.exited) !== 0) throw new Error(`failed: ${cmd.join(" ")}`);
 }
 
+// The web page's typecheck uses the root's packages too.
+await sh(["bun", "install", "--frozen-lockfile"]);
 await sh(["bun", "install", "--frozen-lockfile"], join(root, "web"));
 await sh(["bun", "run", "build"], join(root, "web"));
 

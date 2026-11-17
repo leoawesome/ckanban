@@ -30,6 +30,8 @@ jobs:
         with:
           ref: ${{ inputs.tag || github.ref }}
           fetch-depth: 0
+          # No token left in .git/config for the tests and build scripts; gh publishes with GH_TOKEN.
+          persist-credentials: false
       - uses: oven-sh/setup-bun@v2
       # The Rust server is the app. No build cache here: a release builds from a clean slate.
       # Older tags (Bun builds) have no rust/rust-toolchain.toml and skip this.
