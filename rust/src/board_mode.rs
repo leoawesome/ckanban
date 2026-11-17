@@ -131,9 +131,16 @@ pub struct BoardMode {
     tell: OnceLock<tokio::sync::mpsc::UnboundedSender<String>>,
     /// P1a: the helper (what waits on the user, its messages and decisions); the satellite still sends.
     pub helper: Arc<ckanban_board::helper::Helper>,
-    /// The satellite's stdin for the helper's notices (waits closed), once it runs.
-    helper_tell: Arc<OnceLock<tokio::sync::mpsc::UnboundedSender<String>>>,
+    /// The satellite's stdin for the helper's notices (waits closed): kept until it runs, then sent.
+    helper_tell: Arc<Mutex<HelperTell>>,
     _lock: BoardLock,
+}
+
+/// The satellite's stdin as the helper uses it: the lines from before it ran, then the sender.
+#[derive(Default)]
+struct HelperTell {
+    tell: Option<tokio::sync::mpsc::UnboundedSender<String>>,
+    early: Vec<String>,
 }
 
 /// Board mode for this start, or None: Bun runs the whole board (off, or a fallback, already logged and recorded).
@@ -388,12 +395,18 @@ pub async fn prepare(root: &Path, public_port: u16, remote_port: u16, internal_p
     }));
     // P1a: the helper. It owns waits.json, messages.json, helper-state.json and helper.json and is notify.json's only
     // writer; the satellite still sends (push, ntfy, the Mac banner, Telegram) and runs Telegram and the front desk.
-    let helper_tell: Arc<OnceLock<tokio::sync::mpsc::UnboundedSender<String>>> = Arc::new(OnceLock::new());
+    let helper_tell: Arc<Mutex<HelperTell>> = Arc::new(Mutex::new(HelperTell::default()));
     let ht = helper_tell.clone();
     let on_closed: ckanban_board::helper::waits::Closed = Arc::new(move |recs| {
-        if let Some(t) = ht.get() {
-            let list: Vec<Value> = recs.into_iter().map(Value::Object).collect();
-            let _ = t.send(format!("waits-closed {}\n", serde_json::to_string(&list).unwrap_or_default()));
+        let list: Vec<Value> = recs.into_iter().map(Value::Object).collect();
+        let line = format!("waits-closed {}\n", serde_json::to_string(&list).unwrap_or_default());
+        let mut t = ht.lock().unwrap_or_else(|e| e.into_inner());
+        match &t.tell {
+            Some(tell) => {
+                let _ = tell.send(line);
+            }
+            // Closed at start-up, before the satellite runs: sent once it does (`connect_satellite`).
+            None => t.early.push(line),
         }
     });
     let helper = ckanban_board::helper::Helper::new(
@@ -1534,7 +1547,13 @@ impl BoardMode {
         eprintln!("[board] the satellite's start snapshot: {} session summaries", snapshot["sessions"].as_object().map_or(0, |m| m.len()));
         let _ = tell.send(satellite::runtime_line(&snapshot));
         let _ = self.tell.set(tell.clone());
-        let _ = self.helper_tell.set(tell.clone());
+        {
+            let mut t = self.helper_tell.lock().unwrap_or_else(|e| e.into_inner());
+            for line in std::mem::take(&mut t.early) {
+                let _ = tell.send(line);
+            }
+            t.tell = Some(tell.clone());
+        }
         // The pass store for key cards: Bun hears of each change to the passes file on its stdin.
         let notify_tell = tell.clone();
         let notify: passes::Notify = Arc::new(move |file: &str| {

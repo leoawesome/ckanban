@@ -190,7 +190,8 @@ back. The edge, all of it:
 | Satellite to Rust | Its events (`helper.updated`, `helper.message`, `messages.updated`, `mcp.updated`, `integration.updated`) | Rust subscribes to the child's own `/api/events` and re-emits each message into its stream (no Bun change) |
 | Satellite to Rust | Board actions: `chatFromTelegram`, `patchTelegram`, `dropTelegramQueued`, the notifier's `addComment`, replaying a request after a Telegram Confirm | HTTP to Rust's port on `/api/internal/...`, with the front secret the child already has |
 | Rust to satellite | Front desk gate (requests with `x-ckanban-frontdesk`), pass tool calls for automations (`automation-call` after Rust checks the script's token), share-to-claude.ai publishing | HTTP to the child's internal port on `/api/internal/...` with the secret |
-| Rust to satellite | Routes it still owns: `/api/notify*`, `/api/messages*`, `/api/helper*`, `/api/push*`, `/api/telegram/*`, `/api/mcp*`, `POST /api/agents/*`, `POST /api/remote`, pass sign-in, `tools` and OAuth callback, `/api/bug-report*` | Passed through as today, with `x-ckanban-peer-port` |
+| Rust to satellite | Routes it still owns: `/api/notify*`, `/api/push*`, `/api/telegram/*`, `/api/mcp*`, `POST /api/agents/*`, `POST /api/remote`, pass sign-in, `tools` and OAuth callback, `/api/bug-report*` (`/api/messages*`, `/api/helper*` and a ticket's `notify` are Rust's since P1a) | Passed through as today, with `x-ckanban-peer-port` |
+| Both ways (P1a) | The helper runs in Rust; the satellite sends and runs Telegram until P1b/P1c | Rust asks `helper-send`, `helper-facts`; the satellite asks `helper-action`, `notify-write`, `wait-seen`, `helper-send-message`; `waits-closed <json>` on its stdin |
 
 The satellite is about 500 lines of throw-away code on each side. The alternative, porting the helper (8,600 lines)
 before the flip, would delay the step that removes the freezes by that much. Huddles are not on this list: their live
@@ -226,7 +227,8 @@ builds it; it can run on Leo's board as soon as the front is on, and shows real-
 | `ticket.md`, `comments.jsonl`, `activity.jsonl`, chats, plans, outputs | Rust only | Satellite store throws on ticket writes; the notifier's comments go through `/api/internal`; `board.lock` keeps a second full daemon out |
 | `usage-last.json`, `usage-windows.json`, `automation-passes.json` | Both, as today | Already shared safely (re-read on change, atomic rename, `flock`) |
 | `session-summaries.json` | Rust only | The satellite runs no `SessionCache`; it gets summaries from the mirror |
-| Helper files (messages, waits, notify settings, push devices, Telegram stores) | Satellite only | Rust never opens them until P1 moves the helper |
+| Helper files: `waits.json`, `messages.json`, `helper-state.json`, `helper.json`, `notify.json` | Rust only (since P1a) | The satellite's stores only read them (again when they change) and send their writes to Rust (`notify-write`, `wait-seen`, `helper-send-message`); any other write throws |
+| Push devices, Telegram stores | Satellite only | Rust never opens them until P1b/P1c |
 | `board-tools.json`, `mcp-seen.json`, `remote.json` | Satellite only | Rust reads them (run MCP config, the phone listener re-reads `remote.json` on mtime change) |
 | Huddles, schedules, jobs, automations, devices, browsers files | Rust only | Moved together with their in-memory owners |
 | Every file on a flip back | Bun | Rust writes Bun's bytes (`rust/core` fixtures), keeps unknown fields (`JsonRecord`) and never adds fields Bun doesn't know |
@@ -326,7 +328,8 @@ wave 1 landed, shadow mode running on the real board. The flip itself is likely 
 ### 7.2 After the flip
 
 - **P1 helper to Rust:** `helper/` (8,600 lines) in two or three tasks (runner and decisions; notifications and push
-  with the `web-push` crate; Telegram and the front desk), against C7. Removes most of the satellite.
+  with the `web-push` crate; Telegram and the front desk), against C7. Removes most of the satellite. P1a (runner,
+  decisions, waits, messages, settings files, the Messages and helper routes) is in: `rust/board/src/helper/`.
 - **P2 integrations to Rust:** MCP servers and sign-ins, agents install, phone access on and off, pass sign-in and
   `tools`, bug reports, artifact publishing. Removes the satellite.
 - **P3 the last Bun commands:** `browser-mcp`, `artifact`, `remote`, `update`; the last 13 MCP tools in `ON_BUN`.

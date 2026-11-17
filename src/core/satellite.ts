@@ -10,7 +10,9 @@
 // - `runtime <json>`: live state the helper asks synchronously. A snapshot at start, then one line per change; each
 //   key present replaces what the mirror had: `running` (["<slug>/<id>"...]), `hostHuddles` ({slug: {ticketId:
 //   HostHuddle}}, per board), `sessions` ({sessionId: SessionSummary | null}, per session).
-// Unset, none of this applies and the daemon behaves exactly as before.
+// - `waits-closed <json>`: waits the Rust helper closed (P1a); their Telegram alerts say so (daemon.ts).
+// Since P1a the helper runs in Rust: this daemon builds no HelperRunner and only reads the helper's files (helper/core.ts
+// HelperEdge). Unset, none of this applies and the daemon behaves exactly as before.
 import type { HostHuddle } from "../helper/attention";
 import type { SessionSummary } from "../runs/session";
 import type { Bus, BusEvent } from "./events";
