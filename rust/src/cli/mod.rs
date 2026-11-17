@@ -99,10 +99,10 @@ pub fn board_port() -> u16 {
     crate::settings::board_port(std::env::var("CKANBAN_PORT").ok().as_deref(), config.as_deref())
 }
 
-/// `ckanban update`. This binary is always built from source until P4 (the release binary is still Bun's), so it
-/// answers as Bun does from source. P4 ports the release download (the SHA256SUMS check, the swap and the restart).
+/// `ckanban update`. This binary is built from source on Leo's Mac (no Rust release yet), so it says how to update
+/// from source. A Rust release would add the download (the SHA256SUMS check, the swap and the restart).
 fn update() -> u8 {
-    out("Running from source: use `git pull && bun install && bun run build:web && ckanban restart`.");
+    out("Running from source: use `git pull && bun run build:web && scripts/build-rust.sh && ckanban restart`.");
     0
 }
 

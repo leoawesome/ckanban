@@ -1,7 +1,7 @@
 //! The routes `ckanban-rs` answers itself: `GET /api/usage` (`?fresh=1` is the Refresh button) and `GET /api/spend`
 //! with `ckanban-core` (step 3 of the trial), the board's passes and keys (passes.rs) and `GET /api/agents`
 //! (agents.rs). Everything else, these paths with any other method or spelling, and every request from the Telegram
-//! front desk, goes to Bun unchanged (proxy.rs).
+//! front desk, is given back to the caller (board_mode.rs), whose last stop is web.rs.
 //!
 //! Before any of them, the checks Bun's server makes first: `requestRefusal` in `src/api/context.ts` (Host, and the
 //! Origin of a change; 403 `forbidden` as plain text), then a JSON content type for POST, PATCH and PUT (415). Usage
@@ -9,7 +9,7 @@
 //! `{"error": ...}` when spend can't be counted.
 
 use std::net::SocketAddr;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use ckanban_core::{DataDir, SpendIndex, UsageCache, UsageClient};
@@ -20,7 +20,7 @@ use hyper::{Method, Request, Response, StatusCode};
 
 use crate::agents::Agents;
 use crate::passes::{self, Outcome, Passes};
-use crate::proxy::{Body, plain, wants_upgrade};
+use crate::web::{Body, plain, wants_upgrade};
 
 /// The Telegram front desk's header (`FRONT_DESK_HEADER` in `src/core/env.ts`): its requests go through Bun's gate.
 const FRONT_DESK_HEADER: &str = "x-ckanban-frontdesk";
@@ -49,14 +49,14 @@ pub struct Native {
 impl Native {
     /// Same data folder as the Bun child; the usage cache reads `usage-last.json` now (a small file). `notify` tells
     /// the Bun child about a file Rust changed; `bun` and `repo` are how the child was started.
-    pub fn new(root: PathBuf, public_port: u16, notify: passes::Notify, bun: &Path, repo: &Path) -> Arc<Self> {
+    pub fn new(root: PathBuf, public_port: u16, notify: passes::Notify) -> Arc<Self> {
         let dir = DataDir::new(root.clone());
         Arc::new(Native {
             public_port,
             usage: UsageCache::for_daemon(&dir, UsageClient::from_env()),
             spend: Arc::new(SpendIndex::new(dir)),
             passes: Arc::new(Passes::new(root.clone(), notify)),
-            agents: Agents::new(bun, repo).map(Arc::new),
+            agents: Some(Arc::new(Agents::new(&std::env::current_exe().unwrap_or_else(|_| PathBuf::from("ckanban-rs"))))),
             root,
         })
     }

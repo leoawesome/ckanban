@@ -22,7 +22,6 @@ pub mod family;
 pub mod links;
 pub mod routes;
 pub mod scope;
-pub mod shadow;
 pub mod store;
 pub mod text;
 pub mod ticket;

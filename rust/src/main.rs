@@ -1,11 +1,7 @@
-//! `ckanban-rs`: the `ckanban` commands (cli/) and `ckanban-rs dev`, the Rust front server of the ckanban trial. It listens on the board's port, starts the Bun
-//! daemon (`bun src/cli.ts dev`) as a child on an internal port. `GET /api/usage` and `GET /api/spend` are answered
-//! here (routes.rs, with `ckanban-core`); every other request is passed to the child (proxy.rs).
-//!
-//! The child gets CKANBAN_PORT (its internal port), CKANBAN_FRONT_PORT (the board's port) and, on stdin, "<secret> <our pid>"
-//! that marks this server's requests (`src/core/front.ts`). Stdin stays open: when this process dies, even killed
-//! hard, the child reads end of input and stops. When the child exits, this process exits with the same code, so
-//! launchd and `ckanban restart` work as with Bun alone. SIGTERM/SIGINT stop the child first.
+//! `ckanban-rs`: the ckanban server and CLI. `ckanban-rs dev` (and `start`) is the board's daemon: it listens on the
+//! board's port (and the phone access port), runs the board (board_mode.rs, the `ckanban-board` crate), answers usage,
+//! spend, passes and agents (routes.rs) and serves the built web page (web.rs). `ckanban-rs mcp` is the stdio MCP
+//! server (mcp/); every other command is in cli/. Bun's server was removed in P4: Bun only builds the web page.
 
 mod agents;
 mod artifact;
@@ -18,29 +14,21 @@ mod mcp;
 mod outside;
 mod passes;
 mod phone;
-mod proxy;
 mod routes;
 mod settings;
-mod shadow;
+mod web;
 
 use std::net::{Ipv4Addr, SocketAddrV4};
 use std::path::PathBuf;
-use std::process::{ExitCode, Stdio};
+use std::process::ExitCode;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper_util::rt::TokioIo;
-use tokio::io::AsyncWriteExt;
 use tokio::net::TcpListener;
-use tokio::process::{Child, Command};
 use tokio::signal::unix::{SignalKind, signal};
-
-/// How long the Bun child gets to answer its first request.
-const READY_TIMEOUT: Duration = Duration::from_secs(30);
-/// How long the child gets to stop after SIGTERM before it is killed.
-const STOP_TIMEOUT: Duration = Duration::from_secs(30);
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -79,194 +67,77 @@ async fn dev() -> u8 {
 
     let exe = std::env::current_exe().unwrap_or_default();
     let env_repo = std::env::var_os("CKANBAN_REPO").filter(|s| !s.is_empty()).map(PathBuf::from);
-    let repo = match settings::repo_root(env_repo.as_deref(), &exe) {
-        Ok(r) => r,
-        Err(e) => return fail(e),
+    // The web page is served from the source folder's `web/dist`; without one the board still runs (the page says
+    // how to build it).
+    let web_dir = match settings::repo_root(env_repo.as_deref(), &exe) {
+        Ok(r) => settings::web_dir(&r),
+        Err(e) => {
+            eprintln!("ckanban-rs: {e}; the web page can't be served");
+            PathBuf::from("/nonexistent/web/dist")
+        }
     };
-    let bun = match settings::bun_path() {
-        Ok(b) => b,
-        Err(e) => return fail(e),
-    };
-    let secret = match settings::new_secret() {
-        Ok(s) => s,
-        Err(e) => return fail(e),
-    };
+    let web = web::Web::new(web_dir);
+    if !web.built() {
+        eprintln!("web UI not built yet: run `bun run build:web` ({} is missing)", web.dir().join("index.html").display());
+    }
 
     // The board's port first: if it is taken, fail before starting anything.
     let listener = match TcpListener::bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, public_port)).await {
         Ok(l) => l,
         Err(e) => return fail(format!("can't listen on 127.0.0.1:{public_port}: {e}")),
     };
-    let internal_port = match settings::free_port(&[public_port, remote_port]) {
-        Ok(p) => p,
-        Err(e) => return fail(format!("no free internal port: {e}")),
+    // The board (board_mode.rs): the data folder's lock, the core, runs, the helper, schedules.
+    let board = match board_mode::prepare(&root, public_port, remote_port).await {
+        Ok(b) => b,
+        Err(e) => return fail(format!("the board can't start: {e}")),
     };
-    // Board mode (board_mode.rs): off unless asked for; then the Rust board owns the board and Bun is its satellite.
-    let board = board_mode::prepare(&root, public_port, remote_port, internal_port, &secret).await;
-    // Board mode: the phone access listener is this server's (phone.rs); a busy port only costs phone access.
-    let phone = match &board {
-        Some(_) => match TcpListener::bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, remote_port)).await {
-            Ok(l) => Some(l),
-            Err(e) => {
-                eprintln!("ckanban-rs: phone access listener on 127.0.0.1:{remote_port} failed: {e}");
-                None
-            }
-        },
-        None => None,
-    };
-
-    let mut cmd = Command::new(&bun);
-    cmd.arg(repo.join("src/cli.ts"))
-        .arg("dev")
-        .env("CKANBAN_PORT", internal_port.to_string())
-        .env("CKANBAN_FRONT_PORT", public_port.to_string());
-    if board.is_some() {
-        // The satellite's RemoteAccess points `tailscale serve` at this server's phone access listener.
-        // CKANBAN_SATELLITE_EDGE: this front drops callers' copies of the phone and replay marks, so the satellite may
-        // trust them (src/core/satellite-edge.ts).
-        cmd.env("CKANBAN_SATELLITE", "1").env("CKANBAN_SATELLITE_EDGE", "1").env("CKANBAN_REMOTE_PORT", remote_port.to_string());
-    } else {
-        cmd.env_remove("CKANBAN_SATELLITE").env_remove("CKANBAN_SATELLITE_EDGE");
-    }
-    let mut child = match cmd
-        .stdin(Stdio::piped())
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .spawn()
-    {
-        Ok(c) => c,
-        Err(e) => return fail(format!("can't start {} {}: {e}", bun.display(), repo.join("src/cli.ts").display())),
-    };
-    // Kept open for the child's lifetime: its end of input tells the child this server is gone.
-    let mut stdin = child.stdin.take().expect("piped stdin");
-    if let Err(e) = stdin.write_all(format!("{secret} {}\n", std::process::id()).as_bytes()).await {
-        let _ = child.start_kill();
-        return fail(format!("can't hand the secret to the daemon: {e}"));
-    }
-    let _ = stdin.flush().await;
-    // Later lines tell the child about files this server changed ("changed <file>"), in order, from one writer task
-    // that owns stdin for the child's lifetime.
-    let (tell_tx, mut tell_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
-    let teller = tokio::spawn(async move {
-        while let Some(line) = tell_rx.recv().await {
-            if stdin.write_all(line.as_bytes()).await.is_err() || stdin.flush().await.is_err() {
-                break;
-            }
+    // The phone access listener; a busy port only costs phone access.
+    let phone = match TcpListener::bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, remote_port)).await {
+        Ok(l) => Some(l),
+        Err(e) => {
+            eprintln!("ckanban-rs: phone access listener on 127.0.0.1:{remote_port} failed: {e}");
+            None
         }
-        stdin
-    });
-    let tell_board = tell_tx.clone();
-    let notify: passes::Notify = Arc::new(move |file: &str| {
-        let _ = tell_tx.send(format!("changed {file}\n"));
-    });
+    };
 
-    let proxy = proxy::Proxy::new(internal_port, &secret);
+    // The UI hears of a change to the passes file (Bun's `integration.updated`).
+    let bus = board.core.bus.clone();
+    let notify: passes::Notify = Arc::new(move |file: &str| {
+        if file == "automation-passes.json" {
+            bus.emit_json(serde_json::json!({ "type": "integration.updated" }));
+        }
+    });
+    board.connect_passes(notify.clone());
     let mut sigterm = signal(SignalKind::terminate()).expect("SIGTERM handler");
     let mut sigint = signal(SignalKind::interrupt()).expect("SIGINT handler");
+    eprintln!("ckanban-rs {} listening on http://localhost:{public_port}", env!("CARGO_PKG_VERSION"));
 
-    // Wait until the child answers; meanwhile callers queue on the listener.
-    let deadline = Instant::now() + READY_TIMEOUT;
-    loop {
-        if let Ok(Some(status)) = child.try_wait() {
-            eprintln!("ckanban-rs: the daemon exited before it answered ({status})");
-            return exit_code(status);
-        }
-        if proxy.ready(public_port).await {
-            break;
-        }
-        if Instant::now() > deadline {
-            let code = stop_child(&mut child).await;
-            if let Some(b) = &board {
-                b.stop(code);
-            }
-            return fail(format!(
-                "the daemon ({} {} dev) didn't answer on 127.0.0.1:{internal_port} within {}s; see its log: this process's output{}",
-                bun.display(),
-                repo.join("src/cli.ts").display(),
-                READY_TIMEOUT.as_secs(),
-                log_hint(&root),
-            ));
-        }
-        tokio::select! {
-            _ = tokio::time::sleep(Duration::from_millis(100)) => {}
-            _ = sigterm.recv() => return stop_board(&board, stop_child(&mut child).await),
-            _ = sigint.recv() => return stop_board(&board, stop_child(&mut child).await),
-        }
-    }
-    if let Some(b) = &board {
-        b.connect_satellite(internal_port, &secret, tell_board).await;
-    } else {
-        drop(tell_board);
-    }
-    eprintln!("ckanban-rs {} listening on http://localhost:{public_port}, daemon on internal port {internal_port}", env!("CARGO_PKG_VERSION"));
-
-    // P2: the outside services in board mode (MCP servers, passes and sign-ins, phone access, agents, bug reports).
-    if let Some(b) = &board {
-        b.connect_outside(&bun, &repo, notify.clone());
-    }
-    let native = routes::Native::new(root.clone(), public_port, notify, &bun, &repo);
+    // P2: the outside services (MCP servers, passes and sign-ins, phone access, agents, bug reports).
+    board.connect_outside(notify.clone());
+    let native = routes::Native::new(root.clone(), public_port, notify);
     // P1c: Telegram and the front desk (held requests are replayed through these routes).
-    if let Some(b) = &board {
-        b.connect_telegram(native.clone(), proxy.clone());
+    board.connect_telegram();
+    let phone_accept = phone.map(|l| tokio::spawn(phone::serve(l, web.clone(), native.clone(), board.clone())));
+    let accept = tokio::spawn(serve(listener, web, native, board.clone()));
+    // A restart the board asked for (`POST /api/restart`, once its work is done) ends this process like a SIGTERM;
+    // launchd starts it again.
+    let exit = board.exit.clone();
+    tokio::select! {
+        _ = sigterm.recv() => {}
+        _ = sigint.recv() => {}
+        _ = exit.notified() => eprintln!("ckanban-rs: restarting"),
     }
-    let phone_accept = match (phone, &board) {
-        (Some(l), Some(b)) => Some(tokio::spawn(phone::serve(l, proxy.clone(), native.clone(), b.clone()))),
-        _ => None,
-    };
-    let shadow = shadow::prepare(&root, board.is_some());
-    let accept = tokio::spawn(serve(listener, proxy, native, board.clone(), shadow));
-    // Board mode: a restart the board asked for (`POST /api/restart`, once its work is done) ends this process like a
-    // SIGTERM; launchd starts it again.
-    let exit = board.as_ref().map(|b| b.exit.clone()).unwrap_or_else(|| Arc::new(tokio::sync::Notify::new()));
-    let code = tokio::select! {
-        status = child.wait() => match status {
-            Ok(s) => exit_code(s),
-            Err(e) => fail(format!("lost the daemon: {e}")),
-        },
-        _ = sigterm.recv() => stop_all(&board, &mut child).await,
-        _ = sigint.recv() => stop_all(&board, &mut child).await,
-        _ = exit.notified() => {
-            eprintln!("ckanban-rs: restarting");
-            stop_all(&board, &mut child).await
-        }
-    };
+    // Runs stop first (marked so the next start resumes them).
+    board.shutdown().await;
     accept.abort();
     if let Some(p) = phone_accept {
         p.abort();
     }
-    teller.abort();
-    stop_board(&board, code)
+    board.stop(0);
+    0
 }
 
-/// Board mode ended with `code` (board_mode.rs): the core stops; 0 is a clean stop, anything else counts as a crash.
-/// Board mode's runs stop first (marked so the next start resumes them), then the satellite.
-async fn stop_all(board: &Option<Arc<board_mode::BoardMode>>, child: &mut Child) -> u8 {
-    if let Some(b) = board {
-        b.shutdown().await;
-    }
-    stop_child(child).await
-}
-
-fn stop_board(board: &Option<Arc<board_mode::BoardMode>>, code: u8) -> u8 {
-    if let Some(b) = board {
-        b.stop(code);
-    }
-    code
-}
-
-/// Under launchd the output goes to the data folder's daemon.log.
-fn log_hint(root: &std::path::Path) -> String {
-    let log = root.join("daemon.log");
-    if log.is_file() { format!(" ({} when started by launchd)", log.display()) } else { String::new() }
-}
-
-async fn serve(
-    listener: TcpListener,
-    proxy: Arc<proxy::Proxy>,
-    native: Arc<routes::Native>,
-    board: Option<Arc<board_mode::BoardMode>>,
-    shadow: Option<Arc<ckanban_board::index::shadow::Shadow>>,
-) {
+async fn serve(listener: TcpListener, web: Arc<web::Web>, native: Arc<routes::Native>, board: Arc<board_mode::BoardMode>) {
     loop {
         let (stream, peer) = match listener.accept().await {
             Ok(x) => x,
@@ -277,62 +148,15 @@ async fn serve(
             }
         };
         let _ = stream.set_nodelay(true);
-        let proxy = proxy.clone();
-        let native = native.clone();
-        let board = board.clone();
-        let shadow = shadow.clone();
+        let (web, native, board) = (web.clone(), native.clone(), board.clone());
         tokio::spawn(async move {
             let svc = service_fn(move |mut req: hyper::Request<hyper::body::Incoming>| {
-                let proxy = proxy.clone();
-                let native = native.clone();
-                let board = board.clone();
-                let shadow = shadow.clone();
-                // Route on the path Bun would see (dot segments resolved), and pass that one on.
-                proxy::normalize_target(&mut req);
-                async move {
-                    // Board mode: the gate, the Rust board's routes, then the native routes and Bun (board_mode.rs).
-                    if let Some(b) = &board {
-                        return Ok(b.handle(req, peer, ckanban_board::gate::request::Listener::Local, &native, &proxy).await);
-                    }
-                    let compare = shadow.as_ref().and_then(|_| shadow::wanted(req.method(), req.uri().path(), req.uri().query()));
-                    Ok::<_, std::convert::Infallible>(match native.answer(req, peer).await {
-                        Ok(res) => res,
-                        Err(req) => {
-                            let res = proxy.forward(req, peer).await;
-                            match (&shadow, compare) {
-                                (Some(s), Some((path, query))) => shadow::tee(s, path, query, res).await,
-                                _ => res,
-                            }
-                        }
-                    })
-                }
+                let (web, native, board) = (web.clone(), native.clone(), board.clone());
+                // Route on the path Bun's `new URL` would see (dot segments resolved).
+                web::normalize_target(&mut req);
+                async move { Ok::<_, std::convert::Infallible>(board.handle(req, peer, ckanban_board::gate::request::Listener::Local, &native, &web).await) }
             });
             let _ = http1::Builder::new().half_close(true).serve_connection(TokioIo::new(stream), svc).with_upgrades().await;
         });
-    }
-}
-
-/// SIGTERM to the child, then its exit code; SIGKILL if it doesn't stop in time.
-async fn stop_child(child: &mut Child) -> u8 {
-    if let Some(pid) = child.id() {
-        // SAFETY: plain kill(2) on our own child's pid.
-        unsafe { libc::kill(pid as libc::pid_t, libc::SIGTERM) };
-    }
-    match tokio::time::timeout(STOP_TIMEOUT, child.wait()).await {
-        Ok(Ok(s)) => exit_code(s),
-        _ => {
-            let _ = child.kill().await;
-            137
-        }
-    }
-}
-
-/// The child's exit code; 128 + signal when a signal ended it (as a shell reports it).
-fn exit_code(s: std::process::ExitStatus) -> u8 {
-    use std::os::unix::process::ExitStatusExt;
-    match (s.code(), s.signal()) {
-        (Some(c), _) => c as u8,
-        (None, Some(sig)) => 128u8.wrapping_add(sig as u8),
-        _ => 1,
     }
 }

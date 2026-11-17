@@ -33,7 +33,7 @@ use serde_json::{Map, Value, json};
 use crate::guard;
 use crate::js;
 use crate::mask;
-use crate::proxy::Body;
+use crate::web::Body;
 
 pub const PASSES_FILE: &str = "automation-passes.json";
 /// Bodies declared larger than this go to Bun unread (a pass is a few hundred bytes); a larger one sent without a

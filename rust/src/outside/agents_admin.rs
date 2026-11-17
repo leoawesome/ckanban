@@ -259,11 +259,9 @@ mod tests {
     }
 
     fn admin(dir: &Path, claude_bin: &str) -> Arc<AgentsAdmin> {
-        let bun = dir.join("bun");
-        std::fs::write(&bun, [0u8, 1, 2]).unwrap();
-        std::fs::create_dir_all(dir.join("repo/src")).unwrap();
-        std::fs::write(dir.join("repo/src/cli.ts"), "").unwrap();
-        let agents = Arc::new(Agents::new(&bun, &dir.join("repo")).unwrap());
+        let exe = dir.join("ckanban-rs");
+        std::fs::write(&exe, [0u8, 1, 2]).unwrap();
+        let agents = Arc::new(Agents::new(&exe));
         AgentsAdmin::with(agents, claude_bin.into(), dir.join(".claude.json"), dir.join("codex/config.toml"), dir.to_path_buf())
     }
 
@@ -312,7 +310,7 @@ mod tests {
         let lines: Vec<&str> = calls.lines().collect();
         assert_eq!(lines[0], format!("{} mcp remove ckanban --scope user", home.display()));
         assert!(lines[1].starts_with(&format!("{} mcp add --scope user ckanban -- ", home.display())), "{calls}");
-        assert!(lines[1].ends_with("/repo/src/cli.ts mcp"));
+        assert!(lines[1].ends_with("/ckanban-rs mcp"));
         // The route: unknown shapes are 404, a failure keeps its status.
         let user = |_: &str| Ok(());
         let parts = |p: &[&str]| p.iter().map(|s| s.to_string()).collect::<Vec<_>>();

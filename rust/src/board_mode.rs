@@ -41,7 +41,6 @@ use std::time::{Duration, SystemTime};
 use ckanban_board::browsers::{self, Browsers, FileLookup};
 use ckanban_board::core::{Core, Services};
 use ckanban_board::events::{self, EventHooks};
-use ckanban_board::gate::edge::{self, SATELLITE_HEADER, SatelliteClient};
 use ckanban_board::gate::remote::RemoteFile;
 use ckanban_board::gate::request::{self, LISTENER_HEADER, Listener, Seen};
 use ckanban_board::gate::{housekeeping, system, update::UpdateChecker};
@@ -51,10 +50,9 @@ use ckanban_board::schedules::cron;
 use ckanban_board::git::{self, routes::GitRoutes};
 pub use ckanban_board::git::routes::Next;
 use ckanban_board::lock::{self, BoardLock};
-use ckanban_board::mode::{self, Decision};
+use ckanban_board::mode;
 use ckanban_board::quickchat::routes::{self as chat_routes, ChatReq, UserCheck};
 use ckanban_board::quickchat::{QuickChatOptions, QuickChats};
-use ckanban_board::satellite;
 use ckanban_board::sessions::routes::{self as session_routes, HUDDLE_HEADER, RUN_HEADER};
 use ckanban_board::sessions::service::Sessions;
 use ckanban_board::huddles::{self as huddle_mod, AgentOptions, Agents, Huddles};
@@ -76,7 +74,7 @@ mod tg;
 use crate::guard;
 use crate::mask;
 use crate::passes;
-use crate::proxy::{Body, Proxy, full, plain, wants_upgrade};
+use crate::web::{Body, Web, full, plain, wants_upgrade};
 use crate::routes::{Native, json_type, local_host, local_origin, query_param};
 
 /// The largest quick chat request body Rust reads (a message is at most 100,000 characters; Bun takes up to 128 MB).
@@ -115,68 +113,50 @@ pub struct BoardMode {
     writes: Arc<Writes>,
     /// R7a: the run loop.
     pub runs: Arc<RunLoop>,
-    /// What the satellite asks of the board (R7a: Telegram messages and marks, comments).
+    /// Telegram's marks and queue on the run loop (`api::BoardActions`).
     actions: Arc<dyn ckanban_board::api::BoardActions>,
     /// Notified when a requested restart may go ahead (no work left, or 2 minutes passed): `dev()` then stops.
     pub exit: Arc<tokio::sync::Notify>,
     /// Keep-awake while boards with "Keep this Mac awake" have work going (`GET /api/awake`).
     awake: Arc<ckanban_board::runs::awake::StayAwake>,
-    /// The pass store, for key cards (set once the satellite answers: it hears of the passes file changing).
+    /// The pass store, for key cards (`connect_passes`).
     passes: Arc<std::sync::OnceLock<Arc<passes::Passes>>>,
     public_port: u16,
     remote_port: u16,
     root: PathBuf,
-    secret: String,
     remote: RemoteFile,
     updates: UpdateChecker,
     /// `learnedVersions` for `claude/defaults` (`<data>/model-versions.json`; R7a's runs will share one).
     versions: ModelVersions,
     /// P2: the outside services (MCP servers, passes and sign-ins, phone access, agents, bug reports), once the server
-    /// knows its Bun (`connect_outside`); until then their requests go to the satellite.
+    /// starts them (`connect_outside`).
     outside: OnceLock<Arc<crate::outside::routes::Outside>>,
     outside_sat: Arc<crate::outside::edge::OutsideSatellite>,
     publish_run: Arc<OnceLock<ckanban_board::git::publish::PublishRun>>,
-    /// Lines to the satellite's stdin, once it runs (`connect_satellite`).
-    tell: OnceLock<tokio::sync::mpsc::UnboundedSender<String>>,
-    /// P1a: the helper (what waits on the user, its messages and decisions); the satellite still sends.
+    /// P1a, P1b: the helper (what waits on the user, its messages and decisions, and sending them).
     pub helper: Arc<ckanban_board::helper::Helper>,
-    /// P1c: Telegram and the front desk (`connect_telegram`, once the server has its routes and Bun).
+    /// P1c: Telegram and the front desk (`connect_telegram`, once the server has its routes).
     telegram: Arc<OnceLock<Arc<ckanban_board::telegram::Telegram>>>,
-    /// The satellite's stdin for the helper's notices (waits closed): kept until it runs, then sent.
+    /// Waits closed before Telegram runs: their alerts are edited once it does.
     helper_tell: Arc<Mutex<HelperTell>>,
-    /// True once the satellite runs: the helper's sends wait for it.
-    satellite_ready: Arc<tokio::sync::watch::Sender<bool>>,
     _lock: BoardLock,
 }
 
-/// The satellite's stdin as the helper uses it: the lines from before it ran, then the sender.
+/// What the helper keeps for Telegram until it runs.
 #[derive(Default)]
 struct HelperTell {
-    tell: Option<tokio::sync::mpsc::UnboundedSender<String>>,
-    early: Vec<String>,
     /// Waits closed before Telegram runs (P1c): their alerts are edited once it does.
     early_closed: Vec<ckanban_board::helper::waits::Rec>,
 }
 
-/// Board mode for this start, or None: Bun runs the whole board (off, or a fallback, already logged and recorded).
-/// `internal_port` and `secret` are the satellite's, for the calls the board makes to it.
-pub async fn prepare(root: &Path, public_port: u16, remote_port: u16, internal_port: u16, secret: &str) -> Option<Arc<BoardMode>> {
-    let wanted = mode::wanted(std::env::var(mode::ENV).ok().as_deref(), root);
-    let last = mode::read_status(root);
-    let crashes = match mode::decide(&wanted, last.as_ref(), mode::switch_written(root), now_ms()) {
-        Decision::Off => {
-            mode::record_off(root);
-            return None;
-        }
-        Decision::Fallback { reason, crashes } => return fall_back(root, &reason, crashes),
-        Decision::Try { crashes } => crashes,
-    };
+/// The board for this start: the data folder's lock, the core and everything that runs on it. Err: it can't start
+/// (the lock is held by another daemon, a folder it can't read); the server exits with the reason and launchd tries
+/// again.
+pub async fn prepare(root: &Path, public_port: u16, remote_port: u16) -> Result<Arc<BoardMode>, String> {
+    let crashes = mode::recent_crashes(mode::read_status(root).as_ref(), now_ms());
     let r = root.to_path_buf();
     let taken = tokio::task::spawn_blocking(move || lock::take(&r, LOCK_WAIT)).await.unwrap_or_else(|e| Err(e.to_string()));
-    let lock = match taken {
-        Ok(l) => l,
-        Err(e) => return fall_back(root, &e, crashes),
-    };
+    let lock = taken?;
     let sessions = Sessions::new(root, text_masker(root));
     let mut services = Services::stand_ins();
     services.sessions = sessions.clone();
@@ -185,8 +165,9 @@ pub async fn prepare(root: &Path, public_port: u16, remote_port: u16, internal_p
     services.runs = late_runs.clone();
     let browsers = Browsers::new(root, Arc::new(FileLookup::new(root)), services.sessions.clone());
     services.devices = browsers.clone();
-    // P2: pass calls and publishing are the board's own; the helper's calls still go to the satellite.
-    let outside_sat = crate::outside::edge::OutsideSatellite::new(Arc::new(SatelliteClient::new(internal_port, public_port, secret)));
+    // P2: pass calls and publishing are the board's own (`connect_outside`), Telegram's turn end and the front desk's
+    // gate P1c's (`connect_telegram`); nothing goes to Bun since P4.
+    let outside_sat = crate::outside::edge::OutsideSatellite::new(Arc::new(ckanban_board::api::StandIn));
     services.satellite = outside_sat.clone();
     // R11a: huddle rooms (their live state goes into every ticket view).
     let team = Arc::new(Team::new(root));
@@ -197,9 +178,8 @@ pub async fn prepare(root: &Path, public_port: u16, remote_port: u16, internal_p
     browsers.attach(core.bus.clone());
     browsers.set_linked(browsers::linked_from_index(core.index.clone(), browsers.lookup.clone()));
     if let Err(e) = core.start(Core::steps()).await {
-        // Let go first: Bun's full mode takes the lock next.
         drop(lock);
-        return fall_back(root, &e, crashes);
+        return Err(e);
     }
     // The session watcher and the projects folder feed (R5): `session.updated` on the board's event stream.
     sessions.start(&core);
@@ -213,8 +193,8 @@ pub async fn prepare(root: &Path, public_port: u16, remote_port: u16, internal_p
     if let Err(e) = mode::record_board(root, crashes) {
         eprintln!("ckanban-rs: can't write {}: {e}", mode::status_path(root).display());
     }
-    eprintln!("ckanban-rs: board mode: the Rust board owns this data folder; Bun runs as its satellite");
-    // Start-up clean-ups, report-only (plan 5.3); the satellite skips its own.
+    eprintln!("ckanban-rs: the board owns this data folder");
+    // Start-up clean-ups, report-only (plan 5.3).
     let r = root.to_path_buf();
     tokio::spawn(async move { housekeeping::at_start(&r).await });
     // Board browsers adopted (Bun's Chromes included), their upkeep and the terminal watcher, in the background.
@@ -425,7 +405,6 @@ pub async fn prepare(root: &Path, public_port: u16, remote_port: u16, internal_p
     // P1a, P1b, P1c: the helper. It owns waits.json, messages.json, helper-state.json, helper.json and push.json and
     // is notify.json's only writer; Telegram and the front desk run here too (`connect_telegram`).
     let helper_tell: Arc<Mutex<HelperTell>> = Arc::new(Mutex::new(HelperTell::default()));
-    let satellite_ready = Arc::new(tokio::sync::watch::channel(false).0);
     // P1c: waits closed: their Telegram alerts say so and lose their buttons (Rust's Telegram, once it runs; closed
     // before that at start-up are kept for it).
     let telegram: Arc<OnceLock<Arc<ckanban_board::telegram::Telegram>>> = Arc::new(OnceLock::new());
@@ -497,7 +476,7 @@ pub async fn prepare(root: &Path, public_port: u16, remote_port: u16, internal_p
     let hc = helper.core.clone();
     writes.set_opened(Arc::new(move |slug: &str, id: &str| hc.opened(slug, id)));
     let runs_for_actions = runs.clone();
-    Some(Arc::new(BoardMode {
+    Ok(Arc::new(BoardMode {
         core,
         team,
         huddles,
@@ -520,15 +499,12 @@ pub async fn prepare(root: &Path, public_port: u16, remote_port: u16, internal_p
         public_port,
         remote_port,
         root: root.to_path_buf(),
-        secret: secret.to_string(),
         remote: RemoteFile::new(root),
         updates: UpdateChecker::new(),
         versions: ModelVersions::new(Some(root.join("model-versions.json"))),
-        tell: OnceLock::new(),
         helper,
         telegram,
         helper_tell,
-        satellite_ready,
         outside: OnceLock::new(),
         outside_sat,
         publish_run,
@@ -586,14 +562,6 @@ fn start_run_timers(core: &Arc<Core>, runs: &Arc<RunLoop>, ops: Arc<TicketOps>, 
     let stop = awake.start();
     core.on_stop("keep-awake", stop);
     awake
-}
-
-fn fall_back(root: &Path, reason: &str, crashes: Vec<String>) -> Option<Arc<BoardMode>> {
-    eprintln!("ckanban-rs: board mode is off for this start, Bun runs the whole board: {reason}");
-    if let Err(e) = mode::record_fallback(root, reason, crashes) {
-        eprintln!("ckanban-rs: can't write {}: {e}", mode::status_path(root).display());
-    }
-    None
 }
 
 /// The pass store's secrets, read again only when the passes file changes.
@@ -679,30 +647,10 @@ fn query_value(query: Option<&str>, name: &str) -> Option<String> {
     url::form_urlencoded::parse(query.unwrap_or("").as_bytes()).find(|(k, _)| k == name).map(|(_, v)| v.into_owned())
 }
 
-/// A phone request's own Host and Origin lines, put back before it goes to Bun (`as_local`).
-struct Sent {
-    host: Vec<HeaderValue>,
-    origin: Vec<HeaderValue>,
-}
-
-impl Sent {
-    fn restore(self, h: &mut HeaderMap) {
-        h.remove(HOST);
-        h.remove(ORIGIN);
-        for v in self.host {
-            h.append(HOST, v);
-        }
-        for v in self.origin {
-            h.append(ORIGIN, v);
-        }
-    }
-}
-
 /// Shows a phone request that passed the gate to the routes that check this Mac's Host and Origin: Host
 /// `127.0.0.1:<port>`, and an Origin (when it sent one) of the board's page here.
-fn as_local(h: &mut HeaderMap, port: u16) -> Sent {
-    let sent = Sent { host: h.get_all(HOST).iter().cloned().collect(), origin: h.get_all(ORIGIN).iter().cloned().collect() };
-    let had_origin = sent.origin.iter().any(|o| !o.is_empty());
+fn as_local(h: &mut HeaderMap, port: u16) {
+    let had_origin = h.get_all(ORIGIN).iter().any(|o| !o.is_empty());
     h.remove(HOST);
     h.remove(ORIGIN);
     if let Ok(v) = HeaderValue::from_str(&format!("127.0.0.1:{port}")) {
@@ -710,18 +658,6 @@ fn as_local(h: &mut HeaderMap, port: u16) -> Sent {
         if had_origin && let Ok(o) = HeaderValue::from_str(&format!("http://127.0.0.1:{port}")) {
             h.insert(ORIGIN, o);
         }
-    }
-    sent
-}
-
-/// A request on to Bun; a phone request (its own Host and Origin back) marked as one.
-async fn to_bun(mut req: Request<Body>, peer: SocketAddr, sent: Option<Sent>, proxy: &Proxy) -> Response<Body> {
-    match sent {
-        Some(sent) => {
-            sent.restore(req.headers_mut());
-            proxy.forward_as(req, peer, &[(edge::VIA_HEADER, "remote")]).await
-        }
-        None => proxy.forward(req, peer).await,
     }
 }
 
@@ -1294,24 +1230,15 @@ impl BoardMode {
     }
 
     /// Every request in board mode, from this Mac's listener (`via` Local) or the phone access listener (Remote).
-    pub async fn handle(self: &Arc<Self>, req: Request<Incoming>, peer: SocketAddr, via: Listener, native: &Native, proxy: &Proxy) -> Response<Body> {
-        let mut res = self.route(req, peer, via, native, proxy).await;
+    pub async fn handle(self: &Arc<Self>, req: Request<Incoming>, peer: SocketAddr, via: Listener, native: &Native, web: &Web) -> Response<Body> {
+        let mut res = self.route(req, peer, via, native, web).await;
         if via == Listener::Remote {
             res.headers_mut().insert(LISTENER_HEADER, HeaderValue::from_static("remote"));
         }
         res
     }
 
-    async fn route(self: &Arc<Self>, req: Request<Incoming>, peer: SocketAddr, via: Listener, native: &Native, proxy: &Proxy) -> Response<Body> {
-        // 1. The satellite's calls (only on this Mac's listener, only with this start's secret).
-        if via == Listener::Local
-            && let Some(name) = req.uri().path().strip_prefix(edge::INTERNAL_PREFIX)
-            && req.method() == Method::POST
-            && req.headers().get(SATELLITE_HEADER).is_some_and(|v| edge::secret_matches(v.as_bytes(), &self.secret))
-        {
-            let name = name.to_string();
-            return self.internal(&name, req).await;
-        }
+    async fn route(self: &Arc<Self>, req: Request<Incoming>, peer: SocketAddr, via: Listener, native: &Native, web: &Web) -> Response<Body> {
         // 2. The gate.
         let remote = self.remote.active();
         let seen = Seen::of(req.method().as_str(), req.headers());
@@ -1350,7 +1277,9 @@ impl BoardMode {
         // user-only checks look at the caller, which for the phone is `tailscale serve`: they refuse the phone
         // (stricter than Bun, which lets the owner's phone in).
         let mut req = req;
-        let sent = (via == Listener::Remote).then(|| as_local(req.headers_mut(), self.public_port));
+        if via == Listener::Remote {
+            as_local(req.headers_mut(), self.public_port);
+        }
         if let Some(res) = self.answer(&req).await {
             return res;
         }
@@ -1388,25 +1317,22 @@ impl BoardMode {
         let req = match self.answer_async(req).await {
             Ok(res) => return res,
             Err(Next::Untouched(r)) => r,
-            // Its body already read: straight to Bun.
-            Err(Next::Bun(r)) => return to_bun(r, peer, sent, proxy).await,
+            // Its body already read: no other route takes it.
+            Err(Next::Bun(r)) => return web.answer(&r).await,
         };
-        // 5. Bun (and the front's native routes on this Mac).
-        match sent {
-            Some(_) => to_bun(req.map(|b| b.boxed()), peer, sent, proxy).await,
-            None => match native.answer(req, peer).await {
-                Ok(res) => res,
-                Err(req) => proxy.forward(req, peer).await,
-            },
+        // 5. The server's native routes (usage, spend, agents), then the web page and the JSON 404 (web.rs).
+        match native.answer(req, peer).await {
+            Ok(res) => res,
+            Err(req) => web.answer(&req).await,
         }
     }
 
-    /// The outside services (P2), once the server knows how the Bun child runs (`bun`, `repo`): the helper command for
-    /// publishing, `ckanban mcp`'s command line for the agents, and `notify` (Bun hears of the passes file changing).
-    pub fn connect_outside(self: &Arc<Self>, bun: &Path, repo: &Path, notify: passes::Notify) {
+    /// The outside services (P2): publishing and the agents' `ckanban mcp` command line are this binary's, `notify`
+    /// tells the UI of a change to the passes file.
+    pub fn connect_outside(self: &Arc<Self>, notify: passes::Notify) {
         use crate::outside::{self, routes::Outside};
         let exe = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("ckanban-rs"));
-        let _ = self.publish_run.set(outside::edge::publish_run(exe));
+        let _ = self.publish_run.set(outside::edge::publish_run(exe.clone()));
         let bus = self.core.bus.clone();
         let emit: outside::Emit = Arc::new(move |v: Value| bus.emit_json(v));
         let home = ckanban_core::home::home_dir();
@@ -1421,36 +1347,27 @@ impl BoardMode {
             claude_config.clone(),
         );
         let phone = outside::phone::Phone::new(self.root.clone(), self.remote_port);
-        let agents = crate::agents::Agents::new(bun, repo).map(|a| outside::agents_admin::AgentsAdmin::new(Arc::new(a)));
-        let bun_version = std::process::Command::new(bun).arg("--version").output().ok().filter(|o| o.status.success()).map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
-        let bugs = outside::bugreport::BugReports::new(self.root.clone(), bun_version);
+        let agents = Some(outside::agents_admin::AgentsAdmin::new(Arc::new(crate::agents::Agents::new(&exe))));
+        let bugs = outside::bugreport::BugReports::new(self.root.clone(), None);
         let _ = self.outside_sat.signin.set(signin.clone());
         let o = Arc::new(Outside { mcp: mcp.clone(), signin, phone: phone.clone(), agents, bugs });
         if self.outside.set(o).is_ok() {
             mcp.start();
             phone.watch();
-            // The satellite's helper offers a check-in only when some MCP server works (`checkinOffer`).
+            // The helper offers a check-in only when some MCP server works (`checkinOffer`).
             self.mirror_mcp(mcp);
         }
     }
 
-    /// Tells the satellite whether any MCP server is connected, at start and when that changes.
+    /// Tells the helper whether any MCP server is connected, at start and when that changes.
     fn mirror_mcp(&self, mcp: Arc<crate::outside::mcp::Mcp>) {
-        let Some(tell) = self.tell.get().cloned() else { return };
         let mut rx = self.core.bus.subscribe();
         let helper = self.helper.clone();
         tokio::spawn(async move {
-            let mut last: Option<bool> = None;
             loop {
                 let now = mcp.any_connected();
                 if let Some(n) = helper.notify.get() {
                     n.channels.connected.store(now, std::sync::atomic::Ordering::Relaxed);
-                }
-                if last != Some(now) {
-                    last = Some(now);
-                    if tell.send(satellite::runtime_line(&json!({ "mcpConnected": now }))).is_err() {
-                        return;
-                    }
                 }
                 loop {
                     match rx.recv().await {
@@ -1553,9 +1470,6 @@ impl BoardMode {
         if let Some(o) = self.outside.get() {
             o.phone.note_visit(iso(now_ms()));
         }
-        if let Some(t) = self.tell.get() {
-            let _ = t.send(format!("remote-visit {}\n", iso(now_ms())));
-        }
     }
 
     /// An own route after the gate: the front desk's gate and the JSON-only rule first, as Bun's `api()` does.
@@ -1625,29 +1539,9 @@ impl BoardMode {
         }
     }
 
-    /// `/api/internal/<name>` from the satellite (the edge header checked).
-    async fn internal(self: &Arc<Self>, name: &str, req: Request<Incoming>) -> Response<Body> {
-        let b = match read_body(req.into_body().boxed()).await {
-            Ok(bytes) => serde_json::from_slice::<Value>(&bytes).unwrap_or(Value::Null),
-            Err(e) => return self.error(StatusCode::BAD_REQUEST, &e),
-        };
-        if let Some((status, v)) = self.helper.internal(name, &b).await {
-            return self.json_at(StatusCode::from_u16(status).unwrap_or(StatusCode::OK), &v);
-        }
-        match edge::inbound(&*self.actions, name, &b).await {
-            Some((status, v)) => {
-                if !status.is_success() {
-                    eprintln!("ckanban-rs: the satellite's {name}: {}", v.get("error").and_then(Value::as_str).unwrap_or(""));
-                }
-                self.json_at(status, &v)
-            }
-            None => self.error(StatusCode::NOT_FOUND, "not found"),
-        }
-    }
-
     /// A held front desk request after the user's Confirm, run as the user (Bun's `replay`: no gate, no front desk
-    /// header): an own route here, else Bun with the confirmed mark. The answer is `{status, body}`.
-    async fn replay(self: &Arc<Self>, b: &Value, native: &Native, proxy: &Proxy) -> Response<Body> {
+    /// header): the board's routes as the user who confirmed. The answer is `{status, body}`.
+    async fn replay(self: &Arc<Self>, b: &Value) -> Response<Body> {
         let method = b.get("method").and_then(Value::as_str).unwrap_or("GET");
         let path = b.get("path").and_then(Value::as_str).unwrap_or("/");
         let body = b.get("body").filter(|v| !v.is_null());
@@ -1665,7 +1559,7 @@ impl BoardMode {
         };
         let Ok(mut req) = rb.body(full(bytes)) else { return self.json_at(StatusCode::OK, &json!({ "status": 404, "body": { "error": "not found" } })) };
         // The path Bun's `new URL` would route on, as for every other request.
-        crate::proxy::normalize_target(&mut req);
+        crate::web::normalize_target(&mut req);
         let path = req.uri().path().to_string();
         let path = path.as_str();
         let peer = SocketAddr::from(([127, 0, 0, 1], 0));
@@ -1741,9 +1635,9 @@ impl BoardMode {
             };
             return self.json_at(StatusCode::OK, &json!({ "status": status, "body": data }));
         }
-        // Everything else through this server's own order (Rust's routes, then Bun): Bun's confirmed mark only
-        // ever let a schedule's delete through, which runs above.
-        let _ = (native, proxy, peer);
+        // Everything else through this server's own order: Bun's confirmed mark only ever let a schedule's delete
+        // through, which runs above.
+        let _ = peer;
         let res = match own_route(&m, path) {
             Some(own) => self.own(own, req, Listener::Local).await,
             None => self.send_again(req).await,
@@ -1757,110 +1651,9 @@ impl BoardMode {
         self.json_at(StatusCode::OK, &json!({ "status": status, "body": data }))
     }
 
-    /// After the satellite answers: follow its event stream, give it the live state, and send it the board's events.
-    pub async fn connect_satellite(&self, internal_port: u16, secret: &str, tell: tokio::sync::mpsc::UnboundedSender<String>) {
-        if let Err(e) = satellite::follow(self.core.bus.clone(), internal_port, self.public_port, secret.to_string()).await {
-            eprintln!("ckanban-rs: the satellite's event stream: {e}");
-        }
-        let s = &self.core.services;
-        // With the summaries of every session the notifier's start-up stock-take reads (it waits for this snapshot),
-        // worked out off the async threads: the index may still be loading and summaries may need a transcript read.
-        let (runs, huddles, sessions, index, root) = (s.runs.clone(), s.huddles.clone(), s.sessions.clone(), self.core.index.clone(), self.root.clone());
-        let snapshot = tokio::task::spawn_blocking(move || {
-            let slugs = boards(&root);
-            let lists: Vec<_> = slugs.iter().map(|slug| index.list(slug)).collect();
-            let ids = satellite::waiting_sessions(lists.iter().flat_map(|l| l.tickets.iter().map(|t| (t.status.as_str(), t.s("sessionId")))));
-            satellite::runtime_snapshot(&*runs, &*huddles, &*sessions, &slugs, &ids)
-        })
-        .await
-        .unwrap_or_else(|_| json!({ "running": [], "hostHuddles": {}, "sessions": {} }));
-        eprintln!("[board] the satellite's start snapshot: {} session summaries", snapshot["sessions"].as_object().map_or(0, |m| m.len()));
-        let _ = tell.send(satellite::runtime_line(&snapshot));
-        let _ = self.tell.set(tell.clone());
-        {
-            let mut t = self.helper_tell.lock().unwrap_or_else(|e| e.into_inner());
-            for line in std::mem::take(&mut t.early) {
-                let _ = tell.send(line);
-            }
-            t.tell = Some(tell.clone());
-        }
-        self.satellite_ready.send_replace(true);
-        // The pass store for key cards: Bun hears of each change to the passes file on its stdin.
-        let notify_tell = tell.clone();
-        let notify: passes::Notify = Arc::new(move |file: &str| {
-            let _ = notify_tell.send(format!("changed {file}\n"));
-        });
+    /// The pass store for key cards; `notify` tells the UI of a change to the passes file.
+    pub fn connect_passes(&self, notify: passes::Notify) {
         let _ = self.passes.set(Arc::new(passes::Passes::new(self.root.clone(), notify)));
-        // A huddle changed: the helper's mirror gets that board's host states again (worked out off the bus, a
-        // board at a time, several changes in a row at once).
-        let (hx, mut hrx) = tokio::sync::mpsc::unbounded_channel::<String>();
-        self.core.bus.on(move |e| {
-            // A ticket's run starting or ending changes who works in its huddle too.
-            if (e.ty == "huddle.updated" || e.ty == "huddle.message" || e.ty == "ticket.updated")
-                && let Some(p) = e.body.get("profile").and_then(Value::as_str)
-            {
-                let _ = hx.send(p.to_string());
-            }
-        });
-        let (huddles, htell) = (self.huddles.clone(), tell.clone());
-        tokio::spawn(async move {
-            // What the satellite has per board: only a board whose states changed is sent again.
-            let sent: Arc<Mutex<std::collections::HashMap<String, Value>>> = Arc::default();
-            while let Some(first) = hrx.recv().await {
-                let mut slugs = vec![first];
-                while let Ok(s) = hrx.try_recv() {
-                    if !slugs.contains(&s) {
-                        slugs.push(s);
-                    }
-                }
-                let (h, sent) = (huddles.clone(), sent.clone());
-                let line = tokio::task::spawn_blocking(move || {
-                    let mut by = serde_json::Map::new();
-                    let mut sent = sent.lock().unwrap_or_else(|e| e.into_inner());
-                    for s in slugs {
-                        let states = Value::Object(h.host_states(&s).iter().map(|(k, v)| (k.clone(), v.clone())).collect());
-                        if sent.get(&s) != Some(&states) {
-                            sent.insert(s.clone(), states.clone());
-                            by.insert(s, states);
-                        }
-                    }
-                    (!by.is_empty()).then(|| satellite::runtime_line(&json!({ "hostHuddles": by })))
-                })
-                .await;
-                if let Ok(Some(line)) = line {
-                    let _ = htell.send(line);
-                }
-            }
-        });
-        let views = s.views.clone();
-        // The live state the helper reads goes first, so it applies before the event that tells of the change: the
-        // tickets running now (when that changed) and a ticket's new session summary.
-        let runs = s.runs.clone();
-        let tickets = self.core.tickets.clone();
-        let last_running = std::sync::Mutex::new(Vec::<(String, String)>::new());
-        self.core.bus.on(move |e| {
-            if e.origin == ckanban_board::bus::Origin::Board && e.ty == "ticket.updated" {
-                let now = runs.running_tickets();
-                let mut last = last_running.lock().unwrap_or_else(|p| p.into_inner());
-                if *last != now {
-                    let list: Vec<String> = now.iter().map(|(s, i)| format!("{s}/{i}")).collect();
-                    let _ = tell.send(satellite::runtime_line(&json!({ "running": list })));
-                    *last = now;
-                }
-            }
-            if e.origin == ckanban_board::bus::Origin::Board
-                && e.ty == "session.updated"
-                && let (Some(p), Some(i), Some(sum)) = (e.body.get("profile").and_then(Value::as_str), e.body.get("id").and_then(Value::as_str), e.body.get("session"))
-                && let Some(sid) = tickets.get(p, i).and_then(|t| t.s("sessionId").filter(|x| !x.is_empty()).map(str::to_string))
-            {
-                let mut m = serde_json::Map::new();
-                m.insert(sid, sum.clone());
-                let _ = tell.send(satellite::runtime_line(&json!({ "sessions": m })));
-            }
-            if let Some(line) = satellite::event_line(e, &*views) {
-                let _ = tell.send(line);
-            }
-        });
     }
 
     /// Before the process ends: every run is stopped without an outcome (chat replies cut off are marked) so the next

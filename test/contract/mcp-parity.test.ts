@@ -1,15 +1,34 @@
-// Parity of a port of `ckanban mcp` with Bun's: when CKANBAN_PARITY_MCP names another MCP server (a JSON array, e.g.
-// '["rust/target/release/ckanban-rs","mcp"]'; `bun run test:contract:rust` sets it), both servers run against one
-// contract daemon and get the same calls, and their answers must be the same: initialize, tools/list, and tool calls
-// across every group, in and outside a board run, with their refusals and argument errors. Calls that change the board
-// go to Bun first, then to the port; ids and times the second call makes differently are masked before comparing.
-// Skipped without CKANBAN_PARITY_MCP.
+// MCP answers as Bun's `ckanban mcp` gave them: initialize, tools/list, and tool calls across every group, in and
+// outside a board run, with their refusals and argument errors. Two servers run against one contract daemon and get
+// the same calls; calls that change the board go to the first, then to the second, and the second must answer as the
+// first (ids and times it makes differently masked). The first one's answers must be Bun's, recorded in
+// golden/mcp-parity.json (golden.ts) while both ran side by side before P4: `CKANBAN_GOLDEN_RECORD=1` with
+// CKANBAN_PARITY_MCP naming the port records them from Bun's server, on a commit that still has it.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { CLI_CMD, type Daemon, startDaemon } from "./daemon";
-import { type Mcp, startMcp } from "./mcp";
+import { Golden, RECORD, runMasker } from "./golden";
+import { MCP_CMD, type Mcp, startMcp } from "./mcp";
 
-const PORT_CMD: string[] | null = process.env.CKANBAN_PARITY_MCP ? JSON.parse(process.env.CKANBAN_PARITY_MCP) : null;
-const BUN_CMD = [...CLI_CMD, "mcp"];
+const PORT_CMD: string[] | null = process.env.CKANBAN_PARITY_MCP ? JSON.parse(process.env.CKANBAN_PARITY_MCP) : RECORD ? null : MCP_CMD;
+/** Recording: Bun's own `ckanban mcp`. Checking: the server under test, twice. */
+const BUN_CMD = RECORD ? [...CLI_CMD, "mcp"] : MCP_CMD;
+const golden = new Golden("mcp-parity");
+/** Ticket rows sorted by what follows the id: ids made the same day are random, so "newest first" differs per run. */
+const rowsSorted = (text: string) => {
+  const lines = text.split("\n");
+  const row = (l: string) => /^t_\d{8}_[a-z0-9]{4}\s/.test(l);
+  for (let i = 0; i < lines.length; ) {
+    let j = i;
+    while (j < lines.length && row(lines[j]!)) j++;
+    if (j > i + 1) lines.splice(i, j - i, ...lines.slice(i, j).sort((x, y) => x.slice(15).localeCompare(y.slice(15))));
+    i = Math.max(j, i + 1);
+  }
+  // A part of the list (`limit`): which tickets are in it depends on those random ids too.
+  const part = /newest first: \d+ of \d+/.test(text);
+  return lines.map((l) => (part && row(l) ? `${l.slice(0, 15)} <row>` : l)).join("\n");
+};
+const gold = (label: string, v: any) =>
+  golden.match(label, runMasker()(JSON.stringify(v && typeof v.text === "string" ? { ...v, text: rowsSorted(v.text) } : v)));
 const SLUG = "par";
 const P = `/api/profiles/${SLUG}`;
 
@@ -29,12 +48,13 @@ async function same(who: "user" | "run", name: string, args: Record<string, unkn
   const b = await port.call(name, args);
   const norm = (x: { text: string; isError: boolean }) => ({ name, isError: x.isError, text: masked ? mask(x.text) : x.text });
   expect(norm(b)).toEqual(norm(a));
+  gold(`${who} ${name}`, norm(a));
   return a;
 }
 
 const newTicket = async (title: string, extra: Record<string, unknown> = {}) => (await d.api("POST", `${P}/tickets`, { title, ...extra })).data.id as string;
 
-describe.skipIf(!PORT_CMD)("MCP parity with Bun", () => {
+describe.skipIf(!PORT_CMD)("MCP answers as Bun's", () => {
   beforeAll(async () => {
     d = await startDaemon();
     expect((await d.api("POST", "/api/profiles", { name: "Par", path: d.project })).status).toBe(201);
@@ -55,6 +75,7 @@ describe.skipIf(!PORT_CMD)("MCP parity with Bun", () => {
       await s.port.close();
     }
     await d?.stop();
+    golden.done();
   }, 30_000);
 
   test("initialize and tools/list are the same", async () => {
@@ -63,10 +84,12 @@ describe.skipIf(!PORT_CMD)("MCP parity with Bun", () => {
       const a = await bun.request("initialize", { protocolVersion: v });
       const b = await port.request("initialize", { protocolVersion: v });
       expect({ ...b, id: 0 }).toEqual({ ...a, id: 0 });
+      gold(`initialize ${v}`, { ...a, id: 0 });
     }
     const a = await bun.request("tools/list");
     const b = await port.request("tools/list");
     expect(JSON.stringify(b.result)).toBe(JSON.stringify(a.result));
+    gold("tools/list", a.result);
   });
 
   test("reading tickets and boards", async () => {
@@ -251,6 +274,7 @@ describe.skipIf(!PORT_CMD)("MCP parity with Bun", () => {
         const a = await servers[who].bun.call("backup_file", args);
         const b = await servers[who].port.call("backup_file", args);
         expect(stamp(b)).toEqual(stamp(a));
+        gold(`${who} backup_file`, stamp(a));
       }
     }
     await same("user", "propose_automation", { name: "Inbox", summary: "Checks the inbox", script: "echo", passes: [{ name: "Linear", url: "http://x" }], everyMinutes: "30" });

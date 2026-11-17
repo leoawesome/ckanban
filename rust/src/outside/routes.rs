@@ -16,7 +16,7 @@ pub struct Outside {
     pub mcp: Arc<Mcp>,
     pub signin: Arc<SignIn>,
     pub phone: Arc<Phone>,
-    /// None when Bun's own command line can't be known for sure (`crate::agents::Agents::new`): Bun answers then.
+    /// The agents install and uninstall (always set since P4).
     pub agents: Option<Arc<AgentsAdmin>>,
     pub bugs: Arc<BugReports>,
 }

@@ -153,6 +153,7 @@ export async function startDaemon(opts: StartOptions = {}): Promise<Daemon> {
     CKANBAN_NO_KEYCHAIN: "1",
     // `bun run test:contract:rust-board`: the server under test runs the board in Rust (ckanban-rs board mode).
     ...(process.env.CKANBAN_RUST_BOARD ? { CKANBAN_RUST_BOARD: process.env.CKANBAN_RUST_BOARD } : {}),
+    ...(process.env.CKANBAN_TMP_BUNLOG ? { CKANBAN_TMP_BUNLOG: process.env.CKANBAN_TMP_BUNLOG } : {}),
     ...opts.env,
   };
   opts.before?.({ home, claudeDir, project });

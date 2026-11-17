@@ -20,14 +20,11 @@ use hyper::{Method, Request, Response, StatusCode};
 use serde_json::{Value, json};
 
 use super::{BoardMode, FRONT_DESK_HEADER, MAX_BODY};
-use crate::proxy::{Body, Proxy, full};
-use crate::routes::Native;
+use crate::web::{Body, full};
 
 /// What Telegram needs from the board (`ckanban_board::telegram::Env`).
 struct TgEnv {
     board: std::sync::Weak<BoardMode>,
-    native: Arc<Native>,
-    proxy: Arc<Proxy>,
 }
 
 fn read_record(path: std::path::PathBuf) -> Option<Value> {
@@ -74,10 +71,10 @@ impl telegram::Env for TgEnv {
         self.board.upgrade().map(|b| b.chats.clone())
     }
     fn replay(&self, method: String, path: String, body: Value) -> BoxFuture<'static, (u16, Value)> {
-        let (b, native, proxy) = (self.board.upgrade(), self.native.clone(), self.proxy.clone());
+        let b = self.board.upgrade();
         Box::pin(async move {
             let Some(b) = b else { return (503, json!({ "error": "the board is stopping" })) };
-            let res = b.replay(&json!({ "method": method, "path": path, "body": body }), &native, &proxy).await;
+            let res = b.replay(&json!({ "method": method, "path": path, "body": body })).await;
             let bytes = res.into_body().collect().await.map(|c| c.to_bytes()).unwrap_or_default();
             let v: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
             (v.get("status").and_then(Value::as_u64).unwrap_or(500) as u16, v.get("body").cloned().unwrap_or(Value::Null))
@@ -87,8 +84,8 @@ impl telegram::Env for TgEnv {
 
 impl BoardMode {
     /// Starts Telegram and the front desk (P1c): the bot, its hooks in the quick chats, the helper's settings writes.
-    pub fn connect_telegram(self: &Arc<Self>, native: Arc<Native>, proxy: Arc<Proxy>) {
-        let env = Arc::new(TgEnv { board: Arc::downgrade(self), native, proxy });
+    pub fn connect_telegram(self: &Arc<Self>) {
+        let env = Arc::new(TgEnv { board: Arc::downgrade(self) });
         let tg = Telegram::new(&self.root, self.helper.clone(), env);
         if self.telegram.set(tg.clone()).is_err() {
             return;
@@ -124,7 +121,7 @@ impl BoardMode {
         let bytes = match Limited::new(body, MAX_BODY).collect().await {
             Ok(b) => b.to_bytes(),
             Err(e) if e.is::<http_body_util::LengthLimitError>() => return self.error(StatusCode::PAYLOAD_TOO_LARGE, "request body too large"),
-            Err(_) => return crate::proxy::plain(StatusCode::BAD_REQUEST, "bad request"),
+            Err(_) => return crate::web::plain(StatusCode::BAD_REQUEST, "bad request"),
         };
         let Some(tg) = self.tg() else { return self.error(StatusCode::SERVICE_UNAVAILABLE, "the front desk is still starting; ask again in a moment") };
         let path = parts.uri.path().to_string();
@@ -155,7 +152,7 @@ impl BoardMode {
         let (parts, body) = req.into_parts();
         let bytes = match Limited::new(body, MAX_BODY).collect().await {
             Ok(b) => b.to_bytes(),
-            Err(_) => return crate::proxy::plain(StatusCode::BAD_REQUEST, "bad request"),
+            Err(_) => return crate::web::plain(StatusCode::BAD_REQUEST, "bad request"),
         };
         let target = parts.uri.path_and_query().map(|p| p.as_str()).unwrap_or("/");
         let mut rb = Request::builder().method(parts.method.clone()).uri(format!("http://127.0.0.1:{}{target}", self.public_port));
@@ -166,7 +163,7 @@ impl BoardMode {
             rb = rb.header(k, v);
         }
         rb = rb.header(HOST, format!("127.0.0.1:{}", self.public_port));
-        let Ok(again) = rb.body(Full::new(bytes)) else { return crate::proxy::plain(StatusCode::BAD_REQUEST, "bad request") };
+        let Ok(again) = rb.body(Full::new(bytes)) else { return crate::web::plain(StatusCode::BAD_REQUEST, "bad request") };
         let client = hyper_util::client::legacy::Client::builder(hyper_util::rt::TokioExecutor::new()).build_http::<Full<Bytes>>();
         match client.request(again).await {
             Ok(res) => res.map(|b| b.boxed()),

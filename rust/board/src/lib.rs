@@ -12,7 +12,6 @@ pub mod dryrun;
 pub mod events;
 pub mod lock;
 pub mod mode;
-pub mod satellite;
 
 // One folder per task of the plan (section 7); each starts empty.
 pub mod browsers; // R9

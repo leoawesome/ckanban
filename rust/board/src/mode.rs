@@ -129,6 +129,17 @@ pub fn decide(wanted: &Wanted, last: Option<&Status>, switch_written_ms: Option<
     Decision::Try { crashes }
 }
 
+/// The recent unclean ends (within the window), the last start's included when it never stopped cleanly. Since P4
+/// there is no Bun to fall back to: the count is only kept in the status file.
+pub fn recent_crashes(last: Option<&Status>, now: f64) -> Vec<String> {
+    let Some(last) = last else { return Vec::new() };
+    let mut crashes: Vec<String> = last.crashes.iter().filter(|c| parse_date(c).is_some_and(|t| now - t <= CRASH_WINDOW_MS)).cloned().collect();
+    if last.mode == "rust" && last.running {
+        crashes.push(iso(now));
+    }
+    crashes
+}
+
 fn crash_reason() -> String {
     format!(
         "board mode stopped unexpectedly {CRASH_LIMIT} times within 10 minutes; Bun runs the whole board until {SWITCH_FILE} is written again (or {STATUS_FILE} is removed)"

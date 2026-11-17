@@ -186,7 +186,7 @@ Runs `open http://localhost:<port>`. Exit code: always 0 (the `open` exit code i
 
 ### `ckanban update`
 
-- From source (`IS_BINARY` false): stdout ``Running from source: use `git pull && bun install && bun run build:web && ckanban restart`.``, exit 0. The Rust CLI (`ckanban-rs`) is always built from source until the release binary is Rust (P4), so it answers this way.
+- From source (`IS_BINARY` false): stdout ``Running from source: use `git pull && bun run build:web && scripts/build-rust.sh && ckanban restart`.``, exit 0. The Rust CLI (`ckanban-rs`) is built from source (no Rust release yet), so it answers this way.
 - Gets the latest release from `https://api.github.com/repos/leoawesome/ckanban/releases/latest`. Unreachable: stderr `Could not reach GitHub to check for updates.`, exit 1.
 - Same version: stdout `Already on the latest version (v<VERSION>).`
 - Needs assets `ckanban-darwin-<arch>` and `SHA256SUMS`; missing: stderr `No build for darwin-<arch> in release v<ver>.` or `Release v<ver> has no SHA256SUMS, so the download can't be verified. Not updated.`, exit 1.

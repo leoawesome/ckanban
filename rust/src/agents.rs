@@ -1,7 +1,7 @@
 //! `GET /api/agents` (the Connections panel's "Use the board from Claude Code / Codex"), ported from
 //! `AgentRegistry.status()` in `src/integrations/agents.ts`: whether each agent's CLI is there and whether `ckanban mcp`
-//! is registered with it, pointing at this ckanban. Read only: install and uninstall stay on Bun (they run `claude
-//! mcp`, and Bun refreshes its in-memory Connections list after them).
+//! is registered with it, pointing at this ckanban (`ckanban-rs mcp`). Install and uninstall are
+//! `outside/agents_admin.rs`.
 
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
@@ -14,21 +14,15 @@ use crate::js;
 const SERVER_NAME: &str = "ckanban";
 
 pub struct Agents {
-    /// `helperArgv()` of the Bun child plus `mcp`: `[bun's real path, <repo>/src/cli.ts, "mcp"]`.
+    /// This ckanban's MCP server: `[this binary's real path, "mcp"]`.
     server_argv: Vec<String>,
 }
 
 impl Agents {
-    /// None when the Bun child's `process.execPath` can't be known for sure (a wrapper script stands in for bun):
-    /// Bun answers then.
-    pub fn new(bun: &Path, repo: &Path) -> Option<Self> {
-        let bun = std::fs::canonicalize(bun).ok()?;
-        let head = std::fs::read(&bun).ok().map(|b| b.starts_with(b"#!"))?;
-        if head {
-            return None;
-        }
-        let cli = std::fs::canonicalize(repo.join("src").join("cli.ts")).ok()?;
-        Some(Agents { server_argv: vec![bun.to_string_lossy().into_owned(), cli.to_string_lossy().into_owned(), "mcp".into()] })
+    /// The agents' view for this binary (`exe`, its real path when it can be found).
+    pub fn new(exe: &Path) -> Self {
+        let exe = std::fs::canonicalize(exe).unwrap_or_else(|_| exe.to_path_buf());
+        Agents { server_argv: vec![exe.to_string_lossy().into_owned(), "mcp".into()] }
     }
 
     /// The command line the agents should run (`serverArgv`): this ckanban's `mcp`.

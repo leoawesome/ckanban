@@ -1,17 +1,17 @@
-// Parity of the Rust board with Bun's (docs/rust-port-board-plan.md, F1): one script of requests that crosses the
-// areas (ticket writes, runs on the fake Claude with a chat follow-up, a question, a feature with a task, comments,
-// schedules and one-time jobs, the reads of the board, the Inbox, a ticket's views), run on Bun in full mode and on
-// `ckanban-rs dev` in board mode, each on its own fresh data folder. Both must give the same answers and leave the same
-// files, ids, times, session ids and temp paths masked. Runs only when CKANBAN_PARITY_RS names the Rust server
-// (`bun run test:contract:rust-board` sets it); `bun run test` skips it.
+// The board answers and writes as Bun's did (docs/rust-port-board-plan.md, F1): one script of requests that crosses
+// the areas (ticket writes, runs on the fake Claude with a chat follow-up, a question, a feature with a task,
+// comments, schedules and one-time jobs, the reads of the board, the Inbox, a ticket's views) on a fresh data folder.
+// The answers and the files it leaves, ids, times, session ids and temp paths masked, must be Bun's: recorded in
+// golden/board-parity.json (golden.ts) from Bun's full mode before P4 removed it (`CKANBAN_GOLDEN_RECORD=1` on a
+// commit that still has it records them again).
 import { afterAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
-import { BUN_DAEMON_CMD, commandFromEnv, type Daemon, startDaemon, until } from "./daemon";
+import { BUN_DAEMON_CMD, DAEMON_CMD, type Daemon, startDaemon, until } from "./daemon";
+import { Golden, RECORD } from "./golden";
 import { Scripts, scriptDir, settled } from "./runs";
 
-const RS_CMD = commandFromEnv("CKANBAN_PARITY_RS", []);
 const SLUG = "parity";
 const P = `/api/profiles/${SLUG}`;
 const T = `${P}/tickets`;
@@ -156,31 +156,26 @@ async function runOn(cmd: string[], env: Record<string, string>): Promise<{ step
   }
 }
 
-describe.if(RS_CMD.length > 0)("the Rust board answers and writes like Bun", () => {
-  test("one script on Bun (full mode) and on the Rust board", async () => {
-    const [bun, rust] = [await runOn(BUN_DAEMON_CMD, { CKANBAN_RUST_BOARD: "0" }), await runOn(RS_CMD, { CKANBAN_RUST_BOARD: "1" })];
-    const norm = (side: typeof bun) => {
-      const m = masker();
-      const steps = side.steps.map((x) => ({ what: x.what, status: x.status, data: m(JSON.stringify(sorted(x.data), null, 1)) }));
-      // Paths first (their ids are known from the answers), then each file's text in the order of the masked paths.
-      const paths = Object.keys(side.files).map((k) => [m(k), k] as const).sort(([x], [y]) => x.localeCompare(y));
-      const fs = Object.fromEntries(paths.map(([masked, k]) => [masked, m(side.files[k]!)]));
-      return { steps, fs };
-    };
-    const [{ steps: ours, fs: of }, { steps: theirs, fs: tf }] = [norm(rust), norm(bun)];
-    // CKANBAN_PARITY_OUT=<dir>: both sides written there (bun.txt, rust.txt) to read the differences with `diff`.
+describe("the board answers and writes as Bun's did", () => {
+  test("one script, compared with Bun's recorded answers and files", async () => {
+    const golden = new Golden("board-parity");
+    const side = await (RECORD ? runOn(BUN_DAEMON_CMD, { CKANBAN_RUST_BOARD: "0" }) : runOn(DAEMON_CMD, {}));
+    const m = masker();
+    const steps = side.steps.map((x) => ({ what: x.what, status: x.status, data: m(JSON.stringify(sorted(x.data), null, 1)) }));
+    // Paths first (their ids are known from the answers), then each file's text in the order of the masked paths.
+    const paths = Object.keys(side.files).map((k) => [m(k), k] as const).sort(([x], [y]) => x.localeCompare(y));
+    const fs = Object.fromEntries(paths.map(([masked, k]) => [masked, m(side.files[k]!)]));
+    // CKANBAN_PARITY_OUT=<dir>: this side written there (steps.txt) to read the differences with `diff`.
     if (process.env.CKANBAN_PARITY_OUT) {
-      const dump = (st: typeof ours, fs: Record<string, string>) => [...st.map((x) => `=== ${x.what} ${x.status}\n${x.data}`), ...Object.entries(fs).map(([k, v]) => `=== file ${k}\n${v}`)].join("\n");
       mkdirSync(process.env.CKANBAN_PARITY_OUT, { recursive: true });
-      writeFileSync(join(process.env.CKANBAN_PARITY_OUT, "bun.txt"), dump(theirs, tf));
-      writeFileSync(join(process.env.CKANBAN_PARITY_OUT, "rust.txt"), dump(ours, of));
+      writeFileSync(join(process.env.CKANBAN_PARITY_OUT, RECORD ? "bun.txt" : "server.txt"),
+        [...steps.map((x) => `=== ${x.what} ${x.status}\n${x.data}`), ...Object.entries(fs).map(([k, v]) => `=== file ${k}\n${v}`)].join("\n"));
     }
-    expect(ours.map((x) => x.what)).toEqual(theirs.map((x) => x.what));
-    // Every difference at once, so one run lists them all.
-    const diffs = theirs.flatMap((t, i) => (JSON.stringify(ours[i]) === JSON.stringify(t) ? [] : [{ bun: t, rust: ours[i] }]));
-    expect(diffs).toEqual([]);
-    expect(Object.keys(of)).toEqual(Object.keys(tf));
-    const fileDiffs = Object.keys(tf).flatMap((k) => (of[k] === tf[k] ? [] : [{ file: k, bun: tf[k], rust: of[k] }]));
-    expect(fileDiffs).toEqual([]);
+    golden.match("steps", steps.map((x) => x.what));
+    // Every step and file, so one run lists every difference.
+    for (const x of steps) golden.match(`step ${x.what}`, x);
+    golden.match("files", Object.keys(fs));
+    for (const [k, v] of Object.entries(fs)) golden.match(`file ${k}`, v);
+    golden.done();
   }, 240_000);
 });

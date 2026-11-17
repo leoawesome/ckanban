@@ -1,0 +1,584 @@
+[
+ {
+  "label": "step board",
+  "value": {
+   "what": "board",
+   "status": 201,
+   "data": "{\"baseBranch\":\"\",\"copyFiles\":[],\"createdAt\":\"<time>\",\"effort\":\"high\",\"model\":null,\"name\":\"Writes\",\"path\":\"<path>\",\"setupCommand\":\"\",\"setupDetected\":{\"at\":\"<time>\",\"copyFiles\":[],\"setupCommand\":\"\",\"setupFrom\":[]},\"slug\":\"writes\"}"
+  }
+ },
+ {
+  "label": "step board no name",
+  "value": {
+   "what": "board no name",
+   "status": 400,
+   "data": "{\"error\":\"name is required\"}"
+  }
+ },
+ {
+  "label": "step board same folder",
+  "value": {
+   "what": "board same folder",
+   "status": 400,
+   "data": "{\"error\":\"The board \\\"Writes\\\" already uses this folder. Open that board instead.\"}"
+  }
+ },
+ {
+  "label": "step board bad effort",
+  "value": {
+   "what": "board bad effort",
+   "status": 400,
+   "data": "{\"error\":\"\\\"huge\\\" is not an effort level. Use low, medium, high, xhigh, max, or default (turn ultracode on or off with /effort ultracode, /effort ultracode off).\"}"
+  }
+ },
+ {
+  "label": "step other board",
+  "value": {
+   "what": "other board",
+   "status": 201,
+   "data": "{\"baseBranch\":\"\",\"copyFiles\":[],\"createdAt\":\"<time>\",\"model\":null,\"name\":\"Other board\",\"path\":\"<path>\",\"setupCommand\":\"\",\"setupDetected\":{\"at\":\"<time>\",\"copyFiles\":[],\"setupCommand\":\"\",\"setupFrom\":[]},\"slug\":\"other-board\"}"
+  }
+ },
+ {
+  "label": "step board patch",
+  "value": {
+   "what": "board patch",
+   "status": 200,
+   "data": "{\"baseBranch\":\"\",\"claudeAiConnectors\":\"none\",\"copyFiles\":[\".env\"],\"createdAt\":\"<time>\",\"effort\":\"high\",\"freshChatTokens\":1235,\"model\":null,\"name\":\"Writes 2\",\"path\":\"<path>\",\"runCapUsd\":null,\"setupCommand\":\"\",\"setupDetected\":{\"at\":\"<time>\",\"copyFiles\":[],\"setupCommand\":\"\",\"setupFrom\":[]},\"slug\":\"writes\",\"stallMinutes\":30,\"taskModels\":{\"build\":{\"effort\":\"low\",\"model\":\"sonnet\"}},\"ultracode\":true}"
+  }
+ },
+ {
+  "label": "step board bad stall",
+  "value": {
+   "what": "board bad stall",
+   "status": 400,
+   "data": "{\"error\":\"stallMinutes must be a whole number of minutes from 0 (off) to 1440\"}"
+  }
+ },
+ {
+  "label": "step board run cap from a run",
+  "value": {
+   "what": "board run cap from a run",
+   "status": 403,
+   "data": "{\"error\":\"only the user can change the board's spending cap\"}"
+  }
+ },
+ {
+  "label": "step create A",
+  "value": {
+   "what": "create A",
+   "status": 201,
+   "data": "{\"attention\":null,\"body\":\"Uses *** somewhere\",\"branch\":null,\"browsersAbove\":null,\"canCopyFile\":true,\"chromeAbove\":null,\"costUsd\":null,\"createdAt\":\"<time>\",\"devices\":null,\"error\":null,\"familyCard\":{\"costUsd\":0,\"line\":null,\"needsYou\":[],\"open\":0,\"running\":[],\"subFeatures\":[],\"subFeaturesRunning\":0,\"tasks\":0,\"tasksDone\":0,\"tools\":0,\"toolsDone\":0,\"waiting\":null,\"working\":[]},\"familyWorking\":0,\"folderWait\":false,\"holdsSlot\":false,\"huddleBusy\":false,\"huddleLine\":null,\"id\":\"<ticket0>\",\"important\":true,\"lastActivity\":null,\"lastRunAt\":null,\"links\":[],\"main\":true,\"mode\":\"interview\",\"needs\":[\"phone\"],\"order\":1,\"outcome\":null,\"outputDir\":\"<path>\",\"prUrl\":null,\"recovery\":null,\"resumeCommand\":null,\"runCap\":null,\"runCount\":0,\"running\":false,\"session\":null,\"sessionId\":null,\"shareJobs\":[],\"snoozed\":null,\"status\":\"backlog\",\"stepsRunning\":0,\"tags\":[\"ui\",\"big-thing\"],\"terminalOpen\":false,\"title\":\"First ticket\",\"updatedAt\":\"<time>\",\"userWait\":null,\"worktree\":null}"
+  }
+ },
+ {
+  "label": "step create B",
+  "value": {
+   "what": "create B",
+   "status": 201,
+   "data": "{\"attention\":{\"kind\":\"review\",\"label\":\"Ready for review\",\"since\":\"<time>\"},\"body\":\"\",\"branch\":null,\"browsersAbove\":null,\"canCopyFile\":true,\"chromeAbove\":null,\"costUsd\":0,\"createdAt\":\"<time>\",\"devices\":null,\"error\":null,\"familyCard\":{\"costUsd\":0,\"line\":null,\"needsYou\":[],\"open\":0,\"running\":[],\"subFeatures\":[],\"subFeaturesRunning\":0,\"tasks\":0,\"tasksDone\":0,\"tools\":0,\"toolsDone\":0,\"waiting\":null,\"working\":[]},\"familyWorking\":0,\"folderWait\":false,\"holdsSlot\":false,\"huddleBusy\":false,\"huddleLine\":null,\"id\":\"<ticket0>\",\"important\":true,\"lastActivity\":null,\"lastRunAt\":null,\"links\":[],\"main\":true,\"mode\":\"auto\",\"order\":1,\"outcome\":null,\"outputDir\":\"<path>\",\"prUrl\":null,\"recovery\":null,\"resumeCommand\":null,\"runCap\":null,\"runCount\":0,\"running\":false,\"session\":null,\"sessionId\":null,\"shareJobs\":[],\"snoozed\":null,\"status\":\"review\",\"stepsRunning\":0,\"terminalOpen\":false,\"title\":\"Second\",\"updatedAt\":\"<time>\",\"userWait\":null,\"worktree\":null}"
+  }
+ },
+ {
+  "label": "step create C",
+  "value": {
+   "what": "create C",
+   "status": 201,
+   "data": "{\"attention\":null,\"body\":\"goes elsewhere\",\"branch\":null,\"browsersAbove\":null,\"canCopyFile\":true,\"chromeAbove\":null,\"costUsd\":null,\"createdAt\":\"<time>\",\"devices\":null,\"error\":null,\"familyCard\":{\"costUsd\":0,\"line\":null,\"needsYou\":[],\"open\":0,\"running\":[],\"subFeatures\":[],\"subFeaturesRunning\":0,\"tasks\":0,\"tasksDone\":0,\"tools\":0,\"toolsDone\":0,\"waiting\":null,\"working\":[]},\"familyWorking\":0,\"folderWait\":false,\"holdsSlot\":false,\"huddleBusy\":false,\"huddleLine\":null,\"id\":\"<ticket0>\",\"lastActivity\":null,\"lastRunAt\":null,\"links\":[],\"main\":true,\"mode\":\"interview\",\"order\":0,\"outcome\":null,\"outputDir\":\"<path>\",\"prUrl\":null,\"recovery\":null,\"resumeCommand\":null,\"runCap\":null,\"runCount\":0,\"running\":false,\"session\":null,\"sessionId\":null,\"shareJobs\":[],\"snoozed\":null,\"status\":\"backlog\",\"stepsRunning\":0,\"tags\":[\"trip\"],\"terminalOpen\":false,\"title\":\"Travels\",\"updatedAt\":\"<time>\",\"userWait\":null,\"worktree\":null}"
+  }
+ },
+ {
+  "label": "step create no title",
+  "value": {
+   "what": "create no title",
+   "status": 400,
+   "data": "{\"error\":\"title is required\"}"
+  }
+ },
+ {
+  "label": "step create bad kind",
+  "value": {
+   "what": "create bad kind",
+   "status": 400,
+   "data": "{\"error\":\"kind must be one of explore, build, test, review, fix, group, round, with_you\"}"
+  }
+ },
+ {
+  "label": "step create bad model",
+  "value": {
+   "what": "create bad model",
+   "status": 400,
+   "data": "{\"error\":\"\\\"gpt\\\" is not a model name. Use fable, opus, sonnet, haiku, opusplan, a full model id (claude-…), or default.\"}"
+  }
+ },
+ {
+  "label": "step create under another",
+  "value": {
+   "what": "create under another",
+   "status": 400,
+   "data": "{\"error\":\"a ticket can't be created under another one: planned tickets are retired. Create it on its own (a new ticket is a main ticket that splits its work into tasks), or with partOf to put it in a feature\"}"
+  }
+ },
+ {
+  "label": "step rename A",
+  "value": {
+   "what": "rename A",
+   "status": 200,
+   "data": "{\"attention\":null,\"body\":\"New body.\",\"branch\":null,\"browsersAbove\":null,\"canCopyFile\":true,\"chromeAbove\":null,\"costUsd\":null,\"createdAt\":\"<time>\",\"devices\":null,\"error\":null,\"familyCard\":{\"costUsd\":0,\"line\":null,\"needsYou\":[],\"open\":0,\"running\":[],\"subFeatures\":[],\"subFeaturesRunning\":0,\"tasks\":0,\"tasksDone\":0,\"tools\":0,\"toolsDone\":0,\"waiting\":null,\"working\":[]},\"familyWorking\":0,\"folderWait\":false,\"holdsSlot\":false,\"huddleBusy\":false,\"huddleLine\":null,\"id\":\"<ticket0>\",\"important\":true,\"lastActivity\":null,\"lastRunAt\":null,\"links\":[],\"main\":true,\"mode\":\"interview\",\"needs\":[\"phone\"],\"order\":1,\"outcome\":null,\"outputDir\":\"<path>\",\"prUrl\":null,\"recovery\":null,\"resumeCommand\":null,\"runCap\":null,\"runCount\":0,\"running\":false,\"session\":null,\"sessionId\":null,\"shareJobs\":[],\"snoozed\":null,\"status\":\"backlog\",\"stepsRunning\":0,\"tags\":[\"ui\",\"big-thing\"],\"terminalOpen\":false,\"title\":\"Renamed\",\"updatedAt\":\"<time>\",\"userWait\":null,\"worktree\":null}"
+  }
+ },
+ {
+  "label": "step stale body",
+  "value": {
+   "what": "stale body",
+   "status": 409,
+   "data": "{\"error\":\"description changed since you started editing (Claude may have updated it); reload and retry\"}"
+  }
+ },
+ {
+  "label": "step tags A",
+  "value": {
+   "what": "tags A",
+   "status": 200,
+   "data": "{\"attention\":null,\"body\":\"New body.\",\"branch\":null,\"browsersAbove\":null,\"canCopyFile\":true,\"chromeAbove\":null,\"costUsd\":null,\"createdAt\":\"<time>\",\"devices\":null,\"error\":null,\"familyCard\":{\"costUsd\":0,\"line\":null,\"needsYou\":[],\"open\":0,\"running\":[],\"subFeatures\":[],\"subFeaturesRunning\":0,\"tasks\":0,\"tasksDone\":0,\"tools\":0,\"toolsDone\":0,\"waiting\":null,\"working\":[]},\"familyWorking\":0,\"folderWait\":false,\"holdsSlot\":false,\"huddleBusy\":false,\"huddleLine\":null,\"id\":\"<ticket0>\",\"important\":true,\"lastActivity\":null,\"lastRunAt\":null,\"links\":[],\"main\":true,\"mode\":\"interview\",\"needs\":[\"phone\"],\"order\":1,\"outcome\":null,\"outputDir\":\"<path>\",\"prUrl\":null,\"recovery\":null,\"resumeCommand\":null,\"runCap\":null,\"runCount\":0,\"running\":false,\"session\":null,\"sessionId\":null,\"shareJobs\":[],\"snoozed\":null,\"status\":\"backlog\",\"stepsRunning\":0,\"suggestedTags\":[\"gamma\"],\"tags\":[\"alpha\",\"beta\"],\"terminalOpen\":false,\"title\":\"Renamed\",\"updatedAt\":\"<time>\",\"userWait\":null,\"worktree\":null}"
+  }
+ },
+ {
+  "label": "step pin A",
+  "value": {
+   "what": "pin A",
+   "status": 200,
+   "data": "{\"attention\":null,\"body\":\"New body.\",\"branch\":null,\"browsersAbove\":null,\"canCopyFile\":true,\"chromeAbove\":null,\"costUsd\":null,\"createdAt\":\"<time>\",\"devices\":null,\"error\":null,\"familyCard\":{\"costUsd\":0,\"line\":null,\"needsYou\":[],\"open\":0,\"running\":[],\"subFeatures\":[],\"subFeaturesRunning\":0,\"tasks\":0,\"tasksDone\":0,\"tools\":0,\"toolsDone\":0,\"waiting\":null,\"working\":[]},\"familyWorking\":0,\"folderWait\":false,\"holdsSlot\":false,\"huddleBusy\":false,\"huddleLine\":null,\"id\":\"<ticket0>\",\"important\":true,\"lastActivity\":null,\"lastRunAt\":null,\"links\":[],\"main\":true,\"mode\":\"interview\",\"needs\":[\"phone\"],\"order\":1,\"outcome\":null,\"outputDir\":\"<path>\",\"pinnedAt\":\"<time>\",\"prUrl\":null,\"recovery\":null,\"resumeCommand\":null,\"runCap\":null,\"runCount\":0,\"running\":false,\"session\":null,\"sessionId\":null,\"shareJobs\":[],\"snoozed\":null,\"status\":\"backlog\",\"stepsRunning\":0,\"suggestedTags\":[\"gamma\"],\"tags\":[\"alpha\",\"beta\"],\"terminalOpen\":false,\"title\":\"Renamed\",\"updatedAt\":\"<time>\",\"userWait\":null,\"worktree\":null}"
+  }
+ },
+ {
+  "label": "step order A",
+  "value": {
+   "what": "order A",
+   "status": 200,
+   "data": "{\"attention\":null,\"body\":\"New body.\",\"branch\":null,\"browsersAbove\":null,\"canCopyFile\":true,\"chromeAbove\":null,\"costUsd\":null,\"createdAt\":\"<time>\",\"devices\":null,\"error\":null,\"familyCard\":{\"costUsd\":0,\"line\":null,\"needsYou\":[],\"open\":0,\"running\":[],\"subFeatures\":[],\"subFeaturesRunning\":0,\"tasks\":0,\"tasksDone\":0,\"tools\":0,\"toolsDone\":0,\"waiting\":null,\"working\":[]},\"familyWorking\":0,\"folderWait\":false,\"holdsSlot\":false,\"huddleBusy\":false,\"huddleLine\":null,\"id\":\"<ticket0>\",\"important\":true,\"lastActivity\":null,\"lastRunAt\":null,\"links\":[],\"main\":true,\"mode\":\"interview\",\"needs\":[\"phone\"],\"order\":7,\"outcome\":null,\"outputDir\":\"<path>\",\"pinnedAt\":\"<time>\",\"prUrl\":null,\"recovery\":null,\"resumeCommand\":null,\"runCap\":null,\"runCount\":0,\"running\":false,\"session\":null,\"sessionId\":null,\"shareJobs\":[],\"snoozed\":null,\"status\":\"backlog\",\"stepsRunning\":0,\"suggestedTags\":[\"gamma\"],\"tags\":[\"alpha\",\"beta\"],\"terminalOpen\":false,\"title\":\"Renamed\",\"updatedAt\":\"<time>\",\"userWait\":null,\"worktree\":null}"
+  }
+ },
+ {
+  "label": "step A to done",
+  "value": {
+   "what": "A to done",
+   "status": 200,
+   "data": "{\"attention\":null,\"body\":\"New body.\",\"branch\":null,\"browsersAbove\":null,\"canCopyFile\":true,\"chromeAbove\":null,\"costUsd\":null,\"createdAt\":\"<time>\",\"devices\":null,\"doneAt\":\"<time>\",\"error\":null,\"familyCard\":{\"costUsd\":0,\"line\":null,\"needsYou\":[],\"open\":0,\"running\":[],\"subFeatures\":[],\"subFeaturesRunning\":0,\"tasks\":0,\"tasksDone\":0,\"tools\":0,\"toolsDone\":0,\"waiting\":null,\"working\":[]},\"familyWorking\":0,\"folderWait\":false,\"holdsSlot\":false,\"huddleBusy\":false,\"huddleLine\":null,\"id\":\"<ticket0>\",\"important\":true,\"lastActivity\":null,\"lastRunAt\":null,\"links\":[],\"main\":true,\"mode\":\"interview\",\"needs\":[\"phone\"],\"order\":1,\"outcome\":null,\"outputDir\":\"<path>\",\"pinnedAt\":null,\"prUrl\":null,\"recovery\":null,\"resumeCommand\":null,\"runCap\":null,\"runCount\":0,\"running\":false,\"session\":null,\"sessionId\":null,\"shareJobs\":[],\"snoozed\":null,\"status\":\"done\",\"stepsRunning\":0,\"suggestedTags\":[\"gamma\"],\"tags\":[\"alpha\",\"beta\"],\"terminalOpen\":false,\"title\":\"Renamed\",\"updatedAt\":\"<time>\",\"userWait\":null,\"worktree\":null}"
+  }
+ },
+ {
+  "label": "step A to backlog",
+  "value": {
+   "what": "A to backlog",
+   "status": 200,
+   "data": "{\"attention\":null,\"body\":\"New body.\",\"branch\":null,\"browsersAbove\":null,\"canCopyFile\":true,\"chromeAbove\":null,\"costUsd\":null,\"createdAt\":\"<time>\",\"devices\":null,\"doneAt\":\"<time>\",\"error\":null,\"familyCard\":{\"costUsd\":0,\"line\":null,\"needsYou\":[],\"open\":0,\"running\":[],\"subFeatures\":[],\"subFeaturesRunning\":0,\"tasks\":0,\"tasksDone\":0,\"tools\":0,\"toolsDone\":0,\"waiting\":null,\"working\":[]},\"familyWorking\":0,\"folderWait\":false,\"holdsSlot\":false,\"huddleBusy\":false,\"huddleLine\":null,\"id\":\"<ticket0>\",\"important\":true,\"lastActivity\":null,\"lastRunAt\":null,\"links\":[],\"main\":true,\"mode\":\"interview\",\"needs\":[\"phone\"],\"order\":-1,\"outcome\":null,\"outputDir\":\"<path>\",\"pinnedAt\":null,\"prUrl\":null,\"recovery\":null,\"reopenedFrom\":{\"outcome\":null,\"status\":\"done\"},\"resumeCommand\":null,\"runCap\":null,\"runCount\":0,\"running\":false,\"session\":null,\"sessionId\":null,\"shareJobs\":[],\"snoozed\":null,\"status\":\"backlog\",\"stepsRunning\":0,\"suggestedTags\":[\"gamma\"],\"tags\":[\"alpha\",\"beta\"],\"terminalOpen\":false,\"title\":\"Renamed\",\"updatedAt\":\"<time>\",\"userWait\":null,\"worktree\":null}"
+  }
+ },
+ {
+  "label": "step A settings",
+  "value": {
+   "what": "A settings",
+   "status": 200,
+   "data": "{\"attention\":null,\"body\":\"New body.\",\"branch\":null,\"browsersAbove\":null,\"canCopyFile\":true,\"chromeAbove\":null,\"costUsd\":null,\"createdAt\":\"<time>\",\"devices\":null,\"doneAt\":\"<time>\",\"effort\":\"high\",\"error\":null,\"familyCard\":{\"costUsd\":0,\"line\":null,\"needsYou\":[],\"open\":0,\"running\":[],\"subFeatures\":[],\"subFeaturesRunning\":0,\"tasks\":0,\"tasksDone\":0,\"tools\":0,\"toolsDone\":0,\"waiting\":null,\"working\":[]},\"familyWorking\":0,\"folderWait\":false,\"holdsSlot\":false,\"huddleBusy\":false,\"huddleLine\":null,\"id\":\"<ticket0>\",\"important\":false,\"lastActivity\":null,\"lastRunAt\":null,\"links\":[],\"main\":true,\"mode\":\"auto\",\"model\":\"opus\",\"needs\":[\"phone\"],\"notice\":null,\"order\":-1,\"outcome\":null,\"outputDir\":\"<path>\",\"pinnedAt\":null,\"prUrl\":null,\"recovery\":null,\"reopenedFrom\":{\"outcome\":null,\"status\":\"done\"},\"resumeCommand\":null,\"runCap\":2,\"runCapUsd\":2,\"runCount\":0,\"running\":false,\"session\":null,\"sessionId\":null,\"shareJobs\":[],\"snoozed\":null,\"status\":\"backlog\",\"stepsRunning\":0,\"suggestedTags\":[\"gamma\"],\"tags\":[\"alpha\",\"beta\"],\"terminalOpen\":false,\"title\":\"Renamed\",\"ultracode\":true,\"updatedAt\":\"<time>\",\"userWait\":null,\"worktree\":null}"
+  }
+ },
+ {
+  "label": "step bad status",
+  "value": {
+   "what": "bad status",
+   "status": 400,
+   "data": "{\"error\":\"invalid status sideways\"}"
+  }
+ },
+ {
+  "label": "step bad pinned",
+  "value": {
+   "what": "bad pinned",
+   "status": 400,
+   "data": "{\"error\":\"pinned must be true or false\"}"
+  }
+ },
+ {
+  "label": "step bad parentId",
+  "value": {
+   "what": "bad parentId",
+   "status": 400,
+   "data": "{\"error\":\"parentId can only be cleared (null); use adopt to add a ticket to a plan\"}"
+  }
+ },
+ {
+  "label": "step model from a run",
+  "value": {
+   "what": "model from a run",
+   "status": 403,
+   "data": "{\"error\":\"changing the board is disabled inside a board run that isn't working right now (or is a Planning chat without the user's message, a reply to another ticket's question or a huddle helper): only a ticket's active run or chat reply, a Planning chat answering the user's message, and a main ticket on its own tool tickets may change other tickets\"}"
+  }
+ },
+ {
+  "label": "step change from an idle run",
+  "value": {
+   "what": "change from an idle run",
+   "status": 403,
+   "data": "{\"error\":\"changing the board is disabled inside a board run that isn't working right now (or is a Planning chat without the user's message, a reply to another ticket's question or a huddle helper): only a ticket's active run or chat reply, a Planning chat answering the user's message, and a main ticket on its own tool tickets may change other tickets\"}"
+  }
+ },
+ {
+  "label": "step own ticket from its run",
+  "value": {
+   "what": "own ticket from its run",
+   "status": 403,
+   "data": "{\"error\":\"<ticket0> is this run's own ticket: it may only move it to done, backlog or ready, and only when the user asks for that in a message they typed in this ticket's chat; otherwise ask the user to change it on the board\"}"
+  }
+ },
+ {
+  "label": "step star from its own run",
+  "value": {
+   "what": "star from its own run",
+   "status": 200,
+   "data": "{\"attention\":{\"kind\":\"review\",\"label\":\"Ready for review\",\"since\":\"<time>\"},\"body\":\"\",\"branch\":null,\"browsersAbove\":null,\"canCopyFile\":true,\"chromeAbove\":null,\"costUsd\":0,\"createdAt\":\"<time>\",\"devices\":null,\"error\":null,\"familyCard\":{\"costUsd\":0,\"line\":null,\"needsYou\":[],\"open\":0,\"running\":[],\"subFeatures\":[],\"subFeaturesRunning\":0,\"tasks\":0,\"tasksDone\":0,\"tools\":0,\"toolsDone\":0,\"waiting\":null,\"working\":[]},\"familyWorking\":0,\"folderWait\":false,\"holdsSlot\":false,\"huddleBusy\":false,\"huddleLine\":null,\"id\":\"<ticket0>\",\"important\":false,\"lastActivity\":null,\"lastRunAt\":null,\"links\":[],\"main\":true,\"mode\":\"auto\",\"order\":1,\"outcome\":null,\"outputDir\":\"<path>\",\"prUrl\":null,\"recovery\":null,\"resumeCommand\":null,\"runCap\":null,\"runCount\":0,\"running\":false,\"session\":null,\"sessionId\":null,\"shareJobs\":[],\"snoozed\":null,\"status\":\"review\",\"stepsRunning\":0,\"terminalOpen\":false,\"title\":\"Second\",\"updatedAt\":\"<time>\",\"userWait\":null,\"worktree\":null}"
+  }
+ },
+ {
+  "label": "step unknown ticket",
+  "value": {
+   "what": "unknown ticket",
+   "status": 404,
+   "data": "{\"error\":\"ticket <ticket0> not found\"}"
+  }
+ },
+ {
+  "label": "step comment",
+  "value": {
+   "what": "comment",
+   "status": 201,
+   "data": "{\"at\":\"<time>\",\"author\":\"user\",<id0>,\"text\":\"see ***\"}"
+  }
+ },
+ {
+  "label": "step empty comment",
+  "value": {
+   "what": "empty comment",
+   "status": 400,
+   "data": "{\"error\":\"text is required\"}"
+  }
+ },
+ {
+  "label": "step comment 2",
+  "value": {
+   "what": "comment 2",
+   "status": 201,
+   "data": "{\"at\":\"<time>\",\"author\":\"user\",<id0>,\"text\":\"second\"}"
+  }
+ },
+ {
+  "label": "step comments page",
+  "value": {
+   "what": "comments page",
+   "status": 200,
+   "data": "{\"comments\":[{\"at\":\"<time>\",\"author\":\"user\",<id0>,\"text\":\"second\"}],\"earlier\":1,\"total\":2}"
+  }
+ },
+ {
+  "label": "step all comments",
+  "value": {
+   "what": "all comments",
+   "status": 200,
+   "data": "[{\"at\":\"<time>\",\"author\":\"user\",<id0>,\"text\":\"see ***\"},{\"at\":\"<time>\",\"author\":\"user\",<id1>,\"text\":\"second\"}]"
+  }
+ },
+ {
+  "label": "step snooze idle",
+  "value": {
+   "what": "snooze idle",
+   "status": 409,
+   "data": "{\"error\":\"this ticket doesn't need you, nothing to snooze\"}"
+  }
+ },
+ {
+  "label": "step snooze bad hours",
+  "value": {
+   "what": "snooze bad hours",
+   "status": 400,
+   "data": "{\"error\":\"hours must be between 0 and 720\"}"
+  }
+ },
+ {
+  "label": "step snooze B",
+  "value": {
+   "what": "snooze B",
+   "status": 200,
+   "data": "{\"attention\":null,\"body\":\"\",\"branch\":null,\"browsersAbove\":null,\"canCopyFile\":true,\"chromeAbove\":null,\"costUsd\":0,\"createdAt\":\"<time>\",\"devices\":null,\"error\":null,\"familyCard\":{\"costUsd\":0,\"line\":null,\"needsYou\":[],\"open\":0,\"running\":[],\"subFeatures\":[],\"subFeaturesRunning\":0,\"tasks\":0,\"tasksDone\":0,\"tools\":0,\"toolsDone\":0,\"waiting\":null,\"working\":[]},\"familyWorking\":0,\"folderWait\":false,\"holdsSlot\":false,\"huddleBusy\":false,\"huddleLine\":null,\"id\":\"<ticket0>\",\"important\":false,\"lastActivity\":null,\"lastRunAt\":null,\"links\":[],\"main\":true,\"mode\":\"auto\",\"order\":1,\"outcome\":null,\"outputDir\":\"<path>\",\"prUrl\":null,\"recovery\":null,\"resumeCommand\":null,\"runCap\":null,\"runCount\":0,\"running\":false,\"session\":null,\"sessionId\":null,\"shareJobs\":[],\"snooze\":{\"key\":\"review|Ready for review||||\",\"until\":\"9999-12-31T23:59:59.000Z\"},\"snoozed\":{\"attention\":{\"kind\":\"review\",\"label\":\"Ready for review\",\"since\":\"<time>\"},\"until\":\"9999-12-31T23:59:59.000Z\"},\"status\":\"review\",\"stepsRunning\":0,\"terminalOpen\":false,\"title\":\"Second\",\"updatedAt\":\"<time>\",\"userWait\":null,\"worktree\":null}"
+  }
+ },
+ {
+  "label": "step unsnooze B",
+  "value": {
+   "what": "unsnooze B",
+   "status": 200,
+   "data": "{\"attention\":{\"kind\":\"review\",\"label\":\"Ready for review\",\"since\":\"<time>\"},\"body\":\"\",\"branch\":null,\"browsersAbove\":null,\"canCopyFile\":true,\"chromeAbove\":null,\"costUsd\":0,\"createdAt\":\"<time>\",\"devices\":null,\"error\":null,\"familyCard\":{\"costUsd\":0,\"line\":null,\"needsYou\":[],\"open\":0,\"running\":[],\"subFeatures\":[],\"subFeaturesRunning\":0,\"tasks\":0,\"tasksDone\":0,\"tools\":0,\"toolsDone\":0,\"waiting\":null,\"working\":[]},\"familyWorking\":0,\"folderWait\":false,\"holdsSlot\":false,\"huddleBusy\":false,\"huddleLine\":null,\"id\":\"<ticket0>\",\"important\":false,\"lastActivity\":null,\"lastRunAt\":null,\"links\":[],\"main\":true,\"mode\":\"auto\",\"order\":1,\"outcome\":null,\"outputDir\":\"<path>\",\"prUrl\":null,\"recovery\":null,\"resumeCommand\":null,\"runCap\":null,\"runCount\":0,\"running\":false,\"session\":null,\"sessionId\":null,\"shareJobs\":[],\"snooze\":null,\"snoozed\":null,\"status\":\"review\",\"stepsRunning\":0,\"terminalOpen\":false,\"title\":\"Second\",\"updatedAt\":\"<time>\",\"userWait\":null,\"worktree\":null}"
+  }
+ },
+ {
+  "label": "step snooze from a run",
+  "value": {
+   "what": "snooze from a run",
+   "status": 403,
+   "data": "{\"error\":\"snoozing is the user's, not a board run's\"}"
+  }
+ },
+ {
+  "label": "step seen B",
+  "value": {
+   "what": "seen B",
+   "status": 200,
+   "data": "{\"attention\":{\"kind\":\"review\",\"label\":\"Ready for review\",\"since\":\"<time>\"},\"body\":\"\",\"branch\":null,\"browsersAbove\":null,\"canCopyFile\":true,\"chromeAbove\":null,\"costUsd\":0,\"createdAt\":\"<time>\",\"devices\":null,\"error\":null,\"familyCard\":{\"costUsd\":0,\"line\":null,\"needsYou\":[],\"open\":0,\"running\":[],\"subFeatures\":[],\"subFeaturesRunning\":0,\"tasks\":0,\"tasksDone\":0,\"tools\":0,\"toolsDone\":0,\"waiting\":null,\"working\":[]},\"familyWorking\":0,\"folderWait\":false,\"holdsSlot\":false,\"huddleBusy\":false,\"huddleLine\":null,\"id\":\"<ticket0>\",\"important\":false,\"lastActivity\":null,\"lastRunAt\":null,\"links\":[],\"main\":true,\"mode\":\"auto\",\"order\":1,\"outcome\":null,\"outputDir\":\"<path>\",\"prUrl\":null,\"recovery\":null,\"resumeCommand\":null,\"runCap\":null,\"runCount\":0,\"running\":false,\"seenAt\":\"<time>\",\"session\":null,\"sessionId\":null,\"shareJobs\":[],\"snooze\":null,\"snoozed\":null,\"status\":\"review\",\"stepsRunning\":0,\"terminalOpen\":false,\"title\":\"Second\",\"updatedAt\":\"<time>\",\"userWait\":null,\"worktree\":null}"
+  }
+ },
+ {
+  "label": "step squad card",
+  "value": {
+   "what": "squad card",
+   "status": 200,
+   "data": "{\"attention\":null,\"body\":\"New body.\",\"branch\":null,\"browsersAbove\":null,\"canCopyFile\":true,\"chromeAbove\":null,\"costUsd\":null,\"createdAt\":\"<time>\",\"devices\":null,\"doneAt\":\"<time>\",\"effort\":\"high\",\"error\":null,\"familyCard\":{\"costUsd\":0,\"line\":null,\"needsYou\":[],\"open\":0,\"running\":[],\"subFeatures\":[],\"subFeaturesRunning\":0,\"tasks\":0,\"tasksDone\":0,\"tools\":0,\"toolsDone\":0,\"waiting\":null,\"working\":[]},\"familyWorking\":0,\"folderWait\":false,\"holdsSlot\":false,\"huddleBusy\":false,\"huddleLine\":null,\"id\":\"<ticket0>\",\"important\":false,\"lastActivity\":null,\"lastRunAt\":null,\"links\":[],\"main\":true,\"mode\":\"auto\",\"model\":\"opus\",\"needs\":[\"phone\"],\"notice\":null,\"order\":-1,\"outcome\":null,\"outputDir\":\"<path>\",\"pinnedAt\":null,\"prUrl\":null,\"recovery\":null,\"reopenedFrom\":{\"outcome\":null,\"status\":\"done\"},\"resumeCommand\":null,\"runCap\":2,\"runCapUsd\":2,\"runCount\":0,\"running\":false,\"session\":null,\"sessionId\":null,\"shareJobs\":[],\"snoozed\":null,\"squadCards\":{\"s1\":{\"at\":\"<time>\",\"name\":\"Crew\",\"scope\":\"board\",\"state\":\"saved\"}},\"status\":\"backlog\",\"stepsRunning\":0,\"suggestedTags\":[\"gamma\"],\"tags\":[\"alpha\",\"beta\"],\"terminalOpen\":false,\"title\":\"Renamed\",\"ultracode\":true,\"updatedAt\":\"<time>\",\"userWait\":null,\"worktree\":null}"
+  }
+ },
+ {
+  "label": "step teammate card",
+  "value": {
+   "what": "teammate card",
+   "status": 200,
+   "data": "{\"attention\":null,\"body\":\"New body.\",\"branch\":null,\"browsersAbove\":null,\"canCopyFile\":true,\"chromeAbove\":null,\"costUsd\":null,\"createdAt\":\"<time>\",\"devices\":null,\"doneAt\":\"<time>\",\"effort\":\"high\",\"error\":null,\"familyCard\":{\"costUsd\":0,\"line\":null,\"needsYou\":[],\"open\":0,\"running\":[],\"subFeatures\":[],\"subFeaturesRunning\":0,\"tasks\":0,\"tasksDone\":0,\"tools\":0,\"toolsDone\":0,\"waiting\":null,\"working\":[]},\"familyWorking\":0,\"folderWait\":false,\"holdsSlot\":false,\"huddleBusy\":false,\"huddleLine\":null,\"id\":\"<ticket0>\",\"important\":false,\"lastActivity\":null,\"lastRunAt\":null,\"links\":[],\"main\":true,\"mode\":\"auto\",\"model\":\"opus\",\"needs\":[\"phone\"],\"notice\":null,\"order\":-1,\"outcome\":null,\"outputDir\":\"<path>\",\"pinnedAt\":null,\"prUrl\":null,\"recovery\":null,\"reopenedFrom\":{\"outcome\":null,\"status\":\"done\"},\"resumeCommand\":null,\"runCap\":2,\"runCapUsd\":2,\"runCount\":0,\"running\":false,\"session\":null,\"sessionId\":null,\"shareJobs\":[],\"snoozed\":null,\"squadCards\":{\"s1\":{\"at\":\"<time>\",\"name\":\"Crew\",\"scope\":\"board\",\"state\":\"saved\"}},\"status\":\"backlog\",\"stepsRunning\":0,\"suggestedTags\":[\"gamma\"],\"tags\":[\"alpha\",\"beta\"],\"teammateCards\":{\"m1\":{\"at\":\"<time>\",\"state\":\"dismissed\"}},\"terminalOpen\":false,\"title\":\"Renamed\",\"ultracode\":true,\"updatedAt\":\"<time>\",\"userWait\":null,\"worktree\":null}"
+  }
+ },
+ {
+  "label": "step bad card",
+  "value": {
+   "what": "bad card",
+   "status": 400,
+   "data": "{\"error\":\"state must be saved or dismissed\"}"
+  }
+ },
+ {
+  "label": "step card from a run",
+  "value": {
+   "what": "card from a run",
+   "status": 403,
+   "data": "{\"error\":\"only the user answers teammate cards\"}"
+  }
+ },
+ {
+  "label": "step move C",
+  "value": {
+   "what": "move C",
+   "status": 201,
+   "data": "{\"attention\":null,\"body\":\"goes elsewhere\",\"branch\":null,\"browsersAbove\":null,\"canCopyFile\":true,\"chromeAbove\":null,\"costUsd\":null,\"createdAt\":\"<time>\",\"devices\":null,\"error\":null,\"folderWait\":false,\"holdsSlot\":false,\"huddleBusy\":false,\"huddleLine\":null,\"id\":\"<ticket0>\",\"lastActivity\":null,\"lastRunAt\":null,\"links\":[],\"mode\":\"auto\",\"order\":1,\"outcome\":null,\"outputDir\":\"<path>\",\"prUrl\":null,\"recovery\":null,\"resumeCommand\":null,\"runCap\":null,\"runCount\":0,\"running\":false,\"session\":null,\"sessionId\":null,\"shareJobs\":[],\"snoozed\":null,\"status\":\"backlog\",\"tags\":[\"trip\"],\"terminalOpen\":false,\"title\":\"Travels\",\"updatedAt\":\"<time>\",\"userWait\":null,\"worktree\":null}"
+  }
+ },
+ {
+  "label": "step move B",
+  "value": {
+   "what": "move B",
+   "status": 400,
+   "data": "{\"error\":\"Only tickets in Backlog can move to another board.\"}"
+  }
+ },
+ {
+  "label": "step move nowhere",
+  "value": {
+   "what": "move nowhere",
+   "status": 404,
+   "data": "{\"error\":\"board not found\"}"
+  }
+ },
+ {
+  "label": "step upload",
+  "value": {
+   "what": "upload",
+   "status": 201,
+   "data": "{\"path\":\"<path>\",\"url\":\"/api/attachments/<file0>\"}"
+  }
+ },
+ {
+  "label": "step attachment info",
+  "value": {
+   "what": "attachment info",
+   "status": 200,
+   "data": "{\"size\":11}"
+  }
+ },
+ {
+  "label": "step create D",
+  "value": {
+   "what": "create D",
+   "status": 201,
+   "data": "{\"attention\":null,\"body\":\"![shot](/api/attachments/<file1>)\",\"branch\":null,\"browsersAbove\":null,\"canCopyFile\":true,\"chromeAbove\":null,\"costUsd\":null,\"createdAt\":\"<time>\",\"devices\":null,\"error\":null,\"familyCard\":{\"costUsd\":0,\"line\":null,\"needsYou\":[],\"open\":0,\"running\":[],\"subFeatures\":[],\"subFeaturesRunning\":0,\"tasks\":0,\"tasksDone\":0,\"tools\":0,\"toolsDone\":0,\"waiting\":null,\"working\":[]},\"familyWorking\":0,\"folderWait\":false,\"holdsSlot\":false,\"huddleBusy\":false,\"huddleLine\":null,\"id\":\"<ticket0>\",\"lastActivity\":null,\"lastRunAt\":null,\"links\":[],\"main\":true,\"mode\":\"interview\",\"order\":-2,\"outcome\":null,\"outputDir\":\"<path>\",\"prUrl\":null,\"recovery\":null,\"resumeCommand\":null,\"runCap\":null,\"runCount\":0,\"running\":false,\"session\":null,\"sessionId\":null,\"shareJobs\":[],\"snoozed\":null,\"status\":\"backlog\",\"stepsRunning\":0,\"terminalOpen\":false,\"title\":\"Has a picture\",\"updatedAt\":\"<time>\",\"userWait\":null,\"worktree\":null}"
+  }
+ },
+ {
+  "label": "step delete D",
+  "value": {
+   "what": "delete D",
+   "status": 204,
+   "data": "null"
+  }
+ },
+ {
+  "label": "step delete B from a run",
+  "value": {
+   "what": "delete B from a run",
+   "status": 403,
+   "data": "{\"error\":\"deleting tickets is disabled inside a board run\"}"
+  }
+ },
+ {
+  "label": "step delete B",
+  "value": {
+   "what": "delete B",
+   "status": 204,
+   "data": "null"
+  }
+ },
+ {
+  "label": "step B is gone",
+  "value": {
+   "what": "B is gone",
+   "status": 404,
+   "data": "{\"error\":\"ticket <ticket0> not found\"}"
+  }
+ },
+ {
+  "label": "step avatar",
+  "value": {
+   "what": "avatar",
+   "status": 200,
+   "data": "{\"qa\":{\"accessory\":\"none\",\"color\":\"#aabbcc\",\"face\":\"cat\",\"hat\":\"crown\"}}"
+  }
+ },
+ {
+  "label": "step claude name",
+  "value": {
+   "what": "claude name",
+   "status": 200,
+   "data": "{\"claude\":{\"name\":\"Clawd\"},\"qa\":{\"accessory\":\"none\",\"color\":\"#aabbcc\",\"face\":\"cat\",\"hat\":\"crown\"}}"
+  }
+ },
+ {
+  "label": "step avatar from a run",
+  "value": {
+   "what": "avatar from a run",
+   "status": 403,
+   "data": "{\"error\":\"a board or huddle run can't change avatars; ask the user\"}"
+  }
+ },
+ {
+  "label": "step avatars",
+  "value": {
+   "what": "avatars",
+   "status": 200,
+   "data": "{\"claude\":{\"name\":\"Clawd\"},\"qa\":{\"accessory\":\"none\",\"color\":\"#aabbcc\",\"face\":\"cat\",\"hat\":\"crown\"}}"
+  }
+ },
+ {
+  "label": "step snippet",
+  "value": {
+   "what": "snippet",
+   "status": 201,
+   "data": "{\"createdAt\":\"<time>\",<id0>,\"name\":\"greet\",\"scope\":\"writes\",\"text\":\"hello\",\"updatedAt\":\"<time>\"}"
+  }
+ },
+ {
+  "label": "step snippet again",
+  "value": {
+   "what": "snippet again",
+   "status": 409,
+   "data": "{\"error\":\"@greet already exists on this board\"}"
+  }
+ },
+ {
+  "label": "step snippet global",
+  "value": {
+   "what": "snippet global",
+   "status": 201,
+   "data": "{\"createdAt\":\"<time>\",<id0>,\"name\":\"bye\",\"scope\":\"global\",\"text\":\"bye now\",\"updatedAt\":\"<time>\"}"
+  }
+ },
+ {
+  "label": "step snippet patch",
+  "value": {
+   "what": "snippet patch",
+   "status": 200,
+   "data": "{\"createdAt\":\"<time>\",<id0>,\"name\":\"greet\",\"scope\":\"writes\",\"text\":\"hello there\",\"updatedAt\":\"<time>\"}"
+  }
+ },
+ {
+  "label": "step snippets",
+  "value": {
+   "what": "snippets",
+   "status": 200,
+   "data": "[{\"createdAt\":\"<time>\",<id0>,\"name\":\"bye\",\"scope\":\"global\",\"text\":\"bye now\",\"updatedAt\":\"<time>\"},{\"createdAt\":\"<time>\",<id1>,\"name\":\"greet\",\"scope\":\"writes\",\"text\":\"hello there\",\"updatedAt\":\"<time>\"}]"
+  }
+ },
+ {
+  "label": "step other snippet",
+  "value": {
+   "what": "other snippet",
+   "status": 201,
+   "data": "{\"createdAt\":\"<time>\",<id0>,\"name\":\"away\",\"scope\":\"other-board\",\"text\":\"gone soon\",\"updatedAt\":\"<time>\"}"
+  }
+ },
+ {
+  "label": "step delete other board",
+  "value": {
+   "what": "delete other board",
+   "status": 204,
+   "data": "null"
+  }
+ },
+ {
+  "label": "step other board gone",
+  "value": {
+   "what": "other board gone",
+   "status": 404,
+   "data": "{\"error\":\"board other-board not found\"}"
+  }
+ },
+ {
+  "label": "step tickets",
+  "value": {
+   "what": "tickets",
+   "status": 200,
+   "data": "[{\"attention\":null,\"body\":\"New body.\",\"branch\":null,\"browsersAbove\":null,\"canCopyFile\":true,\"chromeAbove\":null,\"costUsd\":null,\"createdAt\":\"<time>\",\"devices\":null,\"doneAt\":\"<time>\",\"effort\":\"high\",\"error\":null,\"familyCard\":{\"costUsd\":0,\"line\":null,\"needsYou\":[],\"open\":0,\"running\":[],\"subFeatures\":[],\"subFeaturesRunning\":0,\"tasks\":0,\"tasksDone\":0,\"tools\":0,\"toolsDone\":0,\"waiting\":null,\"working\":[]},\"familyWorking\":0,\"folderWait\":false,\"holdsSlot\":false,\"huddleBusy\":false,\"huddleLine\":null,\"id\":\"<ticket0>\",\"important\":false,\"lastActivity\":null,\"lastRunAt\":null,\"links\":[],\"main\":true,\"mode\":\"auto\",\"model\":\"opus\",\"needs\":[\"phone\"],\"notice\":null,\"order\":-1,\"outcome\":null,\"outputDir\":\"<path>\",\"pinnedAt\":null,\"prUrl\":null,\"recovery\":null,\"reopenedFrom\":{\"outcome\":null,\"status\":\"done\"},\"resumeCommand\":null,\"runCap\":2,\"runCapUsd\":2,\"runCount\":0,\"running\":false,\"session\":null,\"sessionId\":null,\"shareJobs\":[],\"snoozed\":null,\"squadCards\":{\"s1\":{\"at\":\"<time>\",\"name\":\"Crew\",\"scope\":\"board\",\"state\":\"saved\"}},\"status\":\"backlog\",\"stepsRunning\":0,\"suggestedTags\":[\"gamma\"],\"tags\":[\"alpha\",\"beta\"],\"teammateCards\":{\"m1\":{\"at\":\"<time>\",\"state\":\"dismissed\"}},\"terminalOpen\":false,\"title\":\"Renamed\",\"ultracode\":true,\"updatedAt\":\"<time>\",\"userWait\":null,\"worktree\":null}]"
+  }
+ },
+ {
+  "label": "files",
+  "value": [
+   "avatars.json",
+   "profiles/writes/profile.json",
+   "profiles/writes/tickets/<ticket0>/comments.jsonl",
+   "profiles/writes/tickets/<ticket0>/ticket.md",
+   "snippets.json"
+  ]
+ },
+ {
+  "label": "file avatars.json",
+  "value": "{\n  \"qa\": {\n    \"face\": \"cat\",\n    \"color\": \"#aabbcc\",\n    \"hat\": \"crown\",\n    \"accessory\": \"none\"\n  },\n  \"claude\": {\n    \"name\": \"Clawd\"\n  }\n}\n"
+ },
+ {
+  "label": "file profiles/writes/profile.json",
+  "value": "{\n  \"name\": \"Writes 2\",\n  \"slug\": \"writes\",\n  \"path\": \"<path>\",\n  \"baseBranch\": \"\",\n  \"model\": null,\n  \"effort\": \"high\",\n  \"createdAt\": \"<time>\",\n  \"copyFiles\": [\n    \".env\"\n  ],\n  \"setupCommand\": \"\",\n  \"setupDetected\": {\n    \"at\": \"<time>\",\n    \"copyFiles\": [],\n    \"setupCommand\": \"\",\n    \"setupFrom\": []\n  },\n  \"taskModels\": {\n    \"build\": {\n      \"model\": \"sonnet\",\n      \"effort\": \"low\"\n    }\n  },\n  \"freshChatTokens\": 1235,\n  \"ultracode\": true,\n  \"runCapUsd\": null,\n  \"claudeAiConnectors\": \"none\",\n  \"stallMinutes\": 30\n}\n"
+ },
+ {
+  "label": "file profiles/writes/tickets/<ticket0>/comments.jsonl",
+  "value": "{<id0>,\"author\":\"user\",\"text\":\"see ***\",\"at\":\"<time>\"}\n{<id1>,\"author\":\"user\",\"text\":\"second\",\"at\":\"<time>\"}\n"
+ },
+ {
+  "label": "file profiles/writes/tickets/<ticket0>/ticket.md",
+  "value": "---\nid: <ticket0>\ntitle: Renamed\nstatus: backlog\nmode: auto\norder: -1\nsessionId: null\nworktree: null\nbranch: null\nprUrl: null\noutcome: null\nlastActivity: null\nlastRunAt: null\nrunCount: 0\nerror: null\ncreatedAt: <time>\nupdatedAt: <time>\nneeds:\n  - phone\ntags:\n  - alpha\n  - beta\nimportant: false\nmain: true\nsuggestedTags:\n  - gamma\npinnedAt: null\ndoneAt: <time>\nreopenedFrom:\n  status: done\n  outcome: null\nnotice: null\nrunCapUsd: 2\nmodel: opus\neffort: high\nultracode: true\nsquadCards:\n  s1:\n    state: saved\n    at: <time>\n    name: Crew\n    scope: board\nteammateCards:\n  m1:\n    state: dismissed\n    at: <time>\n---\nNew body."
+ },
+ {
+  "label": "file snippets.json",
+  "value": "[\n  {\n    <id0>,\n    \"name\": \"greet\",\n    \"text\": \"hello there\",\n    \"scope\": \"writes\",\n    \"createdAt\": \"<time>\",\n    \"updatedAt\": \"<time>\"\n  },\n  {\n    <id1>,\n    \"name\": \"bye\",\n    \"text\": \"bye now\",\n    \"scope\": \"global\",\n    \"createdAt\": \"<time>\",\n    \"updatedAt\": \"<time>\"\n  }\n]\n"
+ }
+]

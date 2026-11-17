@@ -8,8 +8,8 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { chmodSync, existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { BUN_DAEMON_CMD, type Daemon, startDaemon, until } from "./daemon";
+import { Golden, RECORD } from "./golden";
 
-const RUST = !!process.env.CKANBAN_CONTRACT_DAEMON;
 const SLUG = "writes";
 const SECRET = "sntrys_SECRET_value_9d1c42aa";
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
@@ -216,7 +216,6 @@ afterAll(async () => {
 
 describe("board writes without a run", () => {
   test("the script's answers, files and masking", async () => {
-    if (process.env.CKANBAN_RUST_BOARD === "1") expect(JSON.parse(readFileSync(join(d.home, "rust-board-status.json"), "utf8")).mode).toBe("rust");
     steps = await script(d, true);
     // Saved keys never reach a ticket's files: the body and the comments hold *** instead.
     const dir = join(d.home, "profiles", SLUG, "tickets");
@@ -228,29 +227,30 @@ describe("board writes without a run", () => {
   }, 60_000);
 });
 
-describe.if(RUST)("Rust and Bun write the same", () => {
-  test("the same answers and the same bytes in the data folder", async () => {
-    const bun = await startDaemon({ cmd: BUN_DAEMON_CMD, env: { CKANBAN_RUST_BOARD: "0" }, before: ({ home }) => seed(home) });
+describe("writes as Bun's did", () => {
+  test("the same answers and the same bytes in the data folder as Bun (golden/board-writes.json)", async () => {
+    const golden = new Golden("board-writes");
+    // Recording (golden.ts): the same script on Bun alone.
+    const bun = RECORD ? await startDaemon({ cmd: BUN_DAEMON_CMD, env: { CKANBAN_RUST_BOARD: "0" }, before: ({ home }) => seed(home) }) : null;
     try {
-      const theirs = await script(bun, false);
+      const theirs = bun ? await script(bun, false) : steps;
       // Bun's linker settles the new tickets in the background (parentChecked): wait for it before reading files.
-      await until(() => readdirSync(join(bun.home, "profiles", SLUG, "tickets")).every((id) => readFileSync(join(bun.home, "profiles", SLUG, "tickets", id, "ticket.md"), "utf8").includes("parentChecked")) || null, 15_000, "Bun's linker").catch(() => null);
-      // Answers by value (key order isn't part of the API: Bun's linker, R12, re-reads the first ticket mid-request);
-      // the files below are compared byte for byte.
+      if (bun) await until(() => readdirSync(join(bun.home, "profiles", SLUG, "tickets")).every((id) => readFileSync(join(bun.home, "profiles", SLUG, "tickets", id, "ticket.md"), "utf8").includes("parentChecked")) || null, 15_000, "Bun's linker").catch(() => null);
+      // Answers by value (key order isn't part of the API); the files below are compared byte for byte.
       const sorted = (v: unknown): unknown => Array.isArray(v) ? v.map(sorted)
         : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).sort(([x], [y]) => x.localeCompare(y)).map(([k, x]) => [k, sorted(x)])) : v;
-      const mine = steps.map((s) => ({ what: s.what, status: s.status, data: normalize(JSON.stringify(sorted(s.data))) }));
-      const bunSteps = theirs.map((s) => ({ what: s.what, status: s.status, data: normalize(JSON.stringify(sorted(s.data))) }));
-      for (let i = 0; i < Math.max(mine.length, bunSteps.length); i++) expect(mine[i]).toEqual(bunSteps[i]);
-      const [ours, bunFiles] = [files(d.home), files(bun.home)];
+      for (const s of theirs) golden.match(`step ${s.what}`, { what: s.what, status: s.status, data: normalize(JSON.stringify(sorted(s.data))) });
+      const fs = files((bun ?? d).home);
       // Tickets, comments, the board, avatars and snippets are all in the comparison.
       for (const end of ["ticket.md", "comments.jsonl", "profile.json", "avatars.json", "snippets.json"]) {
-        expect({ end, found: Object.keys(ours).some((k) => k.endsWith(end)) }).toEqual({ end, found: true });
+        expect({ end, found: Object.keys(fs).some((k) => k.endsWith(end)) }).toEqual({ end, found: true });
       }
-      const norm = (fs: Record<string, string>) => Object.fromEntries(Object.entries(fs).map(([k, v]) => [normalize(k), normalize(v)]).sort(([x], [y]) => x.localeCompare(y)));
-      expect(norm(ours)).toEqual(norm(bunFiles));
+      const norm = Object.entries(fs).map(([k, v]) => [normalize(k), normalize(v)] as const).sort(([x], [y]) => x.localeCompare(y));
+      golden.match("files", norm.map(([k]) => k));
+      for (const [k, v] of norm) golden.match(`file ${k}`, v);
+      golden.done();
     } finally {
-      await bun.stop();
+      await bun?.stop();
     }
   }, 120_000);
 });

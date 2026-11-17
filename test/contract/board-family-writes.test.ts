@@ -8,8 +8,8 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { BUN_DAEMON_CMD, type Daemon, startDaemon, until } from "./daemon";
+import { Golden, RECORD } from "./golden";
 
-const RUST = !!process.env.CKANBAN_CONTRACT_DAEMON;
 const SLUG = "fam";
 
 interface Step {
@@ -192,28 +192,29 @@ describe("family writes without a run", () => {
   }, 60_000);
 });
 
-describe.if(RUST)("Rust and Bun write the same", () => {
-  test("the same answers and the same bytes in the data folder", async () => {
-    const bun = await startDaemon({ cmd: BUN_DAEMON_CMD, env: { CKANBAN_RUST_BOARD: "0" } });
+describe("writes as Bun's did", () => {
+  test("the same answers and the same bytes in the data folder as Bun (golden/board-family-writes.json)", async () => {
+    const golden = new Golden("board-family-writes");
+    // Recording (golden.ts): the same script on Bun alone.
+    const bun = RECORD ? await startDaemon({ cmd: BUN_DAEMON_CMD, env: { CKANBAN_RUST_BOARD: "0" } }) : null;
     try {
-      const theirs = await script(bun, false);
-      const dir = join(bun.home, "profiles", SLUG, "tickets");
-      await until(() => readdirSync(dir).every((id) => readFileSync(join(dir, id, "ticket.md"), "utf8").includes("parentChecked")) || null, 15_000, "Bun's linker").catch(() => null);
+      const theirs = bun ? await script(bun, false) : steps;
+      const dir = join((bun ?? d).home, "profiles", SLUG, "tickets");
+      if (bun) await until(() => readdirSync(dir).every((id) => readFileSync(join(dir, id, "ticket.md"), "utf8").includes("parentChecked")) || null, 15_000, "Bun's linker").catch(() => null);
       const sorted = (v: unknown): unknown => Array.isArray(v) ? v.map(sorted)
         : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).sort(([x], [y]) => x.localeCompare(y)).map(([k, x]) => [k, sorted(x)])) : v;
-      const [myIds, bunIds] = [ticketNames(steps), ticketNames(theirs)];
-      const mine = steps.map((s) => ({ what: s.what, status: s.status, data: normalize(myIds(JSON.stringify(sorted(s.data)))) }));
-      const bunSteps = theirs.map((s) => ({ what: s.what, status: s.status, data: normalize(bunIds(JSON.stringify(sorted(s.data)))) }));
-      for (let i = 0; i < Math.max(mine.length, bunSteps.length); i++) expect(mine[i]).toEqual(bunSteps[i]);
-      const [ours, bunFiles] = [files(d.home), files(bun.home)];
+      const ids = ticketNames(theirs);
+      for (const s of theirs) golden.match(`step ${s.what}`, { what: s.what, status: s.status, data: normalize(ids(JSON.stringify(sorted(s.data)))) });
+      const fs = files((bun ?? d).home);
       for (const end of ["ticket.md", "comments.jsonl", "status.json", "status.md"]) {
-        expect({ end, found: Object.keys(ours).some((k) => k.endsWith(end)) }).toEqual({ end, found: true });
+        expect({ end, found: Object.keys(fs).some((k) => k.endsWith(end)) }).toEqual({ end, found: true });
       }
-      const norm = (fs: Record<string, string>, ids: (t: string) => string) =>
-        Object.fromEntries(Object.entries(fs).map(([k, v]) => [ids(k), normalize(ids(v))]).sort(([x], [y]) => x.localeCompare(y)));
-      expect(norm(ours, ticketNames(steps))).toEqual(norm(bunFiles, ticketNames(theirs)));
+      const norm = Object.entries(fs).map(([k, v]) => [ids(k), normalize(ids(v))] as const).sort(([x], [y]) => x.localeCompare(y));
+      golden.match("files", norm.map(([k]) => k));
+      for (const [k, v] of norm) golden.match(`file ${k}`, v);
+      golden.done();
     } finally {
-      await bun.stop();
+      await bun?.stop();
     }
   }, 120_000);
 });

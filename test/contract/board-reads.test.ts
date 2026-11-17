@@ -7,8 +7,8 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { BUN_DAEMON_CMD, type Daemon, startDaemon, until } from "./daemon";
+import { Golden, RECORD } from "./golden";
 
-const RUST = !!process.env.CKANBAN_CONTRACT_DAEMON;
 const SLUG = "reads";
 const OTHER = "other";
 const T0 = Date.parse("2026-11-01T08:00:00.000Z");
@@ -229,48 +229,19 @@ async function answer(x: Daemon, path: string): Promise<{ status: number; data: 
   return { status: r.status, data: scrub(data) };
 }
 
-describe.if(RUST)("Rust and Bun give the same answers", () => {
-  test("every read route, against Bun alone on the same files", async () => {
-    // In board mode the Rust board must really own this data folder (not a fallback to Bun).
-    if (process.env.CKANBAN_RUST_BOARD === "1") expect(JSON.parse(readFileSync(join(d.home, "rust-board-status.json"), "utf8")).mode).toBe("rust");
-    const bun = await startDaemon({ cmd: BUN_DAEMON_CMD, env: { CKANBAN_RUST_BOARD: "0" }, before: ({ home, project }) => seed(home, project) });
+describe("the answers are Bun's", () => {
+  test("every read route, against Bun's answers on the same files (golden/board-reads.json)", async () => {
+    const golden = new Golden("board-reads");
+    // Recording (golden.ts): Bun alone on the same files.
+    const bun = RECORD ? await startDaemon({ cmd: BUN_DAEMON_CMD, env: { CKANBAN_RUST_BOARD: "0" }, before: ({ home, project }) => seed(home, project) }) : null;
     try {
       for (const path of READS) {
-        const [mine, theirs] = await Promise.all([answer(d, path), answer(bun, path)]);
-        expect({ path, ...mine }).toEqual({ path, ...theirs });
+        const mine = await answer(bun ?? d, path);
+        golden.match(path, { path, ...mine });
       }
+      golden.done();
     } finally {
-      await bun.stop();
-    }
-  }, 120_000);
-
-  test("shadow mode compares the list answers and finds no difference", async () => {
-    const s = await startDaemon({ env: { CKANBAN_RUST_BOARD: "0", CKANBAN_RUST_SHADOW: "1" }, before: ({ home, project }) => seed(home, project) });
-    try {
-      const status = () => {
-        try {
-          return JSON.parse(readFileSync(join(s.home, "rust-shadow.json"), "utf8"));
-        } catch {
-          return null;
-        }
-      };
-      const compared = READS.filter((p) => p === "/api/inbox" || /^\/api\/tickets\?scope=(open|done)/.test(p) || (p.startsWith(`${T}?scope=`) && !/scope=nope/.test(p)));
-      // One check at a time, and one per route every 10 s: wait for each before the next.
-      const seen = new Set<string>();
-      let checked = 0;
-      for (const path of compared) {
-        const key = path.replace(/&.*$/, "");
-        if (seen.has(key)) continue;
-        seen.add(key);
-        expect((await s.api("GET", path)).status).toBeLessThan(500);
-        await until(() => (status()?.checked ?? 0) > checked, 15_000, `shadow check of ${path}`);
-        checked = status().checked;
-      }
-      const log = join(s.home, "rust-shadow.log");
-      expect(existsSync(log) ? readFileSync(log, "utf8") : "").toBe("");
-      expect(status()).toMatchObject({ differed: 0 });
-    } finally {
-      await s.stop();
+      await bun?.stop();
     }
   }, 120_000);
 });

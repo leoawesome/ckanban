@@ -1,0 +1,612 @@
+[
+ {
+  "label": "step board",
+  "value": {
+   "what": "board",
+   "status": 201,
+   "data": "{\"baseBranch\":\"\",\"copyFiles\":[],\"createdAt\":\"<time>\",\"model\":null,\"name\":\"Fam\",\"path\":\"<path>\",\"setupCommand\":\"\",\"setupDetected\":{\"at\":\"<time>\",\"copyFiles\":[],\"setupCommand\":\"\",\"setupFrom\":[]},\"slug\":\"fam\"}"
+  }
+ },
+ {
+  "label": "step top",
+  "value": {
+   "what": "top",
+   "status": 201,
+   "data": "{\"attention\":null,\"body\":\"Ship it.\",\"branch\":null,\"browsersAbove\":null,\"canCopyFile\":true,\"chromeAbove\":null,\"costUsd\":null,\"createdAt\":\"<time>\",\"devices\":null,\"error\":null,\"familyCard\":{\"costUsd\":0,\"line\":null,\"needsYou\":[],\"open\":0,\"running\":[],\"subFeatures\":[],\"subFeaturesRunning\":0,\"tasks\":0,\"tasksDone\":0,\"tools\":0,\"toolsDone\":0,\"waiting\":null,\"working\":[]},\"familyWorking\":0,\"folderWait\":false,\"holdsSlot\":false,\"huddleBusy\":false,\"huddleLine\":null,\"id\":\"<t0>\",\"lastActivity\":null,\"lastRunAt\":null,\"links\":[],\"main\":true,\"mode\":\"interview\",\"order\":1,\"outcome\":null,\"outputDir\":\"<path>\",\"prUrl\":null,\"recovery\":null,\"resumeCommand\":null,\"runCap\":null,\"runCount\":0,\"running\":false,\"session\":null,\"sessionId\":null,\"shareJobs\":[],\"snoozed\":null,\"status\":\"backlog\",\"stepsRunning\":0,\"terminalOpen\":false,\"title\":\"The feature\",\"updatedAt\":\"<time>\",\"userWait\":null,\"worktree\":null}"
+  }
+ },
+ {
+  "label": "step group",
+  "value": {
+   "what": "group",
+   "status": 201,
+   "data": "{\"attention\":null,\"body\":\"\",\"branch\":null,\"browsersAbove\":null,\"canCopyFile\":true,\"chromeAbove\":null,\"costUsd\":null,\"createdAt\":\"<time>\",\"devices\":null,\"error\":null,\"folderWait\":false,\"holdsSlot\":false,\"huddleBusy\":false,\"huddleLine\":null,\"id\":\"<t1>\",\"kind\":\"group\",\"lastActivity\":null,\"lastRunAt\":null,\"links\":[],\"mode\":\"interview\",\"order\":0,\"outcome\":null,\"outputDir\":\"<path>\",\"partOf\":\"<t0>\",\"prUrl\":null,\"recovery\":null,\"resumeCommand\":null,\"runCap\":null,\"runCount\":0,\"running\":false,\"session\":null,\"sessionId\":null,\"shareJobs\":[],\"snoozed\":null,\"status\":\"backlog\",\"terminalOpen\":false,\"title\":\"Phase one\",\"updatedAt\":\"<time>\",\"userWait\":null,\"worktree\":null}"
+  }
+ },
+ {
+  "label": "step a",
+  "value": {
+   "what": "a",
+   "status": 201,
+   "data": "{\"attention\":null,\"body\":\"\",\"branch\":null,\"browsersAbove\":null,\"canCopyFile\":true,\"chromeAbove\":null,\"costUsd\":null,\"createdAt\":\"<time>\",\"devices\":null,\"error\":null,\"folderWait\":false,\"holdsSlot\":false,\"huddleBusy\":false,\"huddleLine\":null,\"id\":\"<t2>\",\"lastActivity\":null,\"lastRunAt\":null,\"links\":[],\"mode\":\"interview\",\"order\":-1,\"outcome\":null,\"outputDir\":\"<path>\",\"partOf\":\"<t1>\",\"prUrl\":null,\"recovery\":null,\"resumeCommand\":null,\"runCap\":null,\"runCount\":0,\"running\":false,\"session\":null,\"sessionId\":null,\"shareJobs\":[],\"snoozed\":null,\"status\":\"backlog\",\"tags\":[\"x\"],\"terminalOpen\":false,\"title\":\"Step a\",\"updatedAt\":\"<time>\",\"userWait\":null,\"worktree\":null}"
+  }
+ },
+ {
+  "label": "step round",
+  "value": {
+   "what": "round",
+   "status": 201,
+   "data": "{\"attention\":null,\"body\":\"\",\"branch\":null,\"browsersAbove\":null,\"canCopyFile\":true,\"chromeAbove\":null,\"costUsd\":null,\"createdAt\":\"<time>\",\"devices\":null,\"error\":null,\"folderWait\":false,\"holdsSlot\":false,\"huddleBusy\":false,\"huddleLine\":null,\"id\":\"<t3>\",\"kind\":\"round\",\"lastActivity\":null,\"lastRunAt\":null,\"links\":[],\"mode\":\"interview\",\"order\":-2,\"outcome\":null,\"outputDir\":\"<path>\",\"partOf\":\"<t0>\",\"prUrl\":null,\"recovery\":null,\"resumeCommand\":null,\"runCap\":null,\"runCount\":0,\"running\":false,\"session\":null,\"sessionId\":null,\"shareJobs\":[],\"snoozed\":null,\"status\":\"backlog\",\"terminalOpen\":false,\"title\":\"Testing round 1\",\"updatedAt\":\"<time>\",\"userWait\":null,\"worktree\":null}"
+  }
+ },
+ {
+  "label": "step round 2",
+  "value": {
+   "what": "round 2",
+   "status": 201,
+   "data": "{\"attention\":null,\"body\":\"\",\"branch\":null,\"browsersAbove\":null,\"canCopyFile\":true,\"chromeAbove\":null,\"costUsd\":null,\"createdAt\":\"<time>\",\"devices\":null,\"error\":null,\"folderWait\":false,\"holdsSlot\":false,\"huddleBusy\":false,\"huddleLine\":null,\"id\":\"<t4>\",\"kind\":\"round\",\"lastActivity\":null,\"lastRunAt\":null,\"links\":[],\"mode\":\"interview\",\"order\":-3,\"outcome\":null,\"outputDir\":\"<path>\",\"partOf\":\"<t0>\",\"prUrl\":null,\"recovery\":null,\"resumeCommand\":null,\"runCap\":null,\"runCount\":0,\"running\":false,\"session\":null,\"sessionId\":null,\"shareJobs\":[],\"snoozed\":null,\"status\":\"backlog\",\"terminalOpen\":false,\"title\":\"Testing round 2\",\"updatedAt\":\"<time>\",\"userWait\":null,\"worktree\":null}"
+  }
+ },
+ {
+  "label": "step too deep",
+  "value": {
+   "what": "too deep",
+   "status": 400,
+   "data": "{\"error\":\"That would put \\\"Deep\\\" 3 levels deep; a feature keeps its tickets at most 2 levels deep. Put it under the feature \\\"The feature\\\" (<t0>) or one of its groups: \\\"Phase one\\\" (<t1>), \\\"Testing round 1\\\" (<t3>), \\\"Testing round 2\\\" (<t4>).\"}"
+  }
+ },
+ {
+  "label": "step sub",
+  "value": {
+   "what": "sub",
+   "status": 201,
+   "data": "{\"attention\":null,\"body\":\"\",\"branch\":null,\"browsersAbove\":null,\"canCopyFile\":true,\"chromeAbove\":null,\"costUsd\":null,\"createdAt\":\"<time>\",\"devices\":null,\"error\":null,\"familyCard\":{\"costUsd\":0,\"line\":null,\"needsYou\":[],\"open\":0,\"running\":[],\"subFeatures\":[],\"subFeaturesRunning\":0,\"tasks\":0,\"tasksDone\":0,\"tools\":0,\"toolsDone\":0,\"waiting\":null,\"working\":[]},\"familyWorking\":0,\"folderWait\":false,\"holdsSlot\":false,\"huddleBusy\":false,\"huddleLine\":null,\"id\":\"<t5>\",\"lastActivity\":null,\"lastRunAt\":null,\"links\":[],\"main\":true,\"mode\":\"interview\",\"order\":-4,\"outcome\":null,\"outputDir\":\"<path>\",\"partOf\":\"<t0>\",\"prUrl\":null,\"recovery\":null,\"resumeCommand\":null,\"runCap\":null,\"runCount\":0,\"running\":false,\"session\":null,\"sessionId\":null,\"shareJobs\":[],\"snoozed\":null,\"status\":\"backlog\",\"stepsRunning\":0,\"subFeatureOf\":{\"id\":\"<t0>\",\"title\":\"The feature\"},\"terminalOpen\":false,\"title\":\"Sub\",\"updatedAt\":\"<time>\",\"userWait\":null,\"worktree\":null}"
+  }
+ },
+ {
+  "label": "step sub under sub",
+  "value": {
+   "what": "sub under sub",
+   "status": 400,
+   "data": "{\"error\":\"\\\"Sub\\\" is already part of \\\"The feature\\\"; a sub-feature can't hold another sub-feature.\"}"
+  }
+ },
+ {
+  "label": "step sub's own",
+  "value": {
+   "what": "sub's own",
+   "status": 201,
+   "data": "{\"attention\":null,\"body\":\"\",\"branch\":null,\"browsersAbove\":null,\"canCopyFile\":true,\"chromeAbove\":null,\"costUsd\":null,\"createdAt\":\"<time>\",\"devices\":null,\"error\":null,\"folderWait\":false,\"holdsSlot\":false,\"huddleBusy\":false,\"huddleLine\":null,\"id\":\"<t6>\",\"lastActivity\":null,\"lastRunAt\":null,\"links\":[],\"mode\":\"interview\",\"order\":-5,\"outcome\":null,\"outputDir\":\"<path>\",\"partOf\":\"<t5>\",\"prUrl\":null,\"recovery\":null,\"resumeCommand\":null,\"runCap\":null,\"runCount\":0,\"running\":false,\"session\":null,\"sessionId\":null,\"shareJobs\":[],\"snoozed\":null,\"status\":\"backlog\",\"terminalOpen\":false,\"title\":\"Sub's own\",\"updatedAt\":\"<time>\",\"userWait\":null,\"worktree\":null}"
+  }
+ },
+ {
+  "label": "step loose",
+  "value": {
+   "what": "loose",
+   "status": 201,
+   "data": "{\"attention\":null,\"body\":\"\",\"branch\":null,\"browsersAbove\":null,\"canCopyFile\":true,\"chromeAbove\":null,\"costUsd\":null,\"createdAt\":\"<time>\",\"devices\":null,\"error\":null,\"familyCard\":{\"costUsd\":0,\"line\":null,\"needsYou\":[],\"open\":0,\"running\":[],\"subFeatures\":[],\"subFeaturesRunning\":0,\"tasks\":0,\"tasksDone\":0,\"tools\":0,\"toolsDone\":0,\"waiting\":null,\"working\":[]},\"familyWorking\":0,\"folderWait\":false,\"holdsSlot\":false,\"huddleBusy\":false,\"huddleLine\":null,\"id\":\"<t7>\",\"lastActivity\":null,\"lastRunAt\":null,\"links\":[],\"main\":true,\"mode\":\"interview\",\"order\":-6,\"outcome\":null,\"outputDir\":\"<path>\",\"prUrl\":null,\"recovery\":null,\"resumeCommand\":null,\"runCap\":null,\"runCount\":0,\"running\":false,\"session\":null,\"sessionId\":null,\"shareJobs\":[],\"snoozed\":null,\"status\":\"backlog\",\"stepsRunning\":0,\"terminalOpen\":false,\"title\":\"Loose\",\"updatedAt\":\"<time>\",\"userWait\":null,\"worktree\":null}"
+  }
+ },
+ {
+  "label": "step kid",
+  "value": {
+   "what": "kid",
+   "status": 201,
+   "data": "{\"attention\":null,\"body\":\"\",\"branch\":null,\"browsersAbove\":null,\"canCopyFile\":true,\"chromeAbove\":null,\"costUsd\":null,\"createdAt\":\"<time>\",\"devices\":null,\"error\":null,\"folderWait\":false,\"holdsSlot\":false,\"huddleBusy\":false,\"huddleLine\":null,\"id\":\"<t8>\",\"lastActivity\":null,\"lastRunAt\":null,\"links\":[],\"mode\":\"interview\",\"order\":-7,\"outcome\":null,\"outputDir\":\"<path>\",\"partOf\":\"<t7>\",\"prUrl\":null,\"recovery\":null,\"resumeCommand\":null,\"runCap\":null,\"runCount\":0,\"running\":false,\"session\":null,\"sessionId\":null,\"shareJobs\":[],\"snoozed\":null,\"status\":\"backlog\",\"terminalOpen\":false,\"title\":\"Kid\",\"updatedAt\":\"<time>\",\"userWait\":null,\"worktree\":null}"
+  }
+ },
+ {
+  "label": "step grandkid",
+  "value": {
+   "what": "grandkid",
+   "status": 201,
+   "data": "{\"attention\":null,\"body\":\"\",\"branch\":null,\"browsersAbove\":null,\"canCopyFile\":true,\"chromeAbove\":null,\"costUsd\":null,\"createdAt\":\"<time>\",\"devices\":null,\"error\":null,\"folderWait\":false,\"holdsSlot\":false,\"huddleBusy\":false,\"huddleLine\":null,\"id\":\"<t9>\",\"lastActivity\":null,\"lastRunAt\":null,\"links\":[],\"mode\":\"interview\",\"order\":-8,\"outcome\":null,\"outputDir\":\"<path>\",\"partOf\":\"<t8>\",\"prUrl\":null,\"recovery\":null,\"resumeCommand\":null,\"runCap\":null,\"runCount\":0,\"running\":false,\"session\":null,\"sessionId\":null,\"shareJobs\":[],\"snoozed\":null,\"status\":\"backlog\",\"terminalOpen\":false,\"title\":\"Grandkid\",\"updatedAt\":\"<time>\",\"userWait\":null,\"worktree\":null}"
+  }
+ },
+ {
+  "label": "step link into a",
+  "value": {
+   "what": "link into a",
+   "status": 400,
+   "data": "{\"error\":\"That would put \\\"Loose\\\" 3 levels deep; a feature keeps its tickets at most 2 levels deep. Put it under the feature \\\"The feature\\\" (<t0>) or one of its groups: \\\"Phase one\\\" (<t1>), \\\"Testing round 1\\\" (<t3>), \\\"Testing round 2\\\" (<t4>).\"}"
+  }
+ },
+ {
+  "label": "step loop",
+  "value": {
+   "what": "loop",
+   "status": 400,
+   "data": "{\"error\":\"\\\"Kid\\\" is already inside \\\"Loose\\\", so \\\"Loose\\\" can't go under it.\"}"
+  }
+ },
+ {
+  "label": "step self",
+  "value": {
+   "what": "self",
+   "status": 400,
+   "data": "{\"error\":\"\\\"Loose\\\" can't be part of itself\"}"
+  }
+ },
+ {
+  "label": "step unknown",
+  "value": {
+   "what": "unknown",
+   "status": 400,
+   "data": "{\"error\":\"ticket <t10> not found\"}"
+  }
+ },
+ {
+  "label": "step link kid",
+  "value": {
+   "what": "link kid",
+   "status": 200,
+   "data": "{\"attention\":null,\"body\":\"\",\"branch\":null,\"browsersAbove\":null,\"canCopyFile\":true,\"chromeAbove\":null,\"costUsd\":null,\"createdAt\":\"<time>\",\"devices\":null,\"error\":null,\"folderWait\":false,\"holdsSlot\":false,\"huddleBusy\":false,\"huddleLine\":null,\"id\":\"<t8>\",\"lastActivity\":null,\"lastRunAt\":null,\"links\":[],\"mode\":\"interview\",\"order\":-7,\"outcome\":null,\"outputDir\":\"<path>\",\"partOf\":\"<t0>\",\"partOfVia\":null,\"prUrl\":null,\"recovery\":null,\"resumeCommand\":null,\"runCap\":null,\"runCount\":0,\"running\":false,\"session\":null,\"sessionId\":null,\"shareJobs\":[],\"snoozed\":null,\"status\":\"backlog\",\"terminalOpen\":false,\"title\":\"Kid\",\"updatedAt\":\"<time>\",\"userWait\":null,\"worktree\":null}"
+  }
+ },
+ {
+  "label": "step unlink kid",
+  "value": {
+   "what": "unlink kid",
+   "status": 200,
+   "data": "{\"attention\":null,\"body\":\"\",\"branch\":null,\"browsersAbove\":null,\"canCopyFile\":true,\"chromeAbove\":null,\"costUsd\":null,\"createdAt\":\"<time>\",\"devices\":null,\"error\":null,\"folderWait\":false,\"holdsSlot\":false,\"huddleBusy\":false,\"huddleLine\":null,\"id\":\"<t8>\",\"lastActivity\":null,\"lastRunAt\":null,\"links\":[],\"mode\":\"interview\",\"order\":-7,\"outcome\":null,\"outputDir\":\"<path>\",\"partOf\":null,\"partOfVia\":null,\"prUrl\":null,\"recovery\":null,\"resumeCommand\":null,\"runCap\":null,\"runCount\":0,\"running\":false,\"session\":null,\"sessionId\":null,\"shareJobs\":[],\"snoozed\":null,\"status\":\"backlog\",\"terminalOpen\":false,\"title\":\"Kid\",\"updatedAt\":\"<time>\",\"userWait\":null,\"worktree\":null}"
+  }
+ },
+ {
+  "label": "step relink kid",
+  "value": {
+   "what": "relink kid",
+   "status": 200,
+   "data": "{\"attention\":null,\"body\":\"\",\"branch\":null,\"browsersAbove\":null,\"canCopyFile\":true,\"chromeAbove\":null,\"costUsd\":null,\"createdAt\":\"<time>\",\"devices\":null,\"error\":null,\"folderWait\":false,\"holdsSlot\":false,\"huddleBusy\":false,\"huddleLine\":null,\"id\":\"<t8>\",\"lastActivity\":null,\"lastRunAt\":null,\"links\":[],\"mode\":\"interview\",\"order\":-7,\"outcome\":null,\"outputDir\":\"<path>\",\"partOf\":\"<t7>\",\"partOfVia\":null,\"prUrl\":null,\"recovery\":null,\"resumeCommand\":null,\"runCap\":null,\"runCount\":0,\"running\":false,\"session\":null,\"sessionId\":null,\"shareJobs\":[],\"snoozed\":null,\"status\":\"backlog\",\"terminalOpen\":false,\"title\":\"Kid\",\"updatedAt\":\"<time>\",\"userWait\":null,\"worktree\":null}"
+  }
+ },
+ {
+  "label": "step not related",
+  "value": {
+   "what": "not related",
+   "status": 200,
+   "data": "{\"attention\":null,\"body\":\"\",\"branch\":null,\"browsersAbove\":null,\"canCopyFile\":true,\"chromeAbove\":null,\"costUsd\":null,\"createdAt\":\"<time>\",\"devices\":null,\"error\":null,\"familyCard\":{\"costUsd\":0,\"line\":null,\"needsYou\":[],\"open\":0,\"running\":[],\"subFeatures\":[],\"subFeaturesRunning\":0,\"tasks\":1,\"tasksDone\":0,\"tools\":0,\"toolsDone\":0,\"waiting\":null,\"working\":[]},\"familyWorking\":0,\"folderWait\":false,\"holdsSlot\":false,\"huddleBusy\":false,\"huddleLine\":null,\"id\":\"<t7>\",\"lastActivity\":null,\"lastRunAt\":null,\"links\":[],\"main\":true,\"mode\":\"interview\",\"order\":-6,\"outcome\":null,\"outputDir\":\"<path>\",\"prUrl\":null,\"recovery\":null,\"resumeCommand\":null,\"runCap\":null,\"runCount\":0,\"running\":false,\"session\":null,\"sessionId\":null,\"shareJobs\":[],\"snoozed\":null,\"status\":\"backlog\",\"stepsRunning\":0,\"terminalOpen\":false,\"title\":\"Loose\",\"updatedAt\":\"<time>\",\"userWait\":null,\"worktree\":null}"
+  }
+ },
+ {
+  "label": "step h1",
+  "value": {
+   "what": "h1",
+   "status": 201,
+   "data": "{\"attention\":null,\"body\":\"\",\"branch\":null,\"browsersAbove\":null,\"canCopyFile\":true,\"chromeAbove\":null,\"costUsd\":null,\"createdAt\":\"<time>\",\"devices\":null,\"error\":null,\"familyCard\":{\"costUsd\":0,\"line\":null,\"needsYou\":[],\"open\":0,\"running\":[],\"subFeatures\":[],\"subFeaturesRunning\":0,\"tasks\":0,\"tasksDone\":0,\"tools\":0,\"toolsDone\":0,\"waiting\":null,\"working\":[]},\"familyWorking\":0,\"folderWait\":false,\"holdsSlot\":false,\"huddleBusy\":false,\"huddleLine\":null,\"id\":\"<t11>\",\"lastActivity\":null,\"lastRunAt\":null,\"links\":[],\"main\":true,\"mode\":\"interview\",\"order\":-9,\"outcome\":null,\"outputDir\":\"<path>\",\"prUrl\":null,\"recovery\":null,\"resumeCommand\":null,\"runCap\":null,\"runCount\":0,\"running\":false,\"session\":null,\"sessionId\":null,\"shareJobs\":[],\"snoozed\":null,\"status\":\"backlog\",\"stepsRunning\":0,\"terminalOpen\":false,\"title\":\"Hide me\",\"updatedAt\":\"<time>\",\"userWait\":null,\"worktree\":null}"
+  }
+ },
+ {
+  "label": "step gather",
+  "value": {
+   "what": "gather",
+   "status": 200,
+   "data": "{\"gathered\":[{\"attention\":null,\"body\":\"\",\"branch\":null,\"browsersAbove\":null,\"canCopyFile\":true,\"chromeAbove\":null,\"costUsd\":null,\"createdAt\":\"<time>\",\"devices\":null,\"error\":null,\"folderWait\":false,\"holdsSlot\":false,\"huddleBusy\":false,\"huddleLine\":null,\"id\":\"<t8>\",\"lastActivity\":null,\"lastRunAt\":null,\"links\":[],\"mode\":\"interview\",\"order\":-7,\"outcome\":null,\"outputDir\":\"<path>\",\"partOf\":\"<t1>\",\"partOfVia\":null,\"prUrl\":null,\"recovery\":null,\"resumeCommand\":null,\"runCap\":null,\"runCount\":0,\"running\":false,\"session\":null,\"sessionId\":null,\"shareJobs\":[],\"showOnBoard\":false,\"snoozed\":null,\"status\":\"backlog\",\"terminalOpen\":false,\"title\":\"Kid\",\"updatedAt\":\"<time>\",\"userWait\":null,\"worktree\":null},{\"attention\":null,\"body\":\"\",\"branch\":null,\"browsersAbove\":null,\"canCopyFile\":true,\"chromeAbove\":null,\"costUsd\":null,\"createdAt\":\"<time>\",\"devices\":null,\"error\":null,\"familyCard\":{\"costUsd\":0,\"line\":null,\"needsYou\":[],\"open\":0,\"running\":[],\"subFeatures\":[],\"subFeaturesRunning\":0,\"tasks\":0,\"tasksDone\":0,\"tools\":0,\"toolsDone\":0,\"waiting\":null,\"working\":[]},\"familyWorking\":0,\"folderWait\":false,\"holdsSlot\":false,\"huddleBusy\":false,\"huddleLine\":null,\"id\":\"<t7>\",\"lastActivity\":null,\"lastRunAt\":null,\"links\":[],\"main\":true,\"mode\":\"interview\",\"order\":-6,\"outcome\":null,\"outputDir\":\"<path>\",\"partOf\":\"<t0>\",\"partOfVia\":null,\"prUrl\":null,\"recovery\":null,\"resumeCommand\":null,\"runCap\":null,\"runCount\":0,\"running\":false,\"session\":null,\"sessionId\":null,\"shareJobs\":[],\"snoozed\":null,\"status\":\"backlog\",\"stepsRunning\":0,\"subFeatureOf\":{\"id\":\"<t0>\",\"title\":\"The feature\"},\"terminalOpen\":false,\"title\":\"Loose\",\"updatedAt\":\"<time>\",\"userWait\":null,\"worktree\":null},{\"attention\":null,\"body\":\"\",\"branch\":null,\"browsersAbove\":null,\"canCopyFile\":true,\"chromeAbove\":null,\"costUsd\":null,\"createdAt\":\"<time>\",\"devices\":null,\"error\":null,\"familyCard\":{\"costUsd\":0,\"line\":null,\"needsYou\":[],\"open\":0,\"running\":[],\"subFeatures\":[],\"subFeaturesRunning\":0,\"tasks\":0,\"tasksDone\":0,\"tools\":0,\"toolsDone\":0,\"waiting\":null,\"working\":[]},\"familyWorking\":0,\"folderWait\":false,\"holdsSlot\":false,\"huddleBusy\":false,\"huddleLine\":null,\"id\":\"<t11>\",\"lastActivity\":null,\"lastRunAt\":null,\"links\":[],\"main\":true,\"mode\":\"interview\",\"order\":-9,\"outcome\":null,\"outputDir\":\"<path>\",\"partOf\":\"<t12>\",\"partOfVia\":null,\"prUrl\":null,\"recovery\":null,\"resumeCommand\":null,\"runCap\":null,\"runCount\":0,\"running\":false,\"session\":null,\"sessionId\":null,\"shareJobs\":[],\"snoozed\":null,\"status\":\"backlog\",\"stepsRunning\":0,\"subFeatureOf\":{\"id\":\"<t0>\",\"title\":\"The feature\"},\"terminalOpen\":false,\"title\":\"Hide me\",\"updatedAt\":\"<time>\",\"userWait\":null,\"worktree\":null},{\"attention\":null,\"body\":\"\",\"branch\":null,\"browsersAbove\":null,\"canCopyFile\":true,\"chromeAbove\":null,\"costUsd\":null,\"createdAt\":\"<time>\",\"devices\":null,\"error\":null,\"familyCard\":{\"costUsd\":0,\"line\":null,\"needsYou\":[],\"open\":0,\"running\":[],\"subFeatures\":[],\"subFeaturesRunning\":0,\"tasks\":1,\"tasksDone\":0,\"tools\":0,\"toolsDone\":0,\"waiting\":null,\"working\":[]},\"familyWorking\":0,\"folderWait\":false,\"holdsSlot\":false,\"huddleBusy\":false,\"huddleLine\":null,\"id\":\"<t5>\",\"lastActivity\":null,\"lastRunAt\":null,\"links\":[],\"main\":true,\"mode\":\"interview\",\"order\":-4,\"outcome\":null,\"outputDir\":\"<path>\",\"partOf\":\"<t0>\",\"prUrl\":null,\"recovery\":null,\"resumeCommand\":null,\"runCap\":null,\"runCount\":0,\"running\":false,\"session\":null,\"sessionId\":null,\"shareJobs\":[],\"snoozed\":null,\"status\":\"backlog\",\"stepsRunning\":0,\"subFeatureOf\":{\"id\":\"<t0>\",\"title\":\"The feature\"},\"terminalOpen\":false,\"title\":\"Sub\",\"updatedAt\":\"<time>\",\"userWait\":null,\"worktree\":null}],\"group\":{\"attention\":null,\"body\":\"\",\"branch\":null,\"browsersAbove\":null,\"canCopyFile\":true,\"chromeAbove\":null,\"costUsd\":null,\"createdAt\":\"<time>\",\"devices\":null,\"error\":null,\"folderWait\":false,\"holdsSlot\":false,\"huddleBusy\":false,\"huddleLine\":null,\"id\":\"<t12>\",\"kind\":\"group\",\"lastActivity\":null,\"lastRunAt\":null,\"links\":[],\"mode\":\"auto\",\"order\":-10,\"outcome\":null,\"outputDir\":\"<path>\",\"partOf\":\"<t0>\",\"prUrl\":null,\"recovery\":null,\"resumeCommand\":null,\"runCap\":null,\"runCount\":0,\"running\":false,\"session\":null,\"sessionId\":null,\"shareJobs\":[],\"snoozed\":null,\"status\":\"backlog\",\"terminalOpen\":false,\"title\":\"Phase two\",\"updatedAt\":\"<time>\",\"userWait\":null,\"worktree\":null},\"kept\":[{\"id\":\"<t7>\",\"reason\":\"\\\"Loose\\\" is a main ticket (a sub-feature): it keeps its own card on the board\"},{\"id\":\"<t11>\",\"reason\":\"\\\"Hide me\\\" is a main ticket (a sub-feature): it keeps its own card on the board\"},{\"id\":\"<t5>\",\"reason\":\"\\\"Sub\\\" is a main ticket (a sub-feature): it keeps its own card on the board\"}],\"movedUp\":[{\"id\":\"<t9>\",\"title\":\"Grandkid\",\"to\":\"<t1>\"}],\"skipped\":[{\"id\":\"<t10>\",\"reason\":\"not found\"},{\"id\":\"<t0>\",\"reason\":\"that is the feature itself\"}]}"
+  }
+ },
+ {
+  "label": "step gather empty",
+  "value": {
+   "what": "gather empty",
+   "status": 400,
+   "data": "{\"error\":\"tickets must list { id, group } entries\"}"
+  }
+ },
+ {
+  "label": "step gather bad hide",
+  "value": {
+   "what": "gather bad hide",
+   "status": 400,
+   "data": "{\"error\":\"hide must be true or false\"}"
+  }
+ },
+ {
+  "label": "step show again",
+  "value": {
+   "what": "show again",
+   "status": 200,
+   "data": "{\"attention\":null,\"body\":\"\",\"branch\":null,\"browsersAbove\":null,\"canCopyFile\":true,\"chromeAbove\":null,\"costUsd\":null,\"createdAt\":\"<time>\",\"devices\":null,\"error\":null,\"folderWait\":false,\"holdsSlot\":false,\"huddleBusy\":false,\"huddleLine\":null,\"id\":\"<t8>\",\"lastActivity\":null,\"lastRunAt\":null,\"links\":[],\"mode\":\"interview\",\"order\":-7,\"outcome\":null,\"outputDir\":\"<path>\",\"partOf\":\"<t1>\",\"partOfVia\":null,\"prUrl\":null,\"recovery\":null,\"resumeCommand\":null,\"runCap\":null,\"runCount\":0,\"running\":false,\"session\":null,\"sessionId\":null,\"shareJobs\":[],\"showOnBoard\":null,\"snoozed\":null,\"status\":\"backlog\",\"terminalOpen\":false,\"title\":\"Kid\",\"updatedAt\":\"<time>\",\"userWait\":null,\"worktree\":null}"
+  }
+ },
+ {
+  "label": "step hide main",
+  "value": {
+   "what": "hide main",
+   "status": 400,
+   "data": "{\"error\":\"\\\"Sub\\\" is a main ticket (a sub-feature): it keeps its own card on the board\"}"
+  }
+ },
+ {
+  "label": "step hide top",
+  "value": {
+   "what": "hide top",
+   "status": 400,
+   "data": "{\"error\":\"\\\"The feature\\\" is a main ticket: it keeps its own card on the board\"}"
+  }
+ },
+ {
+  "label": "step own work of a card",
+  "value": {
+   "what": "own work of a card",
+   "status": 400,
+   "data": "{\"error\":\"\\\"Step a\\\" is already its own work\"}"
+  }
+ },
+ {
+  "label": "step plan start, no tasks",
+  "value": {
+   "what": "plan start, no tasks",
+   "status": 400,
+   "data": "{\"error\":\"can't start the plan: this ticket has no tool tickets to run\"}"
+  }
+ },
+ {
+  "label": "step plan pause, no plan",
+  "value": {
+   "what": "plan pause, no plan",
+   "status": 400,
+   "data": "{\"error\":\"this ticket has no plan\"}"
+  }
+ },
+ {
+  "label": "step plan bogus",
+  "value": {
+   "what": "plan bogus",
+   "status": 400,
+   "data": "{\"error\":\"action must be start, pause, resume or done\"}"
+  }
+ },
+ {
+  "label": "step plan start, a card",
+  "value": {
+   "what": "plan start, a card",
+   "status": 400,
+   "data": "{\"error\":\"only a main ticket runs tickets of its own: turn this ticket into a main ticket first\"}"
+  }
+ },
+ {
+  "label": "step status before",
+  "value": {
+   "what": "status before",
+   "status": 200,
+   "data": "{\"facts\":{\"broken\":[],\"changes\":null,\"counts\":{\"waiting\":10},\"groups\":[{\"counts\":{\"waiting\":3},\"id\":\"<t1>\",\"kind\":\"group\",\"settled\":false,\"title\":\"Phase one\",\"total\":3},{\"counts\":{},\"id\":\"<t3>\",\"kind\":\"round\",\"settled\":true,\"title\":\"Testing round 1\",\"total\":0},{\"counts\":{},\"id\":\"<t4>\",\"kind\":\"round\",\"settled\":true,\"title\":\"Testing round 2\",\"total\":0},{\"counts\":{},\"id\":\"<t12>\",\"kind\":\"group\",\"settled\":false,\"title\":\"Phase two\",\"total\":0}],\"loose\":{\"counts\":{},\"total\":0},\"needsYou\":[],\"paused\":[],\"prs\":[],\"rounds\":[{\"id\":\"<t3>\",\"open\":0,\"passed\":0,\"problem\":0,\"title\":\"Testing round 1\"},{\"id\":\"<t4>\",\"open\":0,\"passed\":0,\"problem\":0,\"title\":\"Testing round 2\"}],\"size\":11,\"subFeatures\":[{\"id\":\"<t5>\",\"state\":\"waiting\",\"title\":\"Sub\"},{\"id\":\"<t7>\",\"state\":\"waiting\",\"title\":\"Loose\"},{\"id\":\"<t11>\",\"state\":\"waiting\",\"title\":\"Hide me\"}]},\"feature\":true,\"path\":\"<path>\",\"saved\":null,\"sections\":[{\"key\":\"running\",\"label\":\"Running\",\"text\":\"Phase one: 0 of 3 done, 3 waiting.\"},{\"key\":\"subfeatures\",\"label\":\"Sub-features\",\"text\":\"Sub: Waiting\\nLoose: Waiting\\nHide me: Waiting\"}],\"title\":\"The feature\",\"topId\":\"<t0>\"}"
+  }
+ },
+ {
+  "label": "step status",
+  "value": {
+   "what": "status",
+   "status": 200,
+   "data": "{\"facts\":{\"broken\":[],\"changes\":null,\"counts\":{\"waiting\":10},\"groups\":[{\"counts\":{\"waiting\":3},\"id\":\"<t1>\",\"kind\":\"group\",\"settled\":false,\"title\":\"Phase one\",\"total\":3},{\"counts\":{},\"id\":\"<t3>\",\"kind\":\"round\",\"settled\":true,\"title\":\"Testing round 1\",\"total\":0},{\"counts\":{},\"id\":\"<t4>\",\"kind\":\"round\",\"settled\":true,\"title\":\"Testing round 2\",\"total\":0},{\"counts\":{},\"id\":\"<t12>\",\"kind\":\"group\",\"settled\":false,\"title\":\"Phase two\",\"total\":0}],\"loose\":{\"counts\":{},\"total\":0},\"needsYou\":[],\"paused\":[],\"prs\":[],\"rounds\":[{\"id\":\"<t3>\",\"open\":0,\"passed\":0,\"problem\":0,\"title\":\"Testing round 1\"},{\"id\":\"<t4>\",\"open\":0,\"passed\":0,\"problem\":0,\"title\":\"Testing round 2\"}],\"size\":11,\"subFeatures\":[{\"id\":\"<t5>\",\"state\":\"waiting\",\"title\":\"Sub\"},{\"id\":\"<t7>\",\"state\":\"waiting\",\"title\":\"Loose\"},{\"id\":\"<t11>\",\"state\":\"waiting\",\"title\":\"Hide me\"}]},\"feature\":true,\"markdown\":\"# Where we are: The feature\\n\\nFeature ticket <t0>, 11 tickets. Updated <time>.\\n\\n## Goal\\n\\nShip the feature\\n\\n## Done\\n\\nGroups made\\n\\n## Running\\n\\nPhase one: 0 of 3 done, 3 waiting.\\n\\n## Sub-features\\n\\n- Sub: Waiting\\n- Loose: Waiting\\n- Hide me: Waiting\\n\\n## Next step\\n\\nTest it\\n\\nCounts, test results, pull requests and saved changes come from the board (counts in [brackets]); the rest is written with update_status.\\n\",\"path\":\"<path>\",\"saved\":{\"claudeAt\":\"<time>\",\"done\":\"Groups made\",\"familySig\":\"<t11>:backlog:::|<t12>:backlog:::|<t1>:backlog:::|<t2>:backlog:::|<t3>:backlog:::|<t4>:backlog:::|<t5>:backlog:::|<t7>:backlog:::|<t8>:backlog:::|<t9>:backlog:::\",\"goal\":\"Ship the feature\",\"next\":\"Test it\",\"updatedAt\":\"<time>\"},\"sections\":[{\"key\":\"goal\",\"label\":\"Goal\",\"text\":\"Ship the feature\"},{\"key\":\"done\",\"label\":\"Done\",\"text\":\"Groups made\"},{\"key\":\"running\",\"label\":\"Running\",\"text\":\"Phase one: 0 of 3 done, 3 waiting.\"},{\"key\":\"subfeatures\",\"label\":\"Sub-features\",\"text\":\"Sub: Waiting\\nLoose: Waiting\\nHide me: Waiting\"},{\"key\":\"next\",\"label\":\"Next step\",\"text\":\"Test it\"}],\"title\":\"The feature\",\"topId\":\"<t0>\"}"
+  }
+ },
+ {
+  "label": "step status prs",
+  "value": {
+   "what": "status prs",
+   "status": 200,
+   "data": "{\"facts\":{\"broken\":[],\"changes\":null,\"counts\":{\"waiting\":10},\"groups\":[{\"counts\":{\"waiting\":3},\"id\":\"<t1>\",\"kind\":\"group\",\"settled\":false,\"title\":\"Phase one\",\"total\":3},{\"counts\":{},\"id\":\"<t3>\",\"kind\":\"round\",\"settled\":true,\"title\":\"Testing round 1\",\"total\":0},{\"counts\":{},\"id\":\"<t4>\",\"kind\":\"round\",\"settled\":true,\"title\":\"Testing round 2\",\"total\":0},{\"counts\":{},\"id\":\"<t12>\",\"kind\":\"group\",\"settled\":false,\"title\":\"Phase two\",\"total\":0}],\"loose\":{\"counts\":{},\"total\":0},\"needsYou\":[],\"paused\":[],\"prs\":[{\"number\":7,\"state\":\"unknown\",\"ticketId\":\"<t0>\",\"ticketTitle\":\"The feature\",\"url\":\"https://github.com/o/r/pull/7\"},{\"number\":8,\"state\":\"unknown\",\"ticketId\":\"<t0>\",\"ticketTitle\":\"The feature\",\"url\":\"https://github.com/o/r/pull/8\"}],\"rounds\":[{\"id\":\"<t3>\",\"open\":0,\"passed\":0,\"problem\":0,\"title\":\"Testing round 1\"},{\"id\":\"<t4>\",\"open\":0,\"passed\":0,\"problem\":0,\"title\":\"Testing round 2\"}],\"size\":11,\"subFeatures\":[{\"id\":\"<t5>\",\"state\":\"waiting\",\"title\":\"Sub\"},{\"id\":\"<t7>\",\"state\":\"waiting\",\"title\":\"Loose\"},{\"id\":\"<t11>\",\"state\":\"waiting\",\"title\":\"Hide me\"}]},\"feature\":true,\"markdown\":\"# Where we are: The feature\\n\\nFeature ticket <t0>, 11 tickets. Updated <time>.\\n\\n## Goal\\n\\nShip the feature\\n\\n## Done\\n\\nGroups made\\n\\n## Running\\n\\nPhase one: 0 of 3 done, 3 waiting.\\n\\n## Sub-features\\n\\n- Sub: Waiting\\n- Loose: Waiting\\n- Hide me: Waiting\\n\\n## Pull requests\\n\\n- #7 The feature · unknown\\n- #8 The feature · unknown\\n\\n## Next step\\n\\nTest it\\n\\nCounts, test results, pull requests and saved changes come from the board (counts in [brackets]); the rest is written with update_status.\\n\",\"path\":\"<path>\",\"saved\":{\"claudeAt\":\"<time>\",\"done\":\"Groups made\",\"familySig\":\"<t11>:backlog:::|<t12>:backlog:::|<t1>:backlog:::|<t2>:backlog:::|<t3>:backlog:::|<t4>:backlog:::|<t5>:backlog:::|<t7>:backlog:::|<t8>:backlog:::|<t9>:backlog:::\",\"goal\":\"Ship the feature\",\"next\":\"Test it\",\"updatedAt\":\"<time>\"},\"sections\":[{\"key\":\"goal\",\"label\":\"Goal\",\"text\":\"Ship the feature\"},{\"key\":\"done\",\"label\":\"Done\",\"text\":\"Groups made\"},{\"key\":\"running\",\"label\":\"Running\",\"text\":\"Phase one: 0 of 3 done, 3 waiting.\"},{\"key\":\"subfeatures\",\"label\":\"Sub-features\",\"text\":\"Sub: Waiting\\nLoose: Waiting\\nHide me: Waiting\"},{\"key\":\"prs\",\"label\":\"Pull requests\",\"text\":\"#7 The feature · unknown\\n#8 The feature · unknown\"},{\"key\":\"next\",\"label\":\"Next step\",\"text\":\"Test it\"}],\"title\":\"The feature\",\"topId\":\"<t0>\"}"
+  }
+ },
+ {
+  "label": "step status pr note",
+  "value": {
+   "what": "status pr note",
+   "status": 200,
+   "data": "{\"facts\":{\"broken\":[],\"changes\":null,\"counts\":{\"waiting\":10},\"groups\":[{\"counts\":{\"waiting\":3},\"id\":\"<t1>\",\"kind\":\"group\",\"settled\":false,\"title\":\"Phase one\",\"total\":3},{\"counts\":{},\"id\":\"<t3>\",\"kind\":\"round\",\"settled\":true,\"title\":\"Testing round 1\",\"total\":0},{\"counts\":{},\"id\":\"<t4>\",\"kind\":\"round\",\"settled\":true,\"title\":\"Testing round 2\",\"total\":0},{\"counts\":{},\"id\":\"<t12>\",\"kind\":\"group\",\"settled\":false,\"title\":\"Phase two\",\"total\":0}],\"loose\":{\"counts\":{},\"total\":0},\"needsYou\":[],\"paused\":[],\"prs\":[{\"note\":\"on staging\",\"number\":7,\"state\":\"unknown\",\"ticketId\":\"<t0>\",\"ticketTitle\":\"The feature\",\"url\":\"https://github.com/o/r/pull/7\"},{\"number\":8,\"state\":\"unknown\",\"ticketId\":\"<t0>\",\"ticketTitle\":\"The feature\",\"url\":\"https://github.com/o/r/pull/8\"}],\"rounds\":[{\"id\":\"<t3>\",\"open\":0,\"passed\":0,\"problem\":0,\"title\":\"Testing round 1\"},{\"id\":\"<t4>\",\"open\":0,\"passed\":0,\"problem\":0,\"title\":\"Testing round 2\"}],\"size\":11,\"subFeatures\":[{\"id\":\"<t5>\",\"state\":\"waiting\",\"title\":\"Sub\"},{\"id\":\"<t7>\",\"state\":\"waiting\",\"title\":\"Loose\"},{\"id\":\"<t11>\",\"state\":\"waiting\",\"title\":\"Hide me\"}]},\"feature\":true,\"markdown\":\"# Where we are: The feature\\n\\nFeature ticket <t0>, 11 tickets. Updated <time>.\\n\\n## Goal\\n\\nShip the feature\\n\\n## Done\\n\\nGroups made\\n\\n## Running\\n\\nPhase one: 0 of 3 done, 3 waiting.\\n\\n## Sub-features\\n\\n- Sub: Waiting\\n- Loose: Waiting\\n- Hide me: Waiting\\n\\n## Pull requests\\n\\n- #7 The feature · unknown · on staging\\n- #8 The feature · unknown\\n\\n## Next step\\n\\nTest it\\n\\nCounts, test results, pull requests and saved changes come from the board (counts in [brackets]); the rest is written with update_status.\\n\",\"path\":\"<path>\",\"saved\":{\"claudeAt\":\"<time>\",\"done\":\"Groups made\",\"familySig\":\"<t11>:backlog:::|<t12>:backlog:::|<t1>:backlog:::|<t2>:backlog:::|<t3>:backlog:::|<t4>:backlog:::|<t5>:backlog:::|<t7>:backlog:::|<t8>:backlog:::|<t9>:backlog:::\",\"goal\":\"Ship the feature\",\"next\":\"Test it\",\"prNotes\":{\"https://github.com/o/r/pull/7\":\"on staging\"},\"updatedAt\":\"<time>\"},\"sections\":[{\"key\":\"goal\",\"label\":\"Goal\",\"text\":\"Ship the feature\"},{\"key\":\"done\",\"label\":\"Done\",\"text\":\"Groups made\"},{\"key\":\"running\",\"label\":\"Running\",\"text\":\"Phase one: 0 of 3 done, 3 waiting.\"},{\"key\":\"subfeatures\",\"label\":\"Sub-features\",\"text\":\"Sub: Waiting\\nLoose: Waiting\\nHide me: Waiting\"},{\"key\":\"prs\",\"label\":\"Pull requests\",\"text\":\"#7 The feature · unknown · on staging\\n#8 The feature · unknown\"},{\"key\":\"next\",\"label\":\"Next step\",\"text\":\"Test it\"}],\"title\":\"The feature\",\"topId\":\"<t0>\"}"
+  }
+ },
+ {
+  "label": "step status clear",
+  "value": {
+   "what": "status clear",
+   "status": 200,
+   "data": "{\"facts\":{\"broken\":[],\"changes\":null,\"counts\":{\"waiting\":10},\"groups\":[{\"counts\":{\"waiting\":3},\"id\":\"<t1>\",\"kind\":\"group\",\"settled\":false,\"title\":\"Phase one\",\"total\":3},{\"counts\":{},\"id\":\"<t3>\",\"kind\":\"round\",\"settled\":true,\"title\":\"Testing round 1\",\"total\":0},{\"counts\":{},\"id\":\"<t4>\",\"kind\":\"round\",\"settled\":true,\"title\":\"Testing round 2\",\"total\":0},{\"counts\":{},\"id\":\"<t12>\",\"kind\":\"group\",\"settled\":false,\"title\":\"Phase two\",\"total\":0}],\"loose\":{\"counts\":{},\"total\":0},\"needsYou\":[],\"paused\":[],\"prs\":[{\"note\":\"on staging\",\"number\":7,\"state\":\"unknown\",\"ticketId\":\"<t0>\",\"ticketTitle\":\"The feature\",\"url\":\"https://github.com/o/r/pull/7\"},{\"number\":8,\"state\":\"unknown\",\"ticketId\":\"<t0>\",\"ticketTitle\":\"The feature\",\"url\":\"https://github.com/o/r/pull/8\"}],\"rounds\":[{\"id\":\"<t3>\",\"open\":0,\"passed\":0,\"problem\":0,\"title\":\"Testing round 1\"},{\"id\":\"<t4>\",\"open\":0,\"passed\":0,\"problem\":0,\"title\":\"Testing round 2\"}],\"size\":11,\"subFeatures\":[{\"id\":\"<t5>\",\"state\":\"waiting\",\"title\":\"Sub\"},{\"id\":\"<t7>\",\"state\":\"waiting\",\"title\":\"Loose\"},{\"id\":\"<t11>\",\"state\":\"waiting\",\"title\":\"Hide me\"}]},\"feature\":true,\"markdown\":\"# Where we are: The feature\\n\\nFeature ticket <t0>, 11 tickets. Updated <time>.\\n\\n## Goal\\n\\nShip the feature\\n\\n## Running\\n\\nPhase one: 0 of 3 done, 3 waiting.\\n\\n## Sub-features\\n\\n- Sub: Waiting\\n- Loose: Waiting\\n- Hide me: Waiting\\n\\n## Pull requests\\n\\n- #7 The feature · unknown · on staging\\n- #8 The feature · unknown\\n\\n## Next step\\n\\nTest it\\n\\nCounts, test results, pull requests and saved changes come from the board (counts in [brackets]); the rest is written with update_status.\\n\",\"path\":\"<path>\",\"saved\":{\"claudeAt\":\"<time>\",\"familySig\":\"<t11>:backlog:::|<t12>:backlog:::|<t1>:backlog:::|<t2>:backlog:::|<t3>:backlog:::|<t4>:backlog:::|<t5>:backlog:::|<t7>:backlog:::|<t8>:backlog:::|<t9>:backlog:::\",\"goal\":\"Ship the feature\",\"next\":\"Test it\",\"prNotes\":{\"https://github.com/o/r/pull/7\":\"on staging\"},\"updatedAt\":\"<time>\"},\"sections\":[{\"key\":\"goal\",\"label\":\"Goal\",\"text\":\"Ship the feature\"},{\"key\":\"running\",\"label\":\"Running\",\"text\":\"Phase one: 0 of 3 done, 3 waiting.\"},{\"key\":\"subfeatures\",\"label\":\"Sub-features\",\"text\":\"Sub: Waiting\\nLoose: Waiting\\nHide me: Waiting\"},{\"key\":\"prs\",\"label\":\"Pull requests\",\"text\":\"#7 The feature · unknown · on staging\\n#8 The feature · unknown\"},{\"key\":\"next\",\"label\":\"Next step\",\"text\":\"Test it\"}],\"title\":\"The feature\",\"topId\":\"<t0>\"}"
+  }
+ },
+ {
+  "label": "step status long",
+  "value": {
+   "what": "status long",
+   "status": 200,
+   "data": "{\"facts\":{\"broken\":[],\"changes\":null,\"counts\":{\"waiting\":10},\"groups\":[{\"counts\":{\"waiting\":3},\"id\":\"<t1>\",\"kind\":\"group\",\"settled\":false,\"title\":\"Phase one\",\"total\":3},{\"counts\":{},\"id\":\"<t3>\",\"kind\":\"round\",\"settled\":true,\"title\":\"Testing round 1\",\"total\":0},{\"counts\":{},\"id\":\"<t4>\",\"kind\":\"round\",\"settled\":true,\"title\":\"Testing round 2\",\"total\":0},{\"counts\":{},\"id\":\"<t12>\",\"kind\":\"group\",\"settled\":false,\"title\":\"Phase two\",\"total\":0}],\"loose\":{\"counts\":{},\"total\":0},\"needsYou\":[],\"paused\":[],\"prs\":[{\"note\":\"on staging\",\"number\":7,\"state\":\"unknown\",\"ticketId\":\"<t0>\",\"ticketTitle\":\"The feature\",\"url\":\"https://github.com/o/r/pull/7\"},{\"number\":8,\"state\":\"unknown\",\"ticketId\":\"<t0>\",\"ticketTitle\":\"The feature\",\"url\":\"https://github.com/o/r/pull/8\"}],\"rounds\":[{\"id\":\"<t3>\",\"open\":0,\"passed\":0,\"problem\":0,\"title\":\"Testing round 1\"},{\"id\":\"<t4>\",\"open\":0,\"passed\":0,\"problem\":0,\"title\":\"Testing round 2\"}],\"size\":11,\"subFeatures\":[{\"id\":\"<t5>\",\"state\":\"waiting\",\"title\":\"Sub\"},{\"id\":\"<t7>\",\"state\":\"waiting\",\"title\":\"Loose\"},{\"id\":\"<t11>\",\"state\":\"waiting\",\"title\":\"Hide me\"}]},\"feature\":true,\"markdown\":\"# Where we are: The feature\\n\\nFeature ticket <t0>, 11 tickets. Updated <time>.\\n\\n## Goal\\n\\nShip the feature\\n\\n## Running\\n\\nPhase one: 0 of 3 done, 3 waiting.\\n\\n## Sub-features\\n\\n- Sub: Waiting\\n- Loose: Waiting\\n- Hide me: Waiting\\n\\n## Broken\\n\\nword word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word… (cut short)\\n\\n## Pull requests\\n\\n- #7 The feature · unknown · on staging\\n- #8 The feature · unknown\\n\\n## Next step\\n\\nTest it\\n\\nCounts, test results, pull requests and saved changes come from the board (counts in [brackets]); the rest is written with update_status.\\n\",\"path\":\"<path>\",\"saved\":{\"broken\":\"word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word… (cut short)\",\"claudeAt\":\"<time>\",\"familySig\":\"<t11>:backlog:::|<t12>:backlog:::|<t1>:backlog:::|<t2>:backlog:::|<t3>:backlog:::|<t4>:backlog:::|<t5>:backlog:::|<t7>:backlog:::|<t8>:backlog:::|<t9>:backlog:::\",\"goal\":\"Ship the feature\",\"next\":\"Test it\",\"prNotes\":{\"https://github.com/o/r/pull/7\":\"on staging\"},\"updatedAt\":\"<time>\"},\"sections\":[{\"key\":\"goal\",\"label\":\"Goal\",\"text\":\"Ship the feature\"},{\"key\":\"running\",\"label\":\"Running\",\"text\":\"Phase one: 0 of 3 done, 3 waiting.\"},{\"key\":\"subfeatures\",\"label\":\"Sub-features\",\"text\":\"Sub: Waiting\\nLoose: Waiting\\nHide me: Waiting\"},{\"key\":\"broken\",\"label\":\"Broken\",\"text\":\"word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word… (cut short)\"},{\"key\":\"prs\",\"label\":\"Pull requests\",\"text\":\"#7 The feature · unknown · on staging\\n#8 The feature · unknown\"},{\"key\":\"next\",\"label\":\"Next step\",\"text\":\"Test it\"}],\"title\":\"The feature\",\"topId\":\"<t0>\"}"
+  }
+ },
+ {
+  "label": "step status nothing",
+  "value": {
+   "what": "status nothing",
+   "status": 400,
+   "data": "{\"error\":\"nothing to update: pass goal, done, broken, waiting, next, prNotes or prs\"}"
+  }
+ },
+ {
+  "label": "step status bad",
+  "value": {
+   "what": "status bad",
+   "status": 400,
+   "data": "{\"error\":\"next must be text or null\"}"
+  }
+ },
+ {
+  "label": "step note",
+  "value": {
+   "what": "note",
+   "status": 200,
+   "data": "{\"facts\":{\"broken\":[],\"changes\":null,\"counts\":{\"waiting\":10},\"groups\":[{\"counts\":{\"waiting\":3},\"id\":\"<t1>\",\"kind\":\"group\",\"settled\":false,\"title\":\"Phase one\",\"total\":3},{\"counts\":{},\"id\":\"<t3>\",\"kind\":\"round\",\"settled\":true,\"title\":\"Testing round 1\",\"total\":0},{\"counts\":{},\"id\":\"<t4>\",\"kind\":\"round\",\"settled\":true,\"title\":\"Testing round 2\",\"total\":0},{\"counts\":{},\"id\":\"<t12>\",\"kind\":\"group\",\"settled\":false,\"title\":\"Phase two\",\"total\":0}],\"loose\":{\"counts\":{},\"total\":0},\"needsYou\":[],\"paused\":[],\"prs\":[{\"note\":\"on staging\",\"number\":7,\"state\":\"unknown\",\"ticketId\":\"<t0>\",\"ticketTitle\":\"The feature\",\"url\":\"https://github.com/o/r/pull/7\"},{\"number\":8,\"state\":\"unknown\",\"ticketId\":\"<t0>\",\"ticketTitle\":\"The feature\",\"url\":\"https://github.com/o/r/pull/8\"}],\"rounds\":[{\"id\":\"<t3>\",\"open\":0,\"passed\":0,\"problem\":0,\"title\":\"Testing round 1\"},{\"id\":\"<t4>\",\"open\":0,\"passed\":0,\"problem\":0,\"title\":\"Testing round 2\"}],\"size\":11,\"subFeatures\":[{\"id\":\"<t5>\",\"state\":\"waiting\",\"title\":\"Sub\"},{\"id\":\"<t7>\",\"state\":\"waiting\",\"title\":\"Loose\"},{\"id\":\"<t11>\",\"state\":\"waiting\",\"title\":\"Hide me\"}]},\"feature\":true,\"path\":\"<path>\",\"saved\":{\"broken\":\"word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word… (cut short)\",\"claudeAt\":\"<time>\",\"familySig\":\"<t11>:backlog:::|<t12>:backlog:::|<t1>:backlog:::|<t2>:backlog:::|<t3>:backlog:::|<t4>:backlog:::|<t5>:backlog:::|<t7>:backlog:::|<t8>:backlog:::|<t9>:backlog:::\",\"goal\":\"Ship the feature\",\"next\":\"Test it\",\"notes\":[{\"at\":\"<time>\",\"delivered\":false,\"text\":\"Remember the phone\"}],\"prNotes\":{\"https://github.com/o/r/pull/7\":\"on staging\"},\"updatedAt\":\"<time>\"},\"sections\":[{\"key\":\"goal\",\"label\":\"Goal\",\"text\":\"Ship the feature\"},{\"key\":\"running\",\"label\":\"Running\",\"text\":\"Phase one: 0 of 3 done, 3 waiting.\"},{\"key\":\"subfeatures\",\"label\":\"Sub-features\",\"text\":\"Sub: Waiting\\nLoose: Waiting\\nHide me: Waiting\"},{\"key\":\"broken\",\"label\":\"Broken\",\"text\":\"word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word… (cut short)\"},{\"key\":\"prs\",\"label\":\"Pull requests\",\"text\":\"#7 The feature · unknown · on staging\\n#8 The feature · unknown\"},{\"key\":\"next\",\"label\":\"Next step\",\"text\":\"Test it\"}],\"title\":\"The feature\",\"topId\":\"<t0>\"}"
+  }
+ },
+ {
+  "label": "step note empty",
+  "value": {
+   "what": "note empty",
+   "status": 400,
+   "data": "{\"error\":\"the note is empty\"}"
+  }
+ },
+ {
+  "label": "step sub status",
+  "value": {
+   "what": "sub status",
+   "status": 200,
+   "data": "{\"facts\":{\"broken\":[],\"changes\":null,\"counts\":{\"waiting\":1},\"groups\":[],\"loose\":{\"counts\":{\"waiting\":1},\"total\":1},\"needsYou\":[],\"paused\":[],\"prs\":[],\"rounds\":[],\"size\":2},\"feature\":true,\"markdown\":\"# Where we are: Sub\\n\\nFeature ticket <t5>, 2 tickets. Updated <time>.\\n\\n## Running\\n\\nOther tickets: 0 of 1 done, 1 waiting.\\n\\n## Next step\\n\\nSub's next step\\n\\nCounts, test results, pull requests and saved changes come from the board (counts in [brackets]); the rest is written with update_status.\\n\",\"path\":\"<path>\",\"saved\":{\"claudeAt\":\"<time>\",\"familySig\":\"<t6>:backlog:::\",\"next\":\"Sub's next step\",\"updatedAt\":\"<time>\"},\"sections\":[{\"key\":\"running\",\"label\":\"Running\",\"text\":\"Other tickets: 0 of 1 done, 1 waiting.\"},{\"key\":\"next\",\"label\":\"Next step\",\"text\":\"Sub's next step\"}],\"title\":\"Sub\",\"topId\":\"<t5>\"}"
+  }
+ },
+ {
+  "label": "step status after",
+  "value": {
+   "what": "status after",
+   "status": 200,
+   "data": "{\"facts\":{\"broken\":[],\"changes\":null,\"counts\":{\"waiting\":10},\"groups\":[{\"counts\":{\"waiting\":3},\"id\":\"<t1>\",\"kind\":\"group\",\"settled\":false,\"title\":\"Phase one\",\"total\":3},{\"counts\":{},\"id\":\"<t3>\",\"kind\":\"round\",\"settled\":true,\"title\":\"Testing round 1\",\"total\":0},{\"counts\":{},\"id\":\"<t4>\",\"kind\":\"round\",\"settled\":true,\"title\":\"Testing round 2\",\"total\":0},{\"counts\":{},\"id\":\"<t12>\",\"kind\":\"group\",\"settled\":false,\"title\":\"Phase two\",\"total\":0}],\"loose\":{\"counts\":{},\"total\":0},\"needsYou\":[],\"paused\":[],\"prs\":[{\"note\":\"on staging\",\"number\":7,\"state\":\"unknown\",\"ticketId\":\"<t0>\",\"ticketTitle\":\"The feature\",\"url\":\"https://github.com/o/r/pull/7\"},{\"number\":8,\"state\":\"unknown\",\"ticketId\":\"<t0>\",\"ticketTitle\":\"The feature\",\"url\":\"https://github.com/o/r/pull/8\"}],\"rounds\":[{\"id\":\"<t3>\",\"open\":0,\"passed\":0,\"problem\":0,\"title\":\"Testing round 1\"},{\"id\":\"<t4>\",\"open\":0,\"passed\":0,\"problem\":0,\"title\":\"Testing round 2\"}],\"size\":11,\"subFeatures\":[{\"headline\":\"Sub's next step\",\"id\":\"<t5>\",\"state\":\"waiting\",\"title\":\"Sub\"},{\"id\":\"<t7>\",\"state\":\"waiting\",\"title\":\"Loose\"},{\"id\":\"<t11>\",\"state\":\"waiting\",\"title\":\"Hide me\"}]},\"feature\":true,\"path\":\"<path>\",\"saved\":{\"broken\":\"word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word… (cut short)\",\"claudeAt\":\"<time>\",\"familySig\":\"<t11>:backlog:::|<t12>:backlog:::|<t1>:backlog:::|<t2>:backlog:::|<t3>:backlog:::|<t4>:backlog:::|<t5>:backlog:::|<t7>:backlog:::|<t8>:backlog:::|<t9>:backlog:::\",\"goal\":\"Ship the feature\",\"next\":\"Test it\",\"notes\":[{\"at\":\"<time>\",\"delivered\":false,\"text\":\"Remember the phone\"}],\"prNotes\":{\"https://github.com/o/r/pull/7\":\"on staging\"},\"updatedAt\":\"<time>\"},\"sections\":[{\"key\":\"goal\",\"label\":\"Goal\",\"text\":\"Ship the feature\"},{\"key\":\"running\",\"label\":\"Running\",\"text\":\"Phase one: 0 of 3 done, 3 waiting.\"},{\"key\":\"subfeatures\",\"label\":\"Sub-features\",\"text\":\"Sub: Waiting · Sub's next step\\nLoose: Waiting\\nHide me: Waiting\"},{\"key\":\"broken\",\"label\":\"Broken\",\"text\":\"word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word… (cut short)\"},{\"key\":\"prs\",\"label\":\"Pull requests\",\"text\":\"#7 The feature · unknown · on staging\\n#8 The feature · unknown\"},{\"key\":\"next\",\"label\":\"Next step\",\"text\":\"Test it\"}],\"title\":\"The feature\",\"topId\":\"<t0>\"}"
+  }
+ },
+ {
+  "label": "step family",
+  "value": {
+   "what": "family",
+   "status": 200,
+   "data": "[{\"depth\":0,\"how\":null,\"id\":\"<t0>\",\"parent\":null,\"prUrl\":\"https://github.com/o/r/pull/8\",\"result\":\"Gathered 4 tickets into this feature: \\\"Kid\\\", \\\"Loose\\\", \\\"Hide me\\\", \\\"Sub\\\".\",\"resumeCommand\":null,\"sessionId\":null,\"status\":\"backlog\",\"title\":\"The feature\",\"updatedAt\":\"<time>\"},{\"depth\":1,\"how\":\"linked\",\"id\":\"<t1>\",\"parent\":\"<t0>\",\"prUrl\":null,\"result\":null,\"resumeCommand\":null,\"sessionId\":null,\"status\":\"backlog\",\"title\":\"Phase one\",\"updatedAt\":\"<time>\"},{\"depth\":2,\"how\":\"linked\",\"id\":\"<t2>\",\"parent\":\"<t1>\",\"prUrl\":null,\"result\":null,\"resumeCommand\":null,\"sessionId\":null,\"status\":\"backlog\",\"title\":\"Step a\",\"updatedAt\":\"<time>\"},{\"depth\":2,\"how\":\"linked\",\"id\":\"<t8>\",\"parent\":\"<t1>\",\"prUrl\":null,\"result\":\"Gathered into the feature \\\"The feature\\\" (<t0>), under \\\"Phase one\\\".\",\"resumeCommand\":null,\"sessionId\":null,\"status\":\"backlog\",\"title\":\"Kid\",\"updatedAt\":\"<time>\"},{\"depth\":2,\"how\":\"linked\",\"id\":\"<t9>\",\"parent\":\"<t1>\",\"prUrl\":null,\"result\":\"Moved up under \\\"Phase one\\\" so the feature \\\"The feature\\\" stays at most 2 levels deep.\",\"resumeCommand\":null,\"sessionId\":null,\"status\":\"backlog\",\"title\":\"Grandkid\",\"updatedAt\":\"<time>\"},{\"depth\":1,\"how\":\"linked\",\"id\":\"<t3>\",\"parent\":\"<t0>\",\"prUrl\":null,\"result\":null,\"resumeCommand\":null,\"sessionId\":null,\"status\":\"backlog\",\"title\":\"Testing round 1\",\"updatedAt\":\"<time>\"},{\"depth\":1,\"how\":\"linked\",\"id\":\"<t4>\",\"parent\":\"<t0>\",\"prUrl\":null,\"result\":null,\"resumeCommand\":null,\"sessionId\":null,\"status\":\"backlog\",\"title\":\"Testing round 2\",\"updatedAt\":\"<time>\"},{\"depth\":1,\"how\":\"linked\",\"id\":\"<t5>\",\"parent\":\"<t0>\",\"prUrl\":null,\"result\":\"Gathered into the feature \\\"The feature\\\" (<t0>).\",\"resumeCommand\":null,\"sessionId\":null,\"status\":\"backlog\",\"subFeature\":true,\"title\":\"Sub\",\"updatedAt\":\"<time>\"},{\"depth\":2,\"how\":\"linked\",\"id\":\"<t6>\",\"parent\":\"<t5>\",\"prUrl\":null,\"result\":null,\"resumeCommand\":null,\"sessionId\":null,\"status\":\"backlog\",\"title\":\"Sub's own\",\"updatedAt\":\"<time>\"},{\"depth\":1,\"how\":\"linked\",\"id\":\"<t7>\",\"parent\":\"<t0>\",\"prUrl\":null,\"result\":\"Gathered into the feature \\\"The feature\\\" (<t0>).\",\"resumeCommand\":null,\"sessionId\":null,\"status\":\"backlog\",\"subFeature\":true,\"title\":\"Loose\",\"updatedAt\":\"<time>\"},{\"depth\":1,\"how\":\"linked\",\"id\":\"<t12>\",\"parent\":\"<t0>\",\"prUrl\":null,\"result\":null,\"resumeCommand\":null,\"sessionId\":null,\"status\":\"backlog\",\"title\":\"Phase two\",\"updatedAt\":\"<time>\"},{\"depth\":2,\"how\":\"linked\",\"id\":\"<t11>\",\"parent\":\"<t12>\",\"prUrl\":null,\"result\":\"Gathered into the feature \\\"The feature\\\" (<t0>), under \\\"Phase two\\\".\",\"resumeCommand\":null,\"sessionId\":null,\"status\":\"backlog\",\"subFeature\":true,\"title\":\"Hide me\",\"updatedAt\":\"<time>\"}]"
+  }
+ },
+ {
+  "label": "step family view",
+  "value": {
+   "what": "family view",
+   "status": 200,
+   "data": "[{\"costUsd\":0,\"depth\":0,\"effort\":null,\"finishedAt\":null,\"id\":\"<t0>\",\"model\":null,\"needsYou\":false,\"parent\":null,\"report\":false,\"summary\":\"Gathered 4 tickets into this feature: \\\"Kid\\\", \\\"Loose\\\", \\\"Hide me\\\", \\\"Sub\\\".\"},{\"costUsd\":0,\"depth\":1,\"effort\":null,\"finishedAt\":null,\"id\":\"<t1>\",\"model\":null,\"needsYou\":false,\"parent\":\"<t0>\",\"report\":false,\"summary\":null},{\"costUsd\":0,\"depth\":2,\"effort\":null,\"finishedAt\":null,\"id\":\"<t2>\",\"model\":null,\"needsYou\":false,\"parent\":\"<t1>\",\"report\":false,\"summary\":null},{\"costUsd\":0,\"depth\":2,\"effort\":null,\"finishedAt\":null,\"id\":\"<t8>\",\"model\":null,\"needsYou\":false,\"parent\":\"<t1>\",\"report\":false,\"summary\":\"Gathered into the feature \\\"The feature\\\" (<t0>), under \\\"Phase one\\\".\"},{\"costUsd\":0,\"depth\":2,\"effort\":null,\"finishedAt\":null,\"id\":\"<t9>\",\"model\":null,\"needsYou\":false,\"parent\":\"<t1>\",\"report\":false,\"summary\":\"Moved up under \\\"Phase one\\\" so the feature \\\"The feature\\\" stays at most 2 levels deep.\"},{\"costUsd\":0,\"depth\":1,\"effort\":null,\"finishedAt\":null,\"id\":\"<t3>\",\"model\":null,\"needsYou\":false,\"parent\":\"<t0>\",\"report\":false,\"summary\":null},{\"costUsd\":0,\"depth\":1,\"effort\":null,\"finishedAt\":null,\"id\":\"<t4>\",\"model\":null,\"needsYou\":false,\"parent\":\"<t0>\",\"report\":false,\"summary\":null},{\"costUsd\":0,\"depth\":1,\"effort\":null,\"finishedAt\":null,\"id\":\"<t5>\",\"model\":null,\"needsYou\":false,\"parent\":\"<t0>\",\"report\":false,\"subFeature\":true,\"summary\":\"Gathered into the feature \\\"The feature\\\" (<t0>).\",\"tasks\":0},{\"costUsd\":0,\"depth\":2,\"effort\":null,\"finishedAt\":null,\"id\":\"<t6>\",\"model\":null,\"needsYou\":false,\"parent\":\"<t5>\",\"report\":false,\"summary\":null},{\"costUsd\":0,\"depth\":1,\"effort\":null,\"finishedAt\":null,\"id\":\"<t7>\",\"model\":null,\"needsYou\":false,\"parent\":\"<t0>\",\"report\":false,\"subFeature\":true,\"summary\":\"Gathered into the feature \\\"The feature\\\" (<t0>).\",\"tasks\":0},{\"costUsd\":0,\"depth\":1,\"effort\":null,\"finishedAt\":null,\"id\":\"<t12>\",\"model\":null,\"needsYou\":false,\"parent\":\"<t0>\",\"report\":false,\"summary\":null},{\"costUsd\":0,\"depth\":2,\"effort\":null,\"finishedAt\":null,\"id\":\"<t11>\",\"model\":null,\"needsYou\":false,\"parent\":\"<t12>\",\"report\":false,\"subFeature\":true,\"summary\":\"Gathered into the feature \\\"The feature\\\" (<t0>), under \\\"Phase two\\\".\",\"tasks\":0}]"
+  }
+ },
+ {
+  "label": "step merge from the user",
+  "value": {
+   "what": "merge from the user",
+   "status": 403,
+   "data": "{\"error\":\"merge_into_main works only from the tool ticket's own run\"}"
+  }
+ },
+ {
+  "label": "step merge from a huddle",
+  "value": {
+   "what": "merge from a huddle",
+   "status": 403,
+   "data": "{\"error\":\"merge_into_main works only from the tool ticket's own run\"}"
+  }
+ },
+ {
+  "label": "step merge not a tool",
+  "value": {
+   "what": "merge not a tool",
+   "status": 409,
+   "data": "{\"error\":\"only a tool ticket merges into its main ticket's copy\"}"
+  }
+ },
+ {
+  "label": "step land another run",
+  "value": {
+   "what": "land another run",
+   "status": 403,
+   "data": "{\"error\":\"land_milestone works only from the main ticket's own run\"}"
+  }
+ },
+ {
+  "label": "step land other board",
+  "value": {
+   "what": "land other board",
+   "status": 403,
+   "data": "{\"error\":\"tickets can only talk to tickets on their own board (elsewhere)\"}"
+  }
+ },
+ {
+  "label": "step land a card",
+  "value": {
+   "what": "land a card",
+   "status": 409,
+   "data": "{\"error\":\"only a main ticket lands milestones\"}"
+  }
+ },
+ {
+  "label": "step land no summary",
+  "value": {
+   "what": "land no summary",
+   "status": 409,
+   "data": "{\"error\":\"say in one line what this milestone is (summary)\"}"
+  }
+ },
+ {
+  "label": "step land",
+  "value": {
+   "what": "land",
+   "status": 200,
+   "data": "{\"message\":\"Recorded the milestone: the tool tickets already edited the project folder itself, so there is nothing else to land.\"}"
+  }
+ },
+ {
+  "label": "step lone",
+  "value": {
+   "what": "lone",
+   "status": 201,
+   "data": "{\"attention\":null,\"body\":\"\",\"branch\":null,\"browsersAbove\":null,\"canCopyFile\":true,\"chromeAbove\":null,\"costUsd\":null,\"createdAt\":\"<time>\",\"devices\":null,\"error\":null,\"familyCard\":{\"costUsd\":0,\"line\":null,\"needsYou\":[],\"open\":0,\"running\":[],\"subFeatures\":[],\"subFeaturesRunning\":0,\"tasks\":0,\"tasksDone\":0,\"tools\":0,\"toolsDone\":0,\"waiting\":null,\"working\":[]},\"familyWorking\":0,\"folderWait\":false,\"holdsSlot\":false,\"huddleBusy\":false,\"huddleLine\":null,\"id\":\"<t13>\",\"lastActivity\":null,\"lastRunAt\":null,\"links\":[],\"main\":true,\"mode\":\"interview\",\"order\":-11,\"outcome\":null,\"outputDir\":\"<path>\",\"prUrl\":null,\"recovery\":null,\"resumeCommand\":null,\"runCap\":null,\"runCount\":0,\"running\":false,\"session\":null,\"sessionId\":null,\"shareJobs\":[],\"snoozed\":null,\"status\":\"backlog\",\"stepsRunning\":0,\"terminalOpen\":false,\"title\":\"Lone\",\"updatedAt\":\"<time>\",\"userWait\":null,\"worktree\":null}"
+  }
+ },
+ {
+  "label": "step new feature",
+  "value": {
+   "what": "new feature",
+   "status": 201,
+   "data": "{\"attention\":null,\"body\":\"\",\"branch\":null,\"browsersAbove\":null,\"canCopyFile\":true,\"chromeAbove\":null,\"costUsd\":null,\"createdAt\":\"<time>\",\"devices\":null,\"error\":null,\"familyCard\":{\"costUsd\":0,\"line\":null,\"needsYou\":[],\"open\":0,\"running\":[],\"subFeatures\":[{\"id\":\"<t13>\",\"title\":\"Lone\",\"working\":false}],\"subFeaturesRunning\":0,\"tasks\":0,\"tasksDone\":0,\"tools\":0,\"toolsDone\":0,\"waiting\":null,\"working\":[]},\"familyWorking\":0,\"folderWait\":false,\"gather\":{\"gathered\":[{\"attention\":null,\"body\":\"\",\"branch\":null,\"browsersAbove\":null,\"canCopyFile\":true,\"chromeAbove\":null,\"costUsd\":null,\"createdAt\":\"<time>\",\"devices\":null,\"error\":null,\"familyCard\":{\"costUsd\":0,\"line\":null,\"needsYou\":[],\"open\":0,\"running\":[],\"subFeatures\":[],\"subFeaturesRunning\":0,\"tasks\":0,\"tasksDone\":0,\"tools\":0,\"toolsDone\":0,\"waiting\":null,\"working\":[]},\"familyWorking\":0,\"folderWait\":false,\"holdsSlot\":false,\"huddleBusy\":false,\"huddleLine\":null,\"id\":\"<t13>\",\"lastActivity\":null,\"lastRunAt\":null,\"links\":[],\"main\":true,\"mode\":\"interview\",\"order\":-11,\"outcome\":null,\"outputDir\":\"<path>\",\"partOf\":\"<t14>\",\"partOfVia\":null,\"prUrl\":null,\"recovery\":null,\"resumeCommand\":null,\"runCap\":null,\"runCount\":0,\"running\":false,\"session\":null,\"sessionId\":null,\"shareJobs\":[],\"snoozed\":null,\"status\":\"backlog\",\"stepsRunning\":0,\"subFeatureOf\":{\"id\":\"<t14>\",\"title\":\"New feature\"},\"terminalOpen\":false,\"title\":\"Lone\",\"updatedAt\":\"<time>\",\"userWait\":null,\"worktree\":null}],\"group\":null,\"movedUp\":[],\"skipped\":[{\"id\":\"<t10>\",\"reason\":\"not found\"}]},\"holdsSlot\":false,\"huddleBusy\":false,\"huddleLine\":null,\"id\":\"<t14>\",\"lastActivity\":null,\"lastRunAt\":null,\"links\":[],\"main\":true,\"mode\":\"interview\",\"order\":-12,\"outcome\":null,\"outputDir\":\"<path>\",\"prUrl\":null,\"recovery\":null,\"resumeCommand\":null,\"runCap\":null,\"runCount\":0,\"running\":false,\"session\":null,\"sessionId\":null,\"shareJobs\":[],\"snoozed\":null,\"status\":\"backlog\",\"stepsRunning\":0,\"terminalOpen\":false,\"title\":\"New feature\",\"updatedAt\":\"<time>\",\"userWait\":null,\"worktree\":null}"
+  }
+ },
+ {
+  "label": "step delete top",
+  "value": {
+   "what": "delete top",
+   "status": 204,
+   "data": "null"
+  }
+ },
+ {
+  "label": "step lone after",
+  "value": {
+   "what": "lone after",
+   "status": 200,
+   "data": "{\"attention\":null,\"body\":\"\",\"branch\":null,\"browsersAbove\":null,\"canCopyFile\":true,\"chromeAbove\":null,\"costUsd\":null,\"createdAt\":\"<time>\",\"devices\":null,\"error\":null,\"familyCard\":{\"costUsd\":0,\"line\":null,\"needsYou\":[],\"open\":0,\"running\":[],\"subFeatures\":[],\"subFeaturesRunning\":0,\"tasks\":0,\"tasksDone\":0,\"tools\":0,\"toolsDone\":0,\"waiting\":null,\"working\":[]},\"familyWorking\":0,\"folderWait\":false,\"holdsSlot\":false,\"huddleBusy\":false,\"huddleLine\":null,\"id\":\"<t13>\",\"lastActivity\":null,\"lastRunAt\":null,\"links\":[],\"main\":true,\"mode\":\"interview\",\"order\":-11,\"outcome\":null,\"outputDir\":\"<path>\",\"partOf\":null,\"partOfVia\":null,\"prUrl\":null,\"recovery\":null,\"resumeCommand\":null,\"runCap\":null,\"runCount\":0,\"running\":false,\"session\":null,\"sessionId\":null,\"shareJobs\":[],\"snoozed\":null,\"status\":\"backlog\",\"stepsRunning\":0,\"terminalOpen\":false,\"title\":\"Lone\",\"updatedAt\":\"<time>\",\"userWait\":null,\"worktree\":null}"
+  }
+ },
+ {
+  "label": "step board",
+  "value": {
+   "what": "board",
+   "status": 200,
+   "data": "{\"doneTotal\":0,\"tickets\":[{\"attention\":null,\"body\":\"\",\"branch\":null,\"browsersAbove\":null,\"canCopyFile\":true,\"chromeAbove\":null,\"costUsd\":null,\"createdAt\":\"<time>\",\"devices\":null,\"error\":null,\"familyCard\":{\"costUsd\":0,\"line\":null,\"needsYou\":[],\"open\":0,\"running\":[],\"subFeatures\":[],\"subFeaturesRunning\":0,\"tasks\":0,\"tasksDone\":0,\"tools\":0,\"toolsDone\":0,\"waiting\":null,\"working\":[]},\"familyWorking\":0,\"folderWait\":false,\"holdsSlot\":false,\"huddleBusy\":false,\"huddleLine\":null,\"id\":\"<t13>\",\"lastActivity\":null,\"lastRunAt\":null,\"links\":[],\"main\":true,\"mode\":\"interview\",\"order\":-11,\"outcome\":null,\"outputDir\":\"<path>\",\"partOf\":null,\"partOfVia\":null,\"prUrl\":null,\"recovery\":null,\"resumeCommand\":null,\"runCap\":null,\"runCount\":0,\"running\":false,\"session\":null,\"sessionId\":null,\"shareJobs\":[],\"snoozed\":null,\"status\":\"backlog\",\"stepsRunning\":0,\"terminalOpen\":false,\"title\":\"Lone\",\"updatedAt\":\"<time>\",\"userWait\":null,\"worktree\":null},{\"attention\":null,\"body\":\"\",\"branch\":null,\"browsersAbove\":null,\"canCopyFile\":true,\"chromeAbove\":null,\"costUsd\":null,\"createdAt\":\"<time>\",\"devices\":null,\"error\":null,\"folderWait\":false,\"holdsSlot\":false,\"huddleBusy\":false,\"huddleLine\":null,\"id\":\"<t12>\",\"kind\":\"group\",\"lastActivity\":null,\"lastRunAt\":null,\"links\":[],\"mode\":\"auto\",\"order\":-10,\"outcome\":null,\"outputDir\":\"<path>\",\"partOf\":\"<t0>\",\"prUrl\":null,\"recovery\":null,\"resumeCommand\":null,\"runCap\":null,\"runCount\":0,\"running\":false,\"session\":null,\"sessionId\":null,\"shareJobs\":[],\"snoozed\":null,\"status\":\"backlog\",\"terminalOpen\":false,\"title\":\"Phase two\",\"updatedAt\":\"<time>\",\"userWait\":null,\"worktree\":null},{\"attention\":null,\"body\":\"\",\"branch\":null,\"browsersAbove\":null,\"canCopyFile\":true,\"chromeAbove\":null,\"costUsd\":null,\"createdAt\":\"<time>\",\"devices\":null,\"error\":null,\"familyCard\":{\"costUsd\":0,\"line\":null,\"needsYou\":[],\"open\":0,\"running\":[],\"subFeatures\":[],\"subFeaturesRunning\":0,\"tasks\":0,\"tasksDone\":0,\"tools\":0,\"toolsDone\":0,\"waiting\":null,\"working\":[]},\"familyWorking\":0,\"folderWait\":false,\"holdsSlot\":false,\"huddleBusy\":false,\"huddleLine\":null,\"id\":\"<t11>\",\"lastActivity\":null,\"lastRunAt\":null,\"links\":[],\"main\":true,\"mode\":\"interview\",\"order\":-9,\"outcome\":null,\"outputDir\":\"<path>\",\"partOf\":\"<t12>\",\"partOfVia\":null,\"prUrl\":null,\"recovery\":null,\"resumeCommand\":null,\"runCap\":null,\"runCount\":0,\"running\":false,\"session\":null,\"sessionId\":null,\"shareJobs\":[],\"snoozed\":null,\"status\":\"backlog\",\"stepsRunning\":0,\"subFeatureOf\":{\"id\":\"<t0>\",\"title\":\"The feature\"},\"terminalOpen\":false,\"title\":\"Hide me\",\"updatedAt\":\"<time>\",\"userWait\":null,\"worktree\":null},{\"attention\":null,\"body\":\"\",\"branch\":null,\"browsersAbove\":null,\"canCopyFile\":true,\"chromeAbove\":null,\"costUsd\":null,\"createdAt\":\"<time>\",\"devices\":null,\"error\":null,\"folderWait\":false,\"holdsSlot\":false,\"huddleBusy\":false,\"huddleLine\":null,\"id\":\"<t9>\",\"lastActivity\":null,\"lastRunAt\":null,\"links\":[],\"mode\":\"interview\",\"order\":-8,\"outcome\":null,\"outputDir\":\"<path>\",\"partOf\":\"<t1>\",\"partOfVia\":null,\"prUrl\":null,\"recovery\":null,\"resumeCommand\":null,\"runCap\":null,\"runCount\":0,\"running\":false,\"session\":null,\"sessionId\":null,\"shareJobs\":[],\"snoozed\":null,\"status\":\"backlog\",\"terminalOpen\":false,\"title\":\"Grandkid\",\"updatedAt\":\"<time>\",\"userWait\":null,\"worktree\":null},{\"attention\":null,\"body\":\"\",\"branch\":null,\"browsersAbove\":null,\"canCopyFile\":true,\"chromeAbove\":null,\"costUsd\":null,\"createdAt\":\"<time>\",\"devices\":null,\"error\":null,\"folderWait\":false,\"holdsSlot\":false,\"huddleBusy\":false,\"huddleLine\":null,\"id\":\"<t8>\",\"lastActivity\":null,\"lastRunAt\":null,\"links\":[],\"mode\":\"interview\",\"order\":-7,\"outcome\":null,\"outputDir\":\"<path>\",\"partOf\":\"<t1>\",\"partOfVia\":null,\"prUrl\":null,\"recovery\":null,\"resumeCommand\":null,\"runCap\":null,\"runCount\":0,\"running\":false,\"session\":null,\"sessionId\":null,\"shareJobs\":[],\"showOnBoard\":null,\"snoozed\":null,\"status\":\"backlog\",\"terminalOpen\":false,\"title\":\"Kid\",\"updatedAt\":\"<time>\",\"userWait\":null,\"worktree\":null},{\"attention\":null,\"body\":\"\",\"branch\":null,\"browsersAbove\":null,\"canCopyFile\":true,\"chromeAbove\":null,\"costUsd\":null,\"createdAt\":\"<time>\",\"devices\":null,\"error\":null,\"familyCard\":{\"costUsd\":0,\"line\":null,\"needsYou\":[],\"open\":0,\"running\":[],\"subFeatures\":[],\"subFeaturesRunning\":0,\"tasks\":0,\"tasksDone\":0,\"tools\":0,\"toolsDone\":0,\"waiting\":null,\"working\":[]},\"familyWorking\":0,\"folderWait\":false,\"holdsSlot\":false,\"huddleBusy\":false,\"huddleLine\":null,\"id\":\"<t7>\",\"lastActivity\":null,\"lastRunAt\":null,\"links\":[],\"main\":true,\"mode\":\"interview\",\"order\":-6,\"outcome\":null,\"outputDir\":\"<path>\",\"partOf\":\"<t0>\",\"partOfVia\":null,\"prUrl\":null,\"recovery\":null,\"resumeCommand\":null,\"runCap\":null,\"runCount\":0,\"running\":false,\"session\":null,\"sessionId\":null,\"shareJobs\":[],\"snoozed\":null,\"status\":\"backlog\",\"stepsRunning\":0,\"subFeatureOf\":{\"id\":\"<t0>\",\"title\":\"The feature\"},\"terminalOpen\":false,\"title\":\"Loose\",\"updatedAt\":\"<time>\",\"userWait\":null,\"worktree\":null},{\"attention\":null,\"body\":\"\",\"branch\":null,\"browsersAbove\":null,\"canCopyFile\":true,\"chromeAbove\":null,\"costUsd\":null,\"createdAt\":\"<time>\",\"devices\":null,\"error\":null,\"folderWait\":false,\"holdsSlot\":false,\"huddleBusy\":false,\"huddleLine\":null,\"id\":\"<t6>\",\"lastActivity\":null,\"lastRunAt\":null,\"links\":[],\"mode\":\"interview\",\"order\":-5,\"outcome\":null,\"outputDir\":\"<path>\",\"partOf\":\"<t5>\",\"prUrl\":null,\"recovery\":null,\"resumeCommand\":null,\"runCap\":null,\"runCount\":0,\"running\":false,\"session\":null,\"sessionId\":null,\"shareJobs\":[],\"snoozed\":null,\"status\":\"backlog\",\"terminalOpen\":false,\"title\":\"Sub's own\",\"updatedAt\":\"<time>\",\"userWait\":null,\"worktree\":null},{\"attention\":null,\"body\":\"\",\"branch\":null,\"browsersAbove\":null,\"canCopyFile\":true,\"chromeAbove\":null,\"costUsd\":null,\"createdAt\":\"<time>\",\"devices\":null,\"error\":null,\"familyCard\":{\"costUsd\":0,\"line\":null,\"needsYou\":[],\"open\":0,\"running\":[],\"subFeatures\":[],\"subFeaturesRunning\":0,\"tasks\":1,\"tasksDone\":0,\"tools\":0,\"toolsDone\":0,\"waiting\":null,\"working\":[]},\"familyWorking\":0,\"feature\":true,\"folderWait\":false,\"holdsSlot\":false,\"huddleBusy\":false,\"huddleLine\":null,\"id\":\"<t5>\",\"lastActivity\":null,\"lastRunAt\":null,\"links\":[],\"main\":true,\"mode\":\"interview\",\"order\":-4,\"outcome\":null,\"outputDir\":\"<path>\",\"partOf\":\"<t0>\",\"prUrl\":null,\"recovery\":null,\"resumeCommand\":null,\"runCap\":null,\"runCount\":0,\"running\":false,\"session\":null,\"sessionId\":null,\"shareJobs\":[],\"snoozed\":null,\"status\":\"backlog\",\"statusAt\":\"<time>\",\"stepsRunning\":0,\"subFeatureOf\":{\"id\":\"<t0>\",\"title\":\"The feature\"},\"terminalOpen\":false,\"title\":\"Sub\",\"updatedAt\":\"<time>\",\"userWait\":null,\"worktree\":null},{\"attention\":null,\"body\":\"\",\"branch\":null,\"browsersAbove\":null,\"canCopyFile\":true,\"chromeAbove\":null,\"costUsd\":null,\"createdAt\":\"<time>\",\"devices\":null,\"error\":null,\"folderWait\":false,\"holdsSlot\":false,\"huddleBusy\":false,\"huddleLine\":null,\"id\":\"<t4>\",\"kind\":\"round\",\"lastActivity\":null,\"lastRunAt\":null,\"links\":[],\"mode\":\"interview\",\"order\":-3,\"outcome\":null,\"outputDir\":\"<path>\",\"partOf\":\"<t0>\",\"prUrl\":null,\"recovery\":null,\"resumeCommand\":null,\"runCap\":null,\"runCount\":0,\"running\":false,\"session\":null,\"sessionId\":null,\"shareJobs\":[],\"snoozed\":null,\"status\":\"backlog\",\"terminalOpen\":false,\"title\":\"Testing round 2\",\"updatedAt\":\"<time>\",\"userWait\":null,\"worktree\":null},{\"attention\":null,\"body\":\"\",\"branch\":null,\"browsersAbove\":null,\"canCopyFile\":true,\"chromeAbove\":null,\"costUsd\":null,\"createdAt\":\"<time>\",\"devices\":null,\"error\":null,\"folderWait\":false,\"holdsSlot\":false,\"huddleBusy\":false,\"huddleLine\":null,\"id\":\"<t3>\",\"kind\":\"round\",\"lastActivity\":null,\"lastRunAt\":null,\"links\":[],\"mode\":\"interview\",\"order\":-2,\"outcome\":null,\"outputDir\":\"<path>\",\"partOf\":\"<t0>\",\"prUrl\":null,\"recovery\":null,\"resumeCommand\":null,\"runCap\":null,\"runCount\":0,\"running\":false,\"session\":null,\"sessionId\":null,\"shareJobs\":[],\"snoozed\":null,\"status\":\"backlog\",\"terminalOpen\":false,\"title\":\"Testing round 1\",\"updatedAt\":\"<time>\",\"userWait\":null,\"worktree\":null},{\"attention\":null,\"body\":\"\",\"branch\":null,\"browsersAbove\":null,\"canCopyFile\":true,\"chromeAbove\":null,\"costUsd\":null,\"createdAt\":\"<time>\",\"devices\":null,\"error\":null,\"folderWait\":false,\"holdsSlot\":false,\"huddleBusy\":false,\"huddleLine\":null,\"id\":\"<t2>\",\"lastActivity\":null,\"lastRunAt\":null,\"links\":[],\"mode\":\"interview\",\"order\":-1,\"outcome\":null,\"outputDir\":\"<path>\",\"partOf\":\"<t1>\",\"prUrl\":null,\"recovery\":null,\"resumeCommand\":null,\"runCap\":null,\"runCount\":0,\"running\":false,\"session\":null,\"sessionId\":null,\"shareJobs\":[],\"snoozed\":null,\"status\":\"backlog\",\"tags\":[\"x\"],\"terminalOpen\":false,\"title\":\"Step a\",\"updatedAt\":\"<time>\",\"userWait\":null,\"worktree\":null},{\"attention\":null,\"body\":\"\",\"branch\":null,\"browsersAbove\":null,\"canCopyFile\":true,\"chromeAbove\":null,\"costUsd\":null,\"createdAt\":\"<time>\",\"devices\":null,\"error\":null,\"folderWait\":false,\"holdsSlot\":false,\"huddleBusy\":false,\"huddleLine\":null,\"id\":\"<t1>\",\"kind\":\"group\",\"lastActivity\":null,\"lastRunAt\":null,\"links\":[],\"mode\":\"interview\",\"order\":0,\"outcome\":null,\"outputDir\":\"<path>\",\"partOf\":\"<t0>\",\"prUrl\":null,\"recovery\":null,\"resumeCommand\":null,\"runCap\":null,\"runCount\":0,\"running\":false,\"session\":null,\"sessionId\":null,\"shareJobs\":[],\"snoozed\":null,\"status\":\"backlog\",\"terminalOpen\":false,\"title\":\"Phase one\",\"updatedAt\":\"<time>\",\"userWait\":null,\"worktree\":null},{\"attention\":null,\"body\":\"Ship it.\",\"branch\":null,\"browsersAbove\":null,\"canCopyFile\":true,\"chromeAbove\":null,\"costUsd\":null,\"createdAt\":\"<time>\",\"devices\":null,\"error\":null,\"familyCard\":{\"costUsd\":0,\"line\":null,\"needsYou\":[],\"open\":0,\"running\":[],\"subFeatures\":[{\"id\":\"<t5>\",\"title\":\"Sub\",\"working\":false},{\"id\":\"<t7>\",\"title\":\"Loose\",\"working\":false},{\"id\":\"<t11>\",\"title\":\"Hide me\",\"working\":false}],\"subFeaturesRunning\":0,\"tasks\":3,\"tasksDone\":0,\"tools\":0,\"toolsDone\":0,\"waiting\":null,\"working\":[]},\"familyWorking\":0,\"feature\":true,\"folderWait\":false,\"holdsSlot\":false,\"huddleBusy\":false,\"huddleLine\":null,\"id\":\"<t0>\",\"lastActivity\":null,\"lastRunAt\":null,\"links\":[],\"main\":true,\"mode\":\"interview\",\"order\":1,\"outcome\":null,\"outputDir\":\"<path>\",\"prs\":[{\"state\":null,\"url\":\"https://github.com/o/r/pull/7\"},{\"state\":null,\"url\":\"https://github.com/o/r/pull/8\"}],\"prUrl\":\"https://github.com/o/r/pull/8\",\"recovery\":null,\"resumeCommand\":null,\"runCap\":null,\"runCount\":0,\"running\":false,\"session\":null,\"sessionId\":null,\"shareJobs\":[],\"snoozed\":null,\"status\":\"backlog\",\"statusAt\":\"<time>\",\"stepsRunning\":0,\"terminalOpen\":false,\"title\":\"The feature\",\"updatedAt\":\"<time>\",\"userWait\":null,\"worktree\":null}]}"
+  }
+ },
+ {
+  "label": "files",
+  "value": [
+   "profiles/fam/profile.json",
+   "profiles/fam/tickets/<t0>/comments.jsonl",
+   "profiles/fam/tickets/<t0>/outputs/status.json",
+   "profiles/fam/tickets/<t0>/outputs/status.md",
+   "profiles/fam/tickets/<t0>/ticket.md",
+   "profiles/fam/tickets/<t1>/ticket.md",
+   "profiles/fam/tickets/<t11>/comments.jsonl",
+   "profiles/fam/tickets/<t11>/ticket.md",
+   "profiles/fam/tickets/<t12>/ticket.md",
+   "profiles/fam/tickets/<t13>/comments.jsonl",
+   "profiles/fam/tickets/<t13>/ticket.md",
+   "profiles/fam/tickets/<t2>/ticket.md",
+   "profiles/fam/tickets/<t3>/ticket.md",
+   "profiles/fam/tickets/<t4>/ticket.md",
+   "profiles/fam/tickets/<t5>/comments.jsonl",
+   "profiles/fam/tickets/<t5>/outputs/status.json",
+   "profiles/fam/tickets/<t5>/outputs/status.md",
+   "profiles/fam/tickets/<t5>/ticket.md",
+   "profiles/fam/tickets/<t6>/ticket.md",
+   "profiles/fam/tickets/<t7>/comments.jsonl",
+   "profiles/fam/tickets/<t7>/ticket.md",
+   "profiles/fam/tickets/<t8>/comments.jsonl",
+   "profiles/fam/tickets/<t8>/ticket.md",
+   "profiles/fam/tickets/<t9>/comments.jsonl",
+   "profiles/fam/tickets/<t9>/ticket.md"
+  ]
+ },
+ {
+  "label": "file profiles/fam/profile.json",
+  "value": "{\n  \"name\": \"Fam\",\n  \"slug\": \"fam\",\n  \"path\": \"<path>\",\n  \"baseBranch\": \"\",\n  \"model\": null,\n  \"createdAt\": \"<time>\",\n  \"copyFiles\": [],\n  \"setupCommand\": \"\",\n  \"setupDetected\": {\n    \"at\": \"<time>\",\n    \"copyFiles\": [],\n    \"setupCommand\": \"\",\n    \"setupFrom\": []\n  }\n}\n"
+ },
+ {
+  "label": "file profiles/fam/tickets/<t0>/comments.jsonl",
+  "value": "{<id0>,\"author\":\"ai\",\"text\":\"Gathered 4 tickets into this feature: \\\"Kid\\\", \\\"Loose\\\", \\\"Hide me\\\", \\\"Sub\\\".\",\"at\":\"<time>\"}\n{<id1>,\"author\":\"ai\",\"text\":\"Milestone landed: First milestone (already in the project folder).\",\"at\":\"<time>\"}\n"
+ },
+ {
+  "label": "file profiles/fam/tickets/<t0>/outputs/status.json",
+  "value": "{\n  \"updatedAt\": \"<time>\",\n  \"claudeAt\": \"<time>\",\n  \"familySig\": \"<t11>:backlog:::|<t12>:backlog:::|<t1>:backlog:::|<t2>:backlog:::|<t3>:backlog:::|<t4>:backlog:::|<t5>:backlog:::|<t7>:backlog:::|<t8>:backlog:::|<t9>:backlog:::\",\n  \"goal\": \"Ship the feature\",\n  \"next\": \"Test it\",\n  \"prNotes\": {\n    \"https://github.com/o/r/pull/7\": \"on staging\"\n  },\n  \"broken\": \"word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word… (cut short)\",\n  \"notes\": [\n    {\n      \"at\": \"<time>\",\n      \"text\": \"Remember the phone\",\n      \"delivered\": false\n    }\n  ],\n  \"milestones\": [\n    {\n      \"at\": \"<time>\",\n      \"summary\": \"First milestone\",\n      \"landed\": \"already in the project folder\"\n    }\n  ]\n}"
+ },
+ {
+  "label": "file profiles/fam/tickets/<t0>/outputs/status.md",
+  "value": "# Where we are: The feature\n\nFeature ticket <t0>, 11 tickets. Updated <time>.\n\n## Goal\n\nShip the feature\n\n## Running\n\nPhase one: 0 of 3 done, 3 waiting.\n\n## Sub-features\n\n- Sub: Waiting · Sub's next step\n- Loose: Waiting\n- Hide me: Waiting\n\n## Broken\n\nword word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word… (cut short)\n\n## Pull requests\n\n- #7 The feature · unknown · on staging\n- #8 The feature · unknown\n\n## Milestones landed\n\n- 2026-11-17: First milestone (already in the project folder)\n\n## Next step\n\nTest it\n\n## Notes from the user\n\n- 2026-11-17: Remember the phone\n\nCounts, test results, pull requests and saved changes come from the board (counts in [brackets]); the rest is written with update_status.\n"
+ },
+ {
+  "label": "file profiles/fam/tickets/<t0>/ticket.md",
+  "value": "---\nid: <t0>\ntitle: The feature\nstatus: backlog\nmode: interview\norder: 1\nsessionId: null\nworktree: null\nbranch: null\nprUrl: https://github.com/o/r/pull/8\noutcome: null\nlastActivity: null\nlastRunAt: null\nrunCount: 0\nerror: null\ncreatedAt: <time>\nupdatedAt: <time>\nmain: true\nstatusAt: <time>\nprs:\n  - url: https://github.com/o/r/pull/7\n    state: null\n  - url: https://github.com/o/r/pull/8\n    state: null\n---\nShip it."
+ },
+ {
+  "label": "file profiles/fam/tickets/<t1>/ticket.md",
+  "value": "---\nid: <t1>\ntitle: Phase one\nstatus: backlog\nmode: interview\norder: 0\nsessionId: null\nworktree: null\nbranch: null\nprUrl: null\noutcome: null\nlastActivity: null\nlastRunAt: null\nrunCount: 0\nerror: null\ncreatedAt: <time>\nupdatedAt: <time>\npartOf: <t0>\nkind: group\n---\n"
+ },
+ {
+  "label": "file profiles/fam/tickets/<t11>/comments.jsonl",
+  "value": "{<id0>,\"author\":\"ai\",\"text\":\"Gathered into the feature \\\"The feature\\\" (<t0>), under \\\"Phase two\\\".\",\"at\":\"<time>\"}\n"
+ },
+ {
+  "label": "file profiles/fam/tickets/<t11>/ticket.md",
+  "value": "---\nid: <t11>\ntitle: Hide me\nstatus: backlog\nmode: interview\norder: -9\nsessionId: null\nworktree: null\nbranch: null\nprUrl: null\noutcome: null\nlastActivity: null\nlastRunAt: null\nrunCount: 0\nerror: null\ncreatedAt: <time>\nupdatedAt: <time>\nmain: true\npartOf: <t12>\npartOfVia: null\n---\n"
+ },
+ {
+  "label": "file profiles/fam/tickets/<t12>/ticket.md",
+  "value": "---\nid: <t12>\ntitle: Phase two\nstatus: backlog\nmode: auto\norder: -10\nsessionId: null\nworktree: null\nbranch: null\nprUrl: null\noutcome: null\nlastActivity: null\nlastRunAt: null\nrunCount: 0\nerror: null\ncreatedAt: <time>\nupdatedAt: <time>\npartOf: <t0>\nkind: group\n---\n"
+ },
+ {
+  "label": "file profiles/fam/tickets/<t13>/comments.jsonl",
+  "value": "{<id0>,\"author\":\"ai\",\"text\":\"Gathered into the feature \\\"New feature\\\" (<t14>).\",\"at\":\"<time>\"}\n"
+ },
+ {
+  "label": "file profiles/fam/tickets/<t13>/ticket.md",
+  "value": "---\nid: <t13>\ntitle: Lone\nstatus: backlog\nmode: interview\norder: -11\nsessionId: null\nworktree: null\nbranch: null\nprUrl: null\noutcome: null\nlastActivity: null\nlastRunAt: null\nrunCount: 0\nerror: null\ncreatedAt: <time>\nupdatedAt: <time>\nmain: true\npartOf: null\npartOfVia: null\n---\n"
+ },
+ {
+  "label": "file profiles/fam/tickets/<t2>/ticket.md",
+  "value": "---\nid: <t2>\ntitle: Step a\nstatus: backlog\nmode: interview\norder: -1\nsessionId: null\nworktree: null\nbranch: null\nprUrl: null\noutcome: null\nlastActivity: null\nlastRunAt: null\nrunCount: 0\nerror: null\ncreatedAt: <time>\nupdatedAt: <time>\ntags:\n  - x\npartOf: <t1>\n---\n"
+ },
+ {
+  "label": "file profiles/fam/tickets/<t3>/ticket.md",
+  "value": "---\nid: <t3>\ntitle: Testing round 1\nstatus: backlog\nmode: interview\norder: -2\nsessionId: null\nworktree: null\nbranch: null\nprUrl: null\noutcome: null\nlastActivity: null\nlastRunAt: null\nrunCount: 0\nerror: null\ncreatedAt: <time>\nupdatedAt: <time>\npartOf: <t0>\nkind: round\n---\n"
+ },
+ {
+  "label": "file profiles/fam/tickets/<t4>/ticket.md",
+  "value": "---\nid: <t4>\ntitle: Testing round 2\nstatus: backlog\nmode: interview\norder: -3\nsessionId: null\nworktree: null\nbranch: null\nprUrl: null\noutcome: null\nlastActivity: null\nlastRunAt: null\nrunCount: 0\nerror: null\ncreatedAt: <time>\nupdatedAt: <time>\npartOf: <t0>\nkind: round\n---\n"
+ },
+ {
+  "label": "file profiles/fam/tickets/<t5>/comments.jsonl",
+  "value": "{<id0>,\"author\":\"ai\",\"text\":\"Gathered into the feature \\\"The feature\\\" (<t0>).\",\"at\":\"<time>\"}\n"
+ },
+ {
+  "label": "file profiles/fam/tickets/<t5>/outputs/status.json",
+  "value": "{\n  \"updatedAt\": \"<time>\",\n  \"claudeAt\": \"<time>\",\n  \"familySig\": \"<t6>:backlog:::\",\n  \"next\": \"Sub's next step\"\n}"
+ },
+ {
+  "label": "file profiles/fam/tickets/<t5>/outputs/status.md",
+  "value": "# Where we are: Sub\n\nFeature ticket <t5>, 2 tickets. Updated <time>.\n\n## Running\n\nOther tickets: 0 of 1 done, 1 waiting.\n\n## Next step\n\nSub's next step\n\nCounts, test results, pull requests and saved changes come from the board (counts in [brackets]); the rest is written with update_status.\n"
+ },
+ {
+  "label": "file profiles/fam/tickets/<t5>/ticket.md",
+  "value": "---\nid: <t5>\ntitle: Sub\nstatus: backlog\nmode: interview\norder: -4\nsessionId: null\nworktree: null\nbranch: null\nprUrl: null\noutcome: null\nlastActivity: null\nlastRunAt: null\nrunCount: 0\nerror: null\ncreatedAt: <time>\nupdatedAt: <time>\npartOf: <t0>\nmain: true\nstatusAt: <time>\n---\n"
+ },
+ {
+  "label": "file profiles/fam/tickets/<t6>/ticket.md",
+  "value": "---\nid: <t6>\ntitle: Sub's own\nstatus: backlog\nmode: interview\norder: -5\nsessionId: null\nworktree: null\nbranch: null\nprUrl: null\noutcome: null\nlastActivity: null\nlastRunAt: null\nrunCount: 0\nerror: null\ncreatedAt: <time>\nupdatedAt: <time>\npartOf: <t5>\n---\n"
+ },
+ {
+  "label": "file profiles/fam/tickets/<t7>/comments.jsonl",
+  "value": "{<id0>,\"author\":\"ai\",\"text\":\"Gathered into the feature \\\"The feature\\\" (<t0>).\",\"at\":\"<time>\"}\n"
+ },
+ {
+  "label": "file profiles/fam/tickets/<t7>/ticket.md",
+  "value": "---\nid: <t7>\ntitle: Loose\nstatus: backlog\nmode: interview\norder: -6\nsessionId: null\nworktree: null\nbranch: null\nprUrl: null\noutcome: null\nlastActivity: null\nlastRunAt: null\nrunCount: 0\nerror: null\ncreatedAt: <time>\nupdatedAt: <time>\nmain: true\npartOf: <t0>\npartOfVia: null\n---\n"
+ },
+ {
+  "label": "file profiles/fam/tickets/<t8>/comments.jsonl",
+  "value": "{<id0>,\"author\":\"ai\",\"text\":\"Gathered into the feature \\\"The feature\\\" (<t0>), under \\\"Phase one\\\".\",\"at\":\"<time>\"}\n"
+ },
+ {
+  "label": "file profiles/fam/tickets/<t8>/ticket.md",
+  "value": "---\nid: <t8>\ntitle: Kid\nstatus: backlog\nmode: interview\norder: -7\nsessionId: null\nworktree: null\nbranch: null\nprUrl: null\noutcome: null\nlastActivity: null\nlastRunAt: null\nrunCount: 0\nerror: null\ncreatedAt: <time>\nupdatedAt: <time>\npartOf: <t1>\npartOfVia: null\nshowOnBoard: null\n---\n"
+ },
+ {
+  "label": "file profiles/fam/tickets/<t9>/comments.jsonl",
+  "value": "{<id0>,\"author\":\"ai\",\"text\":\"Moved up under \\\"Phase one\\\" so the feature \\\"The feature\\\" stays at most 2 levels deep.\",\"at\":\"<time>\"}\n"
+ },
+ {
+  "label": "file profiles/fam/tickets/<t9>/ticket.md",
+  "value": "---\nid: <t9>\ntitle: Grandkid\nstatus: backlog\nmode: interview\norder: -8\nsessionId: null\nworktree: null\nbranch: null\nprUrl: null\noutcome: null\nlastActivity: null\nlastRunAt: null\nrunCount: 0\nerror: null\ncreatedAt: <time>\nupdatedAt: <time>\npartOf: <t1>\npartOfVia: null\n---\n"
+ }
+]
