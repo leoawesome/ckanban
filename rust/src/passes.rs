@@ -137,10 +137,10 @@ fn error(status: StatusCode, msg: impl Into<String>, secrets: &[String]) -> Resp
 struct Refused(StatusCode, String);
 
 /// Holds `automation-passes.json.lock` exclusively until dropped (also released if this process dies).
-struct FileLock(fs::File);
+pub(crate) struct FileLock(fs::File);
 
 impl FileLock {
-    fn take(file: &Path) -> std::io::Result<Self> {
+    pub(crate) fn take(file: &Path) -> std::io::Result<Self> {
         let mut lock = file.as_os_str().to_owned();
         lock.push(".lock");
         let f = OpenOptions::new().read(true).write(true).create(true).truncate(false).mode(0o600).open(PathBuf::from(lock))?;
@@ -160,7 +160,7 @@ impl Drop for FileLock {
 }
 
 /// `Passes.write`: `{ version: 1, passes }` as `JSON.stringify(f, null, 2)` writes it, owner-only, by atomic rename.
-fn write_passes(file: &Path, passes: &[Value]) -> std::io::Result<()> {
+pub(crate) fn write_passes(file: &Path, passes: &[Value]) -> std::io::Result<()> {
     let mut f = Map::new();
     f.insert("version".into(), json!(1));
     f.insert("passes".into(), Value::Array(passes.to_vec()));
@@ -183,7 +183,7 @@ fn write_passes(file: &Path, passes: &[Value]) -> std::io::Result<()> {
 }
 
 /// `newId()`: 8 random base36 characters.
-fn new_id() -> String {
+pub(crate) fn new_id() -> String {
     const B36: &[u8] = b"0123456789abcdefghijklmnopqrstuvwxyz";
     let mut b = [0u8; 8];
     if getrandom::fill(&mut b).is_err() {
@@ -467,7 +467,7 @@ impl Passes {
     }
 
     /// `GET /api/passes`. None: Bun answers.
-    fn list(&self) -> Option<Value> {
+    pub(crate) fn list(&self) -> Option<Value> {
         let passes = read_passes(&self.file)?;
         let profiles = self.dir.list_profiles().ok()?;
         let mut used: Vec<(String, u64, Vec<Value>)> = Vec::new();
