@@ -113,6 +113,24 @@ impl Core {
                 });
                 Ok(())
             }),
+            // R2b: a board with an old-style plan (planned tickets from before main tickets) is left to Bun, whose
+            // one-time migration (`retire-plans.ts`) turns it into main tickets: board mode refuses this start
+            // (fallback 2). Waits for the load above, which a board's first page waits for anyway.
+            Step::new("old plans", |c| async move {
+                let index = c.index.clone();
+                let refusal = tokio::task::spawn_blocking(move || {
+                    index.wait_loaded(std::time::Duration::from_secs(600));
+                    let boards: Vec<(String, Arc<crate::index::store::BoardList>)> =
+                        index.board_slugs().into_iter().map(|s| (s.clone(), index.list(&s))).collect();
+                    crate::families::old_plans::refusal(&boards)
+                })
+                .await
+                .map_err(|e| e.to_string())?;
+                match refusal {
+                    Some(why) => Err(why),
+                    None => Ok(()),
+                }
+            }),
             // R1/R10/R11a: huddles, jobs, schedules and automations.
             Step::new("load lists", |_| async { Ok(()) }),
             // R7a: interrupted runs resumed, follow-ups and limits picked up (`board.recover`).
