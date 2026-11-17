@@ -252,7 +252,8 @@ pub fn board_key_env(root: &Path, slug: &str) -> std::collections::BTreeMap<Stri
     let mut out = std::collections::BTreeMap::new();
     for p in passes {
         let s = |k: &str| p.get(k).and_then(Value::as_str);
-        let url = p.get("url").is_some_and(|u| !u.is_null() && u != "" && u != &Value::Bool(false));
+        // Bun's `!p.url`: any truthy url makes it a pass, not a key.
+        let url = ckanban_board::runs::js::truthy(p.get("url"));
         if s("kind") != Some("key") || s("board") != Some(slug) || url {
             continue;
         }

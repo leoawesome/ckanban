@@ -105,6 +105,8 @@ impl RunLoop {
 
     /// `wakeFollowUp`: wake the conversation for its follow-up. manual: the user's Follow up now.
     pub fn wake_follow_up(&self, slug: &str, id: &str, manual: bool) -> Result<Arc<Tk>, RunError> {
+        // One decision: the button and the watcher can't both wake it.
+        let _g = self.decide.lock();
         let t = self.get(slug, id).ok_or_else(|| RunError::other(format!("ticket {id} not found")))?;
         let Some(f) = t.get("followUp").filter(|f| js::truthy(Some(f))).cloned() else { return Err(fu("this ticket has no follow-up")) };
         if self.is_running(slug, id) || t.is("slotWait") {

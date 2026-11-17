@@ -71,6 +71,7 @@ impl RunLoop {
 
     /// `continueAfterCap`: "Continue with +$Y": "continue" in the same session, with a cap of add for that run.
     pub fn continue_after_cap(&self, slug: &str, id: &str, add: f64) -> Result<Arc<Tk>, RunError> {
+        let _g = self.decide.lock();
         self.get(slug, id).ok_or_else(|| RunError::other(format!("ticket {id} not found")))?;
         if !(add.is_finite() && add > 0.0) {
             return Err(RunError::other("addUsd must be a positive amount"));
@@ -118,6 +119,8 @@ impl RunLoop {
 
     /// `continueAfterLimit`: "continue" to the same session through the normal chat path. auto: the board's own.
     pub fn continue_after_limit(&self, slug: &str, id: &str, auto: bool) -> Result<Arc<Tk>, RunError> {
+        // One decision: Continue now and the automatic continue can't both send "continue".
+        let _g = self.decide.lock();
         let t = self.get(slug, id).ok_or_else(|| RunError::other(format!("ticket {id} not found")))?;
         if auto {
             let waits = t.s("outcome") == Some("limit") && t.get("limit").and_then(|l| l.get("auto")).is_some_and(|a| crate::runs::js::truthy(Some(a)));

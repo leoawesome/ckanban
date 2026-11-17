@@ -1161,7 +1161,9 @@ impl BoardMode {
                 content_type: "application/json".into(),
                 file_name: None,
                 body,
-                user: Arc::new(|| true),
+                // Bun's replayed request has no Origin, so its user-only checks refuse: a confirmed front desk
+                // request never saves keys, automation cards or helper rules, here either.
+                user: Arc::new(|| false),
             };
             let writes = self.writes.clone();
             let (status, data) = match tokio::task::spawn_blocking(move || writes.answer(&r)).await {

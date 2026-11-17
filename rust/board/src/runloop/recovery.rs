@@ -16,6 +16,8 @@ use crate::index::ticket::Tk;
 impl RunLoop {
     /// `stopRun`.
     pub fn stop_run(&self, run: &Arc<ActiveRun>) {
+        // Not between start's register and its task (a stop there must see `started` and the run in the list).
+        let _g = self.decide.lock();
         let (started, has_handle) = {
             let st = run.st.lock();
             (st.started, st.handle.is_some())
@@ -48,6 +50,7 @@ impl RunLoop {
 
     /// `stop`: the ticket's run, a reply waiting for a slot, or a card In Progress with no run behind it.
     pub fn stop(&self, slug: &str, id: &str) -> bool {
+        let _g = self.decide.lock();
         if let Some(r) = self.run_of(slug, id) {
             self.stop_run(&r);
             return true;

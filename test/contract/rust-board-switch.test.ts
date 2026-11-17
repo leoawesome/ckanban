@@ -4,7 +4,7 @@
 // a work run still In Progress resumes in its session, a chat reply cut off is continued, a message no run got to is
 // answered. Runs only under `bun run test:contract:rust-board` (a ckanban-rs daemon command); other runs skip it.
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type Daemon, startDaemon, until } from "./daemon";
@@ -60,6 +60,12 @@ async function chatTicket(title: string, name: string, steps: object[]): Promise
   return r.data;
 }
 
+/** Claude's transcript of the session exists (the fake writes it under CLAUDE_CONFIG_DIR, like the real one). */
+function saved(session: string): boolean {
+  const projects = join(d.env.CLAUDE_CONFIG_DIR, "projects");
+  return existsSync(projects) && readdirSync(projects).some((p) => existsSync(join(projects, p, `${session}.jsonl`)));
+}
+
 /** Cuts the board off as launchd's stop does, flips the switch, and starts it again. */
 async function switchTo(rust: boolean): Promise<void> {
   d.kill("SIGTERM");
@@ -80,6 +86,8 @@ async function cutAndResume(tag: string, toRust: boolean): Promise<void> {
   await running(d, SLUG, c.id, WAIT);
   await until(() => s.runs(`work-${tag}`).length === 1 && s.runs(`chat-${tag}`).length === 1, WAIT, "both runs started");
   const session = (await view(d, SLUG, w.id)).sessionId;
+  // Claude has saved the session (only a saved one can be resumed; a run cut before that starts over).
+  await until(() => saved(session), WAIT, "the work run's session saved");
 
   await switchTo(toRust);
   // What the stop left was taken over: the work run resumed in its own session and ended.

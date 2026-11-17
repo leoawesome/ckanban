@@ -408,10 +408,20 @@ impl RunLoop {
         m
     }
 
-    fn with_queued(t: &Tk, msg: Map<String, Value>) -> Value {
-        let mut q: Vec<Value> = queued_of(t).into_iter().map(Value::Object).collect();
-        q.push(Value::Object(msg));
-        Value::Array(q)
+    /// Adds a message to the ticket's queue, read and written under the board's write lock (a message delivered
+    /// meanwhile can't come back), with `extra` fields in the same write.
+    fn append_queued(&self, slug: &str, id: &str, msg: Map<String, Value>, mut extra: Map<String, Value>) -> Result<Arc<Tk>, RunError> {
+        if extra.contains_key("lastActivity") && !extra.contains_key("lastActivityAt") {
+            let at = if crate::runs::js::truthy(extra.get("lastActivity")) { Value::from(now_iso()) } else { Value::Null };
+            extra.insert("lastActivityAt".into(), at);
+        }
+        Ok(self.tickets.update_with(slug, id, move |meta| {
+            let mut q = meta.get("queued").and_then(Value::as_array).cloned().unwrap_or_default();
+            q.push(Value::Object(msg));
+            let mut p = obj(json!({ "queued": q }));
+            p.extend(extra);
+            Ok(p)
+        })?)
     }
 
     fn chat_now(&self, slug: &str, id: &str, text_in: &str, opts: ChatOptions) -> Result<Arc<Tk>, RunError> {
@@ -488,7 +498,7 @@ impl RunLoop {
             }
             // Saved on the ticket until Claude reads it, so closing the chat, Stop or a restart can't lose it.
             let msg = self.queued_msg(&text, &opts);
-            self.patch(slug, id, obj(json!({ "queued": Self::with_queued(&t, msg.clone()) })))?;
+            self.append_queued(slug, id, msg.clone(), Map::new())?;
             if !opts.next_run {
                 self.steer(&active, &msg);
             }
@@ -497,7 +507,7 @@ impl RunLoop {
         let from_user = opts.from_user();
         if self.restart_pending() && !from_user {
             let msg = self.queued_msg(&text, &opts);
-            return self.patch(slug, id, obj(json!({ "queued": Self::with_queued(&t, msg) })));
+            return self.append_queued(slug, id, msg, Map::new());
         }
         if !opts.peer && !opts.fresh && opts.automation.is_none() {
             t = self.auto_fresh(slug, t);
@@ -513,13 +523,13 @@ impl RunLoop {
             let slot_wait = t.get("slotWait").filter(|v| crate::runs::js::truthy(Some(v))).cloned().unwrap_or_else(|| {
                 json!({ "at": now_iso(), "from": { "status": t.status, "outcome": t.get("outcome").cloned().unwrap_or(Value::Null) } })
             });
-            self.patch(slug, id, obj(json!({ "queued": Self::with_queued(&t, msg), "lastActivity": rules::FOLDER_WAIT, "slotWait": slot_wait })))?;
+            self.append_queued(slug, id, msg, obj(json!({ "lastActivity": rules::FOLDER_WAIT, "slotWait": slot_wait })))?;
             self.dispatch(slug);
             return self.get(slug, id).ok_or_else(|| RunError::other(format!("ticket {id} not found")));
         }
         if slot && (waits || folder_busy) {
             let msg = self.queued_msg(&text, &opts);
-            self.patch(slug, id, obj(json!({ "queued": Self::with_queued(&t, msg) })))?;
+            self.append_queued(slug, id, msg, Map::new())?;
             self.wait_for_slot(slug, id)?;
             self.dispatch(slug);
             return self.get(slug, id).ok_or_else(|| RunError::other(format!("ticket {id} not found")));
@@ -533,8 +543,7 @@ impl RunLoop {
             let msg_id = msg_id(&msg).to_string();
             let failed = self.start(slug, id, Some(chat), Some(msg_id));
             // Added once the run is registered, so the chat never shows it as waiting with no run behind it.
-            let now = self.get(slug, id).unwrap_or(t);
-            let r = self.patch(slug, id, obj(json!({ "queued": Self::with_queued(&now, msg) })));
+            let r = self.append_queued(slug, id, msg, Map::new());
             if let Some(e) = failed {
                 return Err(RunError::other(e));
             }
@@ -549,6 +558,11 @@ impl RunLoop {
     /// registered then, and the card shows the error).
     pub fn start(&self, slug: &str, id: &str, chat: Option<Chat>, prompt_msg_id: Option<String>) -> Option<String> {
         let _g = self.decide.lock();
+        // Bun's callers check first in one go; here two threads may both decide to start (a plan wake and a chat
+        // message): the second one is refused, so one session never has two claude processes.
+        if self.is_running(slug, id) {
+            return Some("Claude is already working on this ticket".into());
+        }
         let no_edit = self.get(slug, id).is_some_and(|t| t.main);
         let (done, _) = watch::channel(false);
         let run = Arc::new(ActiveRun {
@@ -566,6 +580,10 @@ impl RunLoop {
             p.extend(obj(json!({ "outcome": "failed", "error": msg, "lastActivity": null, "runStartedAt": null })));
             self.drop_run(&run, p);
             return Some(msg);
+        }
+        // Stopped while it was starting (dropped from the runs): nothing more starts.
+        if !self.state.lock().runs.get(&Self::key(slug, id)).is_some_and(|x| Arc::ptr_eq(x, &run)) {
+            return None;
         }
         run.st.lock().started = true;
         let me = self.arc();
@@ -627,12 +645,16 @@ impl RunLoop {
         let me = self.clone();
         let r = run.clone();
         let _ = tokio::task::spawn_blocking(move || {
+            let _g = me.decide.lock();
             if me.restart_pending() {
                 me.emit_restart();
             }
             let down = me.shutting_down();
+            // A new run of the ticket that started meanwhile owns these fields now.
+            let again = me.is_running(&r.slug, &r.id);
             if let Some(now) = me.get(&r.slug, &r.id)
                 && !down
+                && !again
             {
                 if ["runStartedAt", "interrupted", "waitingOn", "stalled", "followUpRun"].iter().any(|k| now.is(k)) {
                     me.patch_quiet(&r.slug, &r.id, obj(json!({ "runStartedAt": null, "interrupted": null, "waitingOn": null, "stalled": null, "followUpRun": null })));
@@ -780,16 +802,22 @@ impl RunLoop {
         };
         // Stopped, or the last reply could not even start: keep them for the user to send or discard.
         if stopped || prompt_id.as_deref() == Some(msg_id(&next)) {
-            let q: Vec<Value> = queued_of(&t)
-                .into_iter()
-                .map(|mut m| {
-                    if msg_state(&m) == "queued" {
-                        m.insert("state".into(), "unsent".into());
-                    }
-                    Value::Object(m)
-                })
-                .collect();
-            self.patch_quiet(&run.slug, &run.id, obj(json!({ "queued": q })));
+            let _ = self.tickets.update_with(&run.slug, &run.id, |meta| {
+                let q: Vec<Value> = meta
+                    .get("queued")
+                    .and_then(Value::as_array)
+                    .cloned()
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|mut m| {
+                        if m.get("state").and_then(Value::as_str) == Some("queued") {
+                            m["state"] = "unsent".into();
+                        }
+                        m
+                    })
+                    .collect();
+                Ok(obj(json!({ "queued": q })))
+            });
             return false;
         }
         let chat = rules::chat_for(&t.json, &next);
