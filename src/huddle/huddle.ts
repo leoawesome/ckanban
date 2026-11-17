@@ -103,6 +103,8 @@ export class Huddles {
     board.onHostHuddles((slug) => this.hostStates(slug));
     // A monitor-mode ticket session gets what came in while it worked once its run is over.
     bus.on((e) => {
+      // Satellite mode: the Rust board owns the huddles and acts on its own events; this daemon must not write them.
+      if (bus.isMirrored(e)) return;
       if (e.type === "activity") {
         this.ticketContext(e.profile, e.id, e.event);
         return this.mainResult(e.profile, e.id, e.event);

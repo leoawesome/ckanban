@@ -954,7 +954,8 @@ impl BoardMode {
         // board at a time, several changes in a row at once).
         let (hx, mut hrx) = tokio::sync::mpsc::unbounded_channel::<String>();
         self.core.bus.on(move |e| {
-            if (e.ty == "huddle.updated" || e.ty == "huddle.message")
+            // A ticket's run starting or ending changes who works in its huddle too.
+            if (e.ty == "huddle.updated" || e.ty == "huddle.message" || e.ty == "ticket.updated")
                 && let Some(p) = e.body.get("profile").and_then(Value::as_str)
             {
                 let _ = hx.send(p.to_string());
@@ -962,6 +963,8 @@ impl BoardMode {
         });
         let (huddles, htell) = (self.huddles.clone(), tell.clone());
         tokio::spawn(async move {
+            // What the satellite has per board: only a board whose states changed is sent again.
+            let sent: Arc<Mutex<std::collections::HashMap<String, Value>>> = Arc::default();
             while let Some(first) = hrx.recv().await {
                 let mut slugs = vec![first];
                 while let Ok(s) = hrx.try_recv() {
@@ -969,17 +972,21 @@ impl BoardMode {
                         slugs.push(s);
                     }
                 }
-                let h = huddles.clone();
+                let (h, sent) = (huddles.clone(), sent.clone());
                 let line = tokio::task::spawn_blocking(move || {
                     let mut by = serde_json::Map::new();
+                    let mut sent = sent.lock().unwrap_or_else(|e| e.into_inner());
                     for s in slugs {
-                        let states = h.host_states(&s);
-                        by.insert(s, Value::Object(states.iter().map(|(k, v)| (k.clone(), v.clone())).collect()));
+                        let states = Value::Object(h.host_states(&s).iter().map(|(k, v)| (k.clone(), v.clone())).collect());
+                        if sent.get(&s) != Some(&states) {
+                            sent.insert(s.clone(), states.clone());
+                            by.insert(s, states);
+                        }
                     }
-                    satellite::runtime_line(&json!({ "hostHuddles": by }))
+                    (!by.is_empty()).then(|| satellite::runtime_line(&json!({ "hostHuddles": by })))
                 })
                 .await;
-                if let Ok(line) = line {
+                if let Ok(Some(line)) = line {
                     let _ = htell.send(line);
                 }
             }

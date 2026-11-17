@@ -136,6 +136,8 @@ pub struct Huddles {
     pub team: Arc<Team>,
     learn: RwLock<Option<Learn>>,
     op: ReentrantMutex<()>,
+    /// Held across a save and its recorded stamp, and across a read's guard.
+    stamps: ReentrantMutex<()>,
     later: Mutex<Vec<Later>>,
     /// Each huddle as this board last saved it, with its file's stamp (see `guard`).
     saved: Mutex<HashMap<String, (Option<String>, Obj)>>,
@@ -166,6 +168,7 @@ impl Huddles {
             team,
             learn: RwLock::new(None),
             op: ReentrantMutex::new(()),
+            stamps: ReentrantMutex::new(()),
             later: Mutex::new(Vec::new()),
             saved: Mutex::new(HashMap::new()),
             main_pending: Mutex::new(HashSet::new()),
@@ -272,14 +275,24 @@ impl Huddles {
     /// The huddle from its file, checked against edits made outside the board (`guard`).
     pub fn load(&self, slug: &str, hid: &str) -> Option<Obj> {
         let key = format!("{slug}/{hid}");
-        let Some(h) = self.files.get(slug, hid) else {
+        // A read never sits between a save and its recorded stamp (it would take the board's own write for an edit).
+        let _g = self.stamps.lock();
+        let Some(mut h) = self.files.get(slug, hid) else {
             self.saved.lock().remove(&key);
             return None;
         };
+        // The file is this huddle's whatever its `id` says: an edit can't move it onto another id (its guard).
+        if s(&h, "id") != hid {
+            h.insert("id".into(), hid.into());
+            if let Some(m) = self.saved.lock().get_mut(&key) {
+                m.0 = None;
+            }
+        }
         Some(self.guard(slug, h))
     }
 
     fn save(&self, slug: &str, h: &Obj) -> R<()> {
+        let _g = self.stamps.lock();
         self.files.save(slug, h).map_err(|e| Fail::new(500, e.to_string()))?;
         let id = s(h, "id").to_string();
         self.saved.lock().insert(format!("{slug}/{id}"), (self.files.stamp(slug, &id), h.clone()));
@@ -2473,6 +2486,19 @@ impl crate::team::LearningCards for Huddles {
         Huddles::learning(&self.get(slug, hid)?, lid, false).map(|_| ())
     }
     fn mark_saved(&self, slug: &str, hid: &str, lid: &str, target: &str, scope: &str) -> Result<(), String> {
-        self.set_learning(slug, hid, lid, obj([("status", "saved".into()), ("target", target.into()), ("scope", scope.into())])).map_err(|e| e.message)
+        let patch = obj([("status", "saved".into()), ("target", target.into()), ("scope", scope.into())]);
+        // Under the room's lock like every change. The team's write lock is held here, and a huddle change may wait for
+        // it (saving a squad), so this never waits long for the room's: busy, the change is made just after.
+        if let Some(_g) = self.op.try_lock_for(std::time::Duration::from_millis(200)) {
+            return self.set_learning(slug, hid, lid, patch).map_err(|e| e.message);
+        }
+        let me = self.me.upgrade().ok_or("the board is stopping")?;
+        let (slug, hid, lid) = (slug.to_string(), hid.to_string(), lid.to_string());
+        spawn_blocking(move || {
+            if let Err(e) = me.op(|me| me.set_learning(&slug, &hid, &lid, patch)) {
+                eprintln!("huddle {hid}: couldn't mark learning {lid} saved: {}", e.message);
+            }
+        });
+        Ok(())
     }
 }

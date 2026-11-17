@@ -250,3 +250,47 @@ fn closed_when_the_host_is_deleted() {
     assert_eq!(on_disk(&b, &hid)["status"], "closed");
     assert!(!Path::new(&b.root.join(format!("profiles/b/tickets/{t}/outputs/huddles/{hid}/summary.md"))).exists());
 }
+
+#[test]
+fn an_edit_cant_move_a_huddle_onto_another_id() {
+    let b = board();
+    let t = ticket(&b, "Moved");
+    let hid = call(&b, "POST", "", json!({ "ticketId": t, "roster": [{ "preset": "reviewer" }] }), None, None).1["id"].as_str().unwrap().to_string();
+    let mut h = on_disk(&b, &hid);
+    h["id"] = json!("h_other");
+    h["maxCostUsd"] = json!(500);
+    std::thread::sleep(std::time::Duration::from_millis(20));
+    fs::write(b.root.join(format!("profiles/b/huddles/{hid}.json")), serde_json::to_string_pretty(&h).unwrap()).unwrap();
+    let (_, v) = call(&b, "GET", &format!("/{hid}"), Value::Null, None, None);
+    assert_eq!(v["huddle"]["id"], hid.as_str());
+    assert_eq!(v["huddle"]["maxCostUsd"], 20);
+    call(&b, "POST", &format!("/{hid}/messages"), json!({ "text": "hi" }), None, None);
+    assert!(!b.root.join("profiles/b/huddles/h_other.json").exists());
+}
+
+#[test]
+fn reads_while_changing_never_look_like_an_outside_edit() {
+    let b = Arc::new(board());
+    let t = ticket(&b, "Busy");
+    let hid = call(&b, "POST", "", json!({ "ticketId": t, "roster": [{ "preset": "reviewer" }] }), None, None).1["id"].as_str().unwrap().to_string();
+    let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let readers: Vec<_> = (0..3)
+        .map(|_| {
+            let (b, hid, stop) = (b.clone(), hid.clone(), stop.clone());
+            std::thread::spawn(move || {
+                while !stop.load(std::sync::atomic::Ordering::Relaxed) {
+                    call(&b, "GET", &format!("/{hid}"), Value::Null, None, None);
+                }
+            })
+        })
+        .collect();
+    for i in 0..60 {
+        assert_eq!(call(&b, "POST", &format!("/{hid}/messages"), json!({ "text": format!("m{i}") }), None, None).0, 201);
+    }
+    stop.store(true, std::sync::atomic::Ordering::Relaxed);
+    for r in readers {
+        r.join().unwrap();
+    }
+    assert!(!messages(&b, &hid).iter().any(|m| m["text"].as_str().unwrap().contains("edited outside")));
+    assert_eq!(on_disk(&b, &hid)["seq"], 61);
+}
