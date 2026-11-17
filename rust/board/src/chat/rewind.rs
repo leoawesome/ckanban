@@ -349,7 +349,7 @@ pub fn rewind_session_file(file: &Path, uuid: &str) -> Result<Cut, String> {
     let raw = std::fs::read_to_string(file).map_err(|e| e.to_string())?;
     let Some((text, cut)) = cut_session(&raw, uuid) else { return Err("This message can't be rewound to.".into()) };
     std::fs::copy(file, before_rewind(file)).map_err(|e| e.to_string())?;
-    std::fs::write(file, text).map_err(|e| e.to_string())?;
+    ckanban_core::atomic::atomic_write(file, text).map_err(|e| e.to_string())?;
     Ok(cut)
 }
 

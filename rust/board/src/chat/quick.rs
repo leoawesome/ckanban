@@ -194,8 +194,16 @@ impl QuickChats {
     /// `makeTicket`: a Backlog ticket that continues this conversation; the chat takes no more messages.
     pub fn make_ticket(&self, slug: &str, id: &str, part_of: Option<&str>) -> Result<(Value, Value), ChatError> {
         let k = key(slug, id);
-        if !self.making.lock().insert(k.clone()) {
-            return fail(409, "This chat is already being made into a ticket.");
+        {
+            // Under the chats' write lock, like a rewind's start: a rewind or undo under way can't cut the transcript
+            // after the ticket has taken it over (threads run at once here, unlike Bun).
+            let _w = self.writes.lock();
+            if self.rewinding.lock().contains(&k) {
+                return fail(409, REWINDING);
+            }
+            if !self.making.lock().insert(k.clone()) {
+                return fail(409, "This chat is already being made into a ticket.");
+            }
         }
         let out = self.make_ticket_now(slug, id, part_of);
         self.making.lock().remove(&k);

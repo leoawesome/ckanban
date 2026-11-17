@@ -380,8 +380,15 @@ impl RunLoop {
     /// A patch whose failure is only logged (Bun's `try { this.patch(...) } catch {}` places and patches that
     /// can't fail in practice).
     pub(super) fn patch_quiet(&self, slug: &str, id: &str, patch: Map<String, Value>) -> Option<Arc<Tk>> {
+        let done = patch.get("status").and_then(Value::as_str) == Some("done");
         match self.tickets.patch(slug, id, patch) {
-            Ok(t) => Some(t),
+            Ok(t) => {
+                // A run that ends Done: its rewind copies go, as with `patch` (Bun's finishRun uses `this.patch`).
+                if done {
+                    self.drop_rewind_copies(slug, &t.json);
+                }
+                Some(t)
+            }
             Err((_, e)) => {
                 eprintln!("[board] {slug}/{id}: {e}");
                 None
