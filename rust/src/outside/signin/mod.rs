@@ -11,7 +11,6 @@
 //! written by atomic rename; after each change `notify` tells the satellite, which sends the UI `integration.updated`.
 //! The sign-in states (which page, which proof) are kept in memory for 10 minutes, as Bun does.
 
-#![allow(dead_code)] // Until the router (rust/src/outside/routes.rs) and board mode call it.
 
 pub mod client;
 pub mod http;
