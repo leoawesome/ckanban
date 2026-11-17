@@ -1,10 +1,24 @@
 import { expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
-import { parseContextReport } from "../../../../src/chat/context-usage";
-import { checkedText, chipText, contextRows, phoneRows, shortPath, tokenText } from "./contextText";
+import { checkedText, chipText, contextRows, phoneRows, shortPath, tokenText, type ContextCategory, type ContextReport } from "./contextText";
 
-const report = (name: string) => parseContextReport(readFileSync(join(import.meta.dir, "../../../../test/fixtures", "context", name), "utf8"));
+// The server is the Rust binary now, so these are the parsed reports of test/fixtures/context/long-chat.md and
+// unknown-row.md as the old Bun parser returned them (the lists the UI's rows are built from).
+const cat = (name: string, tokens: number, percent: number | null, deferred = false): ContextCategory => ({ name, tokens, percent, deferred });
+const REPORTS: Record<string, ContextReport> = {
+  "long-chat.md": {
+    model: "claude-sonnet-5-5", used: 154_200, window: 1_000_000, percent: 15, mcpServers: [], builtinTools: [], memoryFiles: [], skills: [],
+    categories: [
+      cat("System prompt", 10_500, 1.1), cat("System tools", 21_700, 2.2), cat("MCP tools", 21_100, 2.1), cat("MCP server instructions", 201, 0),
+      cat("MCP tools (deferred)", 257_800, 25.8, true), cat("System tools (deferred)", 29_300, 2.9, true), cat("Memory files", 2200, 0.2),
+      cat("Skills", 6100, 0.6), cat("Messages", 92_100, 9.2), cat("Free space", 813_000, 81.3), cat("Autocompact buffer", 33_000, 3.3),
+    ],
+  },
+  "unknown-row.md": {
+    model: "claude-opus-5-5", used: 1_200_000, window: 2_000_000, percent: 60, mcpServers: [], builtinTools: [], memoryFiles: [], skills: [],
+    categories: [cat("System prompt", 2500, 0.1), cat("Messages", 1_100_000, 55), cat("Plugin hooks", 4321, 0.2), cat("Free space", 767_000, 38.4)],
+  },
+};
+const report = (name: string) => REPORTS[name];
 
 test("rows get plain names, the original term in the hover text, and on-demand rows last with no percent", () => {
   const rows = contextRows(report("long-chat.md").categories);

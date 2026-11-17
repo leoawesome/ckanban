@@ -1,7 +1,8 @@
 // Which mood each screen's avatar shows (web/src/features/avatar/avatarMood.ts).
 import { expect, test } from "bun:test";
 import { agentMood, familyMood, finishMood, isQuietLine, isThinkingLine, liveLine, participantMood, runMood, THINKING_LINE } from "./avatarMood";
-import { THINKING_LINE as SERVER_THINKING_LINE } from "../../../../src/board/board";
+// The server is the Rust binary now; this is the line the Bun server wrote (src/board/board-types.ts).
+const SERVER_THINKING_LINE = "Claude is thinking…";
 
 test("a run thinks until its live line names a step, then works", () => {
   expect(runMood(null)).toBe("thinking");

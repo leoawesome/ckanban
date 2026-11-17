@@ -1,6 +1,5 @@
 import { expect, test } from "bun:test";
 import { capMap, keepSame, laterCounts, sameDeps, sameJson } from "./chatMemo";
-import { liveJson } from "../../../../src/runs/live-cut";
 import { byIdOf, mainTicketOf } from "../family/family";
 
 const e = (uuid: string, role = "assistant", kind = "text", text = uuid, extra: object = {}) => ({ uuid, role, kind, text, at: "", ...extra });
@@ -60,18 +59,6 @@ test("capMap drops the oldest entries", () => {
   const m = new Map([[1, "a"], [2, "b"], [3, "c"]]);
   capMap(m, 2);
   expect([...m.keys()]).toEqual([2, 3]);
-});
-
-test("liveJson cuts long strings after masking them, and leaves the rest as it is", () => {
-  const secret = "SECRET-KEY-123";
-  const long = "a".repeat(1995) + secret + "b".repeat(100);
-  const out = JSON.parse(liveJson({ type: "user", n: 1, list: [long, "short"] }, (s) => s.split(secret).join("***")));
-  expect(out.type).toBe("user");
-  expect(out.n).toBe(1);
-  expect(out.list[1]).toBe("short");
-  expect(out.list[0]).not.toContain("SECRET");
-  expect(out.list[0]).toStartWith("a".repeat(1995) + "***");
-  expect(out.list[0]).toContain("more characters, not sent live)");
 });
 
 test("byIdOf builds one map per tickets list; mainTicketOf uses it", () => {

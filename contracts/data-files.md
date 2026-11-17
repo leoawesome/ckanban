@@ -168,10 +168,10 @@ remote.json
 automation-passes.json
 automation-passes.json.lock
 board.lock                        # empty; locked by the daemon that owns the board
-rust-board                        # the user (or scripts/rust-trial.sh board) writes it; the daemon only reads it
+rust-board                        # left from the Rust trial; nothing reads it since P4
 rust-board-status.json            # only `ckanban-rs dev` writes it
-rust-shadow.log                   # only `ckanban-rs dev` in shadow mode writes it
-rust-shadow.json                  # only `ckanban-rs dev` in shadow mode writes it
+rust-shadow.log                   # left from the Rust trial's shadow mode (gone since P4)
+rust-shadow.json                  # left from the Rust trial's shadow mode (gone since P4)
 helper.json
 devices.json
 browsers.json
@@ -724,11 +724,11 @@ Read once and held in memory; the daemon's next save overwrites outside edits.
 | `telegram-updates.json` | compact JSON +nl `{ bot, items, seen }` | same |
 | `telegram-offset.json` | compact JSON +nl `{ bot, offset }` | `helper/telegram.ts`, fixed-tmp |
 | `telegram-frontdesk.json` | compact JSON +nl `DeskState` without `token` | `helper/frontdesk.ts`, atomic |
-| `board.lock` | empty; an exclusive `flock` held for as long as a daemon owns the board (macOS `O_EXLOCK` in Bun) | Bun in full mode (`core/board-lock.ts`) and `ckanban-rs dev` in board mode (`rust/board/src/lock.rs`) take it before loading the board and refuse to start without it (waiting up to 10 s and 5 s); Bun as the Rust board's satellite doesn't |
-| `rust-board` | `on` (whitespace around it ignored) turns the Rust board on when `CKANBAN_RUST_BOARD` is unset; anything else, or no file, is off | the user or `scripts/rust-trial.sh board` (`on`/`off` remove it); read by `ckanban-rs dev` at start; Bun alone ignores it |
-| `rust-shadow.log` | text, one line per difference: `<iso> GET <route> scope=<scope>: <ids, "missing in Rust", "extra in Rust", "order differs", or "<id> [<fields>]">`; never ticket text | `ckanban-rs dev` with `CKANBAN_RUST_SHADOW=1` (`rust/board/src/index/shadow.rs`), appended; the same difference once until it changes; cut to its newest half past 5 MB |
-| `rust-shadow.json` | JSON (indent 2) +nl `{ startedAt, checked, differed, skipped, lastAt }`: this start's shadow checks | the same, atomic, after each check |
-| `rust-board-status.json` | JSON (indent 2) +nl `{ mode: "rust" \| "bun", reason: string \| null, at, pid, running, crashes: iso[] }`: what this start of `ckanban-rs dev` runs and why; `running` stays true until a board-mode start stops cleanly (a crash otherwise, counted at the next start) | `ckanban-rs dev` (`rust/board/src/mode.rs`), atomic; written only when board mode was asked for, or to say it is off when the file already exists |
+| `board.lock` | empty; an exclusive `flock` held for as long as a daemon owns the board (macOS `O_EXLOCK` in Bun) | `ckanban-rs dev` (`rust/board/src/lock.rs`) takes it before loading the board and exits without it (waiting up to 5 s); Bun's daemon took the same lock before P4 |
+| `rust-board` | `on` (whitespace around it ignored) turns the Rust board on when `CKANBAN_RUST_BOARD` is unset; anything else, or no file, is off | the Rust trial's switch; nothing reads it since P4 (the Rust board is the only board) |
+| `rust-shadow.log` | text, one line per difference: `<iso> GET <route> scope=<scope>: <ids, "missing in Rust", "extra in Rust", "order differs", or "<id> [<fields>]">`; never ticket text | the Rust trial's shadow mode (`CKANBAN_RUST_SHADOW=1`), removed in P4; nothing writes it now |
+| `rust-shadow.json` | JSON (indent 2) +nl `{ startedAt, checked, differed, skipped, lastAt }`: this start's shadow checks | the same, removed in P4 |
+| `rust-board-status.json` | JSON (indent 2) +nl `{ mode: "rust" \| "bun", reason: string \| null, at, pid, running, crashes: iso[] }`: what this start of `ckanban-rs dev` runs (`mode` is always `rust` since P4; `bun` only in files from before); `running` stays true until a start stops cleanly (a crash otherwise, counted at the next start, kept for 10 minutes) | `ckanban-rs dev` (`rust/board/src/mode.rs`), atomic, at every start and stop |
 
 ## Caches (rebuildable)
 

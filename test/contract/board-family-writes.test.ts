@@ -7,8 +7,8 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
-import { BUN_DAEMON_CMD, type Daemon, startDaemon, until } from "./daemon";
-import { Golden, RECORD } from "./golden";
+import { type Daemon, startDaemon, until } from "./daemon";
+import { Golden } from "./golden";
 
 const SLUG = "fam";
 
@@ -195,17 +195,13 @@ describe("family writes without a run", () => {
 describe("writes as Bun's did", () => {
   test("the same answers and the same bytes in the data folder as Bun (golden/board-family-writes.json)", async () => {
     const golden = new Golden("board-family-writes");
-    // Recording (golden.ts): the same script on Bun alone.
-    const bun = RECORD ? await startDaemon({ cmd: BUN_DAEMON_CMD, env: { CKANBAN_RUST_BOARD: "0" } }) : null;
-    try {
-      const theirs = bun ? await script(bun, false) : steps;
-      const dir = join((bun ?? d).home, "profiles", SLUG, "tickets");
-      if (bun) await until(() => readdirSync(dir).every((id) => readFileSync(join(dir, id, "ticket.md"), "utf8").includes("parentChecked")) || null, 15_000, "Bun's linker").catch(() => null);
+    {
+      const theirs = steps;
       const sorted = (v: unknown): unknown => Array.isArray(v) ? v.map(sorted)
         : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).sort(([x], [y]) => x.localeCompare(y)).map(([k, x]) => [k, sorted(x)])) : v;
       const ids = ticketNames(theirs);
       for (const s of theirs) golden.match(`step ${s.what}`, { what: s.what, status: s.status, data: normalize(ids(JSON.stringify(sorted(s.data)))) });
-      const fs = files((bun ?? d).home);
+      const fs = files(d.home);
       for (const end of ["ticket.md", "comments.jsonl", "status.json", "status.md"]) {
         expect({ end, found: Object.keys(fs).some((k) => k.endsWith(end)) }).toEqual({ end, found: true });
       }
@@ -213,8 +209,6 @@ describe("writes as Bun's did", () => {
       golden.match("files", norm.map(([k]) => k));
       for (const [k, v] of norm) golden.match(`file ${k}`, v);
       golden.done();
-    } finally {
-      await bun?.stop();
     }
   }, 120_000);
 });

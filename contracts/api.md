@@ -81,42 +81,13 @@ key saved on this Mac (board keys, passes) is replaced before it leaves the daem
 local listener the peer TCP port must belong to a web browser the daemon did not start (process lookup in
 `integrations/guard.ts`); otherwise 403. The 403 text explains it is for the user only.
 
-**Behind a front server.** A server in front of the daemon (the Rust `ckanban-rs dev`, `rust/README.md`) starts it
-with `CKANBAN_PORT` set to an internal port, `CKANBAN_FRONT_PORT` set to the board's port, and the line `<secret> <its own pid>` (a fresh random secret)
-first on its stdin (not an env var: same-user processes can read another process's environment). The
-front sends every request with `x-ckanban-front: <secret>` and `x-ckanban-peer-port: <the caller's TCP port>`, after
-dropping any copies the caller sent. The daemon then answers on the internal port only with the exact secret (else
-`403 forbidden`), checks Host and Origin against the board's port, uses the peer header (not the socket) for the
-user-only and schedule-delete caller checks, ignores the front's own pid in those lookups, gives runs and scripts the
-board's port, and stops when its stdin ends (the front is gone). Without `CKANBAN_FRONT_PORT` both headers are ignored
-and stdin is not read. The remote listener (`CKANBAN_REMOTE_PORT`) is never behind the front. Later stdin lines are
-notices from the front: `changed automation-passes.json` after the front changed that file itself; the daemon then
-sends the `integration.updated` event, as after its own writes.
-
-**The Rust board (board mode, trial).** With `CKANBAN_RUST_BOARD=1`, or that variable unset and `<data>/rust-board`
-holding `on`, `ckanban-rs dev` owns the board itself and starts the daemon as its satellite with `CKANBAN_SATELLITE=1`
-added (`docs/rust-port-board-plan.md` 3.3). The satellite starts no runs, timers or watchers, refuses every ticket
-write (`ticket.md`, comments, run logs; logged, and the route answers with the error), and takes stdin lines `event
-<json>` (a board event for its own listeners, not for its event stream) and `runtime <json>` (live state: `running`,
-`hostHuddles`, `sessions`). The front answers `GET /api/events` itself and re-emits the satellite's events on it; it
-also answers the board's reads from its own ticket index: `GET /api/profiles`, `/api/profiles/:p`,
-`/api/profiles/:p/tickets` (every scope), `/api/profiles/:p/tickets/:id`, `/api/tickets` and `/api/inbox`. The
-board's writes that need no run are the front's too, with the same answers and file bytes (`ticket.md`,
-`comments.jsonl`, `profile.json`, `avatars.json`, `snippets.json`): `POST /api/profiles`, `PATCH`/`DELETE
-/api/profiles/:p`, a ticket's create, `PATCH`, `DELETE`, `move`, `comments`, `snooze`, `seen` and the chat's cards,
-`/api/attachments`, `/api/avatars`, `/api/snippets`. Until the Rust run loop lands, nothing runs in board mode: a
-ticket moved to Ready or Planning waits, a message to a ticket is refused, and a key box answered saves the keys but
-answers 409 (Claude couldn't be told). A deleted ticket's copy of the folder, like a Done one's, is only reported in
-`rust-board-dryrun.log` until `CKANBAN_RUST_DELETE=1`. If
-board mode can't start (the `board.lock` is held, the core fails, or three unclean ends within 10 minutes), the
-daemon runs in full mode as without it; `rust-board-status.json` says which and why (`data-files.md`). Unset, none
-of this applies. Without a front, `CKANBAN_SATELLITE=1` stops the daemon at start.
-
-**Shadow mode (Rust trial).** With `CKANBAN_RUST_SHADOW=1` and board mode off, `ckanban-rs dev` still sends Bun's
-answers as they are, and also works out its own answers to the ticket list reads (`/api/profiles/:p/tickets` with
-scope `board`, `done`, `ids`, `search`, `list` or `count`, `/api/tickets`, `/api/inbox`) from the files, in the
-background, at most one per route every 10 s. Differences go to `rust-shadow.log` (ids and field names only), counts
-to `rust-shadow.json` (`data-files.md`). Nothing it works out is served, and it writes no board data.
+**The server (since the Rust port's P4).** `ckanban-rs dev` (launchd's `ckanban` daemon) is the whole server: it owns
+the board (taking `board.lock`; if another daemon holds it, it exits 1 naming the reason), answers every route here
+itself and serves the built web page (`web/dist`) for any other path, `index.html` for paths that aren't files. A
+route it doesn't have answers Bun's JSON `404 {"error":"not found"}` (or `415` for a change that isn't JSON). Bun's
+front mode, satellite and shadow mode (and their `x-ckanban-front*` headers and stdin lines) went with Bun's server; a
+deleted ticket's copy of the folder, like a Done one's, is still only reported in `rust-board-dryrun.log` until
+`CKANBAN_RUST_DELETE=1`. `rust-board-status.json` records each start and whether it stopped cleanly (`data-files.md`).
 
 **Run rights (`runRights`).** Ticket changes sent with `x-ckanban-run` are allowed only for: a Planning chat answering
 the user's typed message (any ticket of its board but its own: "requester"); a main ticket or tool group on its own

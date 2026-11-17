@@ -1,8 +1,60 @@
 // The Done column pages by a cursor: cards leaving, joining or being deleted between pages, a failed move and a
-// reconnect leave no gaps and no doubles. A small model of App.tsx's paging (same helpers) against the server's scopes.
+// reconnect leave no gaps and no doubles. A small model of App.tsx's paging (same helpers) against a copy of the server's scopes.
 import { describe, expect, test } from "bun:test";
-import { boardScope, donePage, doneColumn } from "../../../../src/board/ticket-scope";
-import { doneCursor, doneDrifted, doneNotDrawn, heldDoneColumn, heldDoneHead, mergeTickets, reloadAsk, takeReload, unseenDone } from "./donePaging";
+import { groupByColumn } from "./columns";
+import { onBoard, parentLink, type FamilyTicket } from "../family/family";
+import { doneCursor, doneDrifted, doneIdsHash, doneNotDrawn, heldDoneColumn, heldDoneHead, mergeTickets, reloadAsk, takeReload, unseenDone } from "./donePaging";
+
+// The server is the Rust binary now. This is a copy of the Bun server's Done scopes (src/board/ticket-scope.ts:
+// the first load, the Done column and its pages) as the model the page is paged against.
+type Scoped = FamilyTicket & { status: string; order: number; pinnedAt?: string | null; tool?: boolean; showOnBoard?: boolean | null };
+
+function familyKeys<S extends Scoped>(tickets: S[]): Map<string, string> {
+  const byId = new Map(tickets.map((t) => [t.id, t]));
+  const out = new Map<string, string>();
+  for (const t of tickets) {
+    if (out.has(t.id)) continue;
+    const path: S[] = [];
+    const seen = new Set<string>();
+    let cur: S = t;
+    let root: string;
+    for (;;) {
+      const hit = out.get(cur.id);
+      if (hit) { root = hit; break; }
+      path.push(cur);
+      seen.add(cur.id);
+      const l = parentLink(cur);
+      const up = l && l.id !== cur.id ? byId.get(l.id) : undefined;
+      if (!up || seen.has(up.id)) { root = cur.id; break; }
+      cur = up;
+    }
+    for (const p of path) out.set(p.id, root);
+  }
+  return out;
+}
+
+function doneColumn<S extends Scoped>(tickets: S[]): S[] {
+  return groupByColumn(tickets.filter((t) => t.status === "done" && onBoard(t)) as (S & { status: "done" })[]).get("done") ?? [];
+}
+
+function boardScope<S extends Scoped>(tickets: S[], opts: { done?: number; ids?: string[]; after?: string | null } = {}): { tickets: S[]; doneTotal: number; doneHead?: string | null } {
+  const keys = familyKeys(tickets);
+  const column = doneColumn(tickets);
+  const head = opts.after ? column.findIndex((t) => t.id === opts.after) : -1;
+  const doneHead = !opts.after ? undefined : head < 0 ? null : doneIdsHash(column.slice(0, head + 1).map((t) => t.id));
+  const ids = new Set(opts.ids ?? []);
+  const families = new Set<string>();
+  for (const t of tickets) if (t.status !== "done" || ids.has(t.id)) families.add(keys.get(t.id) ?? t.id);
+  const picked = new Set(tickets.filter((t) => families.has(keys.get(t.id) ?? t.id)));
+  for (const t of column.slice(0, Math.max(0, opts.done ?? 0))) picked.add(t);
+  return { tickets: tickets.filter((t) => picked.has(t)), doneTotal: column.length, ...(doneHead === undefined ? {} : { doneHead }) };
+}
+
+function donePage<S extends Scoped>(tickets: S[], offset: number, limit = 20, column = doneColumn(tickets), after?: string | null): { tickets: S[]; doneTotal: number } {
+  const at = after ? column.findIndex((t) => t.id === after) : -1;
+  const from = at >= 0 ? at + 1 : Math.max(0, Math.floor(offset) || 0);
+  return { tickets: column.slice(from, from + Math.max(1, Math.min(limit, 200))), doneTotal: column.length };
+}
 
 type T = { id: string; title: string; status: any; order: number; createdAt: string; pinnedAt?: string | null; updatedAt?: string };
 

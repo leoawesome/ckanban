@@ -228,6 +228,7 @@ pub async fn prepare(root: &Path, public_port: u16, remote_port: u16) -> Result<
     core.tickets.set_mask(text_masker(root));
     let s = sessions.clone();
     core.tickets.on_written(move |slug, id| s.ticket_changed(slug, id));
+    let _ = sessions.board.set(core.tickets.clone());
     let ops = Arc::new(TicketOps { tickets: core.tickets.clone(), families: Default::default(), runs: Default::default() });
     let landing = git::landing::Git::new(root, ops.clone());
     // R2b: families, plans and the feature status; what needs a run waits for the run loop (R7a).
@@ -936,12 +937,13 @@ impl BoardMode {
             })
         };
         // Only a ticket's Usage tab reads the plan's numbers (cached; the first ask may go out to Anthropic).
-        let plan_value = if parts.get(2).map(String::as_str) == Some("tickets") { native.plan_usage().await } else { Value::Null };
+        let plan_value = if parts.get(2).map(String::as_str) == Some("tickets") && parts.get(4).map(String::as_str) == Some("usage") { native.plan_usage().await } else { Value::Null };
         let plan = move || -> std::pin::Pin<Box<dyn std::future::Future<Output = Value> + Send>> {
             let v = plan_value.clone();
             Box::pin(async move { v })
         };
-        let call = xr::Call { method: &method, parts: &parts, count_only, from_run, user: &user, plan: &plan };
+        let before = query_value(req.uri().query(), "before");
+        let call = xr::Call { method: &method, parts: &parts, count_only, before, from_run, user: &user, plan: &plan };
         let a = xr::answer(&self.extras, &call).await;
         Ok(self.json(a.status, &a.value, a.status < 400))
     }

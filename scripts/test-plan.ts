@@ -21,7 +21,13 @@ const KEEP_DAYS = 7;
 const NOT_CODE = ["*.md", "test/timings.json"];
 
 /** A change to one of these can affect any test (setup, runner, dependencies), so `--related` runs them all. */
-const FULL_IF_CHANGED = ["package.json", "bun.lock", "bunfig.toml", "tsconfig.json", "scripts/test.ts", "scripts/test-plan.ts", "test/preload.ts"];
+const FULL_IF_CHANGED = ["package.json", "bun.lock", "bunfig.toml", "tsconfig.json", "scripts/test.ts", "scripts/test-plan.ts", "scripts/build-rust.sh", "test/preload.ts"];
+/**
+ * The server is the Rust binary (rust/): bun's import graph doesn't reach it, so a change there runs every contract
+ * test (test/contract, which start the binary); its own unit tests are `cargo test`.
+ */
+const RUST = "rust/";
+const CONTRACT = "test/contract/";
 /**
  * Fixtures (the fake claude, sample files) are started or read by path, so bun's import graph doesn't link them to
  * their tests. A change here runs the test files that name the fixture, directly or through a helper in test/.
@@ -30,9 +36,7 @@ const FIXTURES = "test/fixtures/";
 const TEST_FILE = /\.test\.tsx?$/;
 
 /** Test files that start a source file as a program instead of importing it, so bun's import graph doesn't link them. */
-const STARTED_BY_PATH: Record<string, string[]> = {
-  "src/cli/cli.ts": ["test/integration/agent-access.test.ts"],
-};
+const STARTED_BY_PATH: Record<string, string[]> = {};
 
 function git(cwd: string, args: string[], env?: Record<string, string>): string | null {
   const r = Bun.spawnSync(["git", ...args], { cwd, env: { ...process.env, ...env }, stdout: "pipe", stderr: "pipe" });
@@ -103,13 +107,20 @@ export function changedFiles(cwd: string, base: string): string[] {
 
 export type RelatedPlan = { full: true; reason: string } | { full: false; extra: string[] };
 
-/** For `--related`: run everything (a shared file changed), or bun's affected files plus any started by path. */
+/**
+ * For `--related`: run everything (a shared file changed), or bun's affected files plus any started by path, plus
+ * every contract test when the Rust server changed.
+ */
 export function relatedPlan(changed: string[], cwd = process.cwd()): RelatedPlan {
   for (const f of changed) if (FULL_IF_CHANGED.includes(f)) return { full: true, reason: f };
   const extra = new Set<string>();
+  const files = sourceFiles(cwd);
+  if (changed.some((f) => f.startsWith(RUST) && !f.endsWith(".md"))) {
+    for (const t of files.keys()) if (t.startsWith(CONTRACT) && TEST_FILE.test(t) && !changed.includes(t)) extra.add(t);
+  }
   for (const f of changed) for (const t of STARTED_BY_PATH[f] ?? []) if (!changed.includes(t)) extra.add(t);
   const fixtures = [...new Set(changed.filter((f) => f.startsWith(FIXTURES)).map((f) => f.slice(FIXTURES.length).split("/")[0]))];
-  for (const t of fixtureUsers(fixtures, sourceFiles(cwd))) if (!changed.includes(t)) extra.add(t);
+  for (const t of fixtureUsers(fixtures, files)) if (!changed.includes(t)) extra.add(t);
   return { full: false, extra: [...extra].sort() };
 }
 
@@ -136,7 +147,7 @@ export function sourceFiles(cwd: string): Map<string, string> {
       else if (/\.tsx?$/.test(n)) out.set(relative(cwd, path), readFileSync(path, "utf8"));
     }
   };
-  for (const root of ["src", "web/src", "scripts", "test"]) walk(join(cwd, root));
+  for (const root of ["web/src", "scripts", "test"]) walk(join(cwd, root));
   return out;
 }
 

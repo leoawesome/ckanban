@@ -1,5 +1,5 @@
 // Outside-in contract: the daemon tells the user from board runs by who is on the other end of the connection, and
-// that holds whatever server runs (Bun alone, or `ckanban-rs dev` in front of it: `bun run test:contract:rust`). Also
+// that holds whatever server runs (the Rust `ckanban-rs dev`). Also
 // the event stream arrives as it is written and the terminal's WebSocket works. See contracts/api.md.
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";

@@ -4,20 +4,15 @@
 `main` without changing the running board. The plan, the order of tasks and the rules every task follows are in
 `docs/rust-port-board-plan.md` (sections 2, 3, 7, 8). The server (`rust/src/board_mode.rs`) calls into this crate.
 
-## Board mode
+## The board (board mode until P4)
 
-Off by default. On when `CKANBAN_RUST_BOARD=1`, or when that variable is unset and `<data>/rust-board` holds `on`
-(`scripts/rust-trial.sh board` writes it; `on`/`off` remove it). Then `ckanban-rs dev` takes `<data>/board.lock`,
-starts the `Core`, and starts Bun as its satellite (`CKANBAN_SATELLITE=1`, `src/core/satellite.ts`): Bun keeps the
-helper and the outside services, starts no runs, timers or watchers, and refuses every ticket write.
-
-Fallbacks to Bun's full mode (as with board mode off), each logged and written to `<data>/rust-board-status.json`:
-1. the switch is off (`rm <data>/rust-board && ckanban restart`);
-2. the Rust core can't start (the lock is held, a folder it can't read; later: an old-style plan);
-3. board mode ended uncleanly three times within 10 minutes; Bun then keeps the board until `rust-board` is written
-   again (or the status file is removed).
-
-Bun in full mode takes the same `board.lock` (`src/core/board-lock.ts`), so two daemons never own one data folder.
+Since the Rust port's P4 this crate is the only board: `ckanban-rs dev` takes `<data>/board.lock` (another daemon
+holding it stops the start), starts the `Core` and everything below, and runs no Bun. It was built task by task
+behind "board mode" (`CKANBAN_RUST_BOARD=1` or `<data>/rust-board`), with Bun's daemon as its satellite for what wasn't
+ported yet and fallbacks to Bun's full mode; the switch, the satellite (`src/satellite.rs`, `gate/edge.rs`'s client)
+and the fallbacks went with P4. `src/mode.rs` still writes `<data>/rust-board-status.json` (each start, a clean stop,
+unclean ends of the last 10 minutes). The sections below were written as each task landed: where they speak of the
+satellite, Bun answering a route or board mode being off, that is how it was before P4.
 
 ## What is here (R0)
 
@@ -28,29 +23,23 @@ Bun in full mode takes the same `board.lock` (`src/core/board-lock.ts`), so two 
   - `HuddleInfo` (R11a): each board's huddles by host ticket, what a restart waits for.
   - `DeviceInfo` (R9): a ticket's devices, letting go at a run's end, browser picks.
   - `Landing` (R6): merge into main, land, clean up a copy, the folder's repo state.
-  - `Satellite` (R13, `gate::edge::SatelliteClient`): turn ended, pass calls, the front desk gate, publishing.
-  - `BoardActions` (R2a, R7a): what the satellite asks of the board (Telegram chat and fields, comments).
+  - `Satellite` (R13; since P4 the server's `outside::edge::OutsideSatellite`, nothing goes to Bun): turn ended,
+    pass calls, the front desk gate, publishing.
+  - `BoardActions` (R2a, R7a): Telegram's chat and marks on the run loop, comments.
   - `TicketViews` (R1): a ticket's `TicketView` for events and answers.
   - `ActivityCut` (R3): `liveJson`, run events without their long strings.
 - `src/core.rs`: `Core` (root, bus, services); start steps in Bun's order (load tickets, load lists, recover,
   huddles, quick chats, timers), each empty until its task fills it; `on_stop` hooks run newest first.
-- `src/bus.rs`: the bus (broadcast channel, capacity 4096, plus in-process subscribers); events from the satellite
-  keep the text Bun built.
+- `src/bus.rs`: the bus (broadcast channel, capacity 4096, plus in-process subscribers).
 - `src/events.rs`: `GET /api/events` (connected, ping every 15 s, one `data:` per event, views, `liveJson`, masking,
   a slow connection closed).
 - `src/mode.rs`: the switch, the fallbacks and the status file. `src/lock.rs`: `board.lock`.
-- `src/satellite.rs`: `event`/`runtime` lines to the satellite's stdin; its event stream re-emitted on the bus.
 - `src/index/` (R1): every board's ticket files parsed once and kept by mtime and size, each board's listing shared as
   one `Arc<BoardList>`; the start-up load on a few threads in the background (a board's first listing waits for it);
   the 30 s re-check; families, scopes and Done paging, a main ticket's card, attention, links, the command bar;
   `TicketView` with live state through `Live` (the services' stand-ins until their tasks land); the read routes
   `GET /api/profiles`, `/api/profiles/:p`, `/api/profiles/:p/tickets` (every scope), `/api/profiles/:p/tickets/:id`,
   `/api/tickets`, `/api/inbox`. `api::TicketViews` is filled from it (`core.rs` `IndexViews`).
-- Shadow mode (`src/index/shadow.rs`, `rust/src/shadow.rs`): with `CKANBAN_RUST_SHADOW=1` and board mode off, Bun's
-  answers to the ticket list reads are served as they are and compared in the background with what the index works
-  out (live fields taken from Bun's answer, Inbox sessions from `session-summaries.json`); differences, ids and field
-  names only, go to `<data>/rust-shadow.log`, counts to `<data>/rust-shadow.json`. Read only. To run it on the real
-  board: add `CKANBAN_RUST_SHADOW=1` to the front's launchd environment and `ckanban restart`; remove it to stop.
 - One empty folder per later task (filled as each lands): `index` (R1, done), `tickets` (R2a, done), `families` (R2b, done), `runs` (R3), `prompts` (R4, done),
   `sessions` (R5), `git` (R6, done), `runloop` (R7a, done), `chat` (R7b, done), `quickchat` (R8), `browsers` (R9), `schedules` (R10, done),
   `huddles` (R11a and R11c, done), `team` (R11b, done), `extras` (R12, done), `gate` (R13).
@@ -136,14 +125,11 @@ checks); their user-only checks look at the caller (`tailscale serve`) and refus
 - Tailscale itself moved to the server in P2 (`rust/src/outside/phone.rs`): `/api/remote` (on, off, status) and the
   link check that puts Tailscale's HTTPS 443 link back at this listener when it goes missing (every 3 minutes while
   phone access is on). The satellite runs no link check in board mode.
-- The satellite's edge (`gate/edge.rs`, `src/core/satellite-edge.ts`), `POST /api/internal/<name>` with
-  `x-ckanban-satellite: <the front's secret>` (the proxy drops callers' copies of it and of the two marks above):
-  `pass-call` and `publish` are the server's own since P2 (`rust/src/outside/edge.rs`); `frontdesk-gate`,
-  `turn-ended`, `chat-from-telegram`, `patch-telegram`, `drop-telegram-queued` and `replay` ended with P1c (Telegram
-  runs in Rust); Bun asks Rust `comment` (`api::BoardActions`). A confirmed front desk request still runs as the user:
-  Rust's own routes, else Bun with `x-ckanban-front-confirmed: 1`.
+- The satellite's edge (`POST /api/internal/<name>`, `gate/edge.rs`'s client) went with P4; `gate/edge.rs` keeps only
+  the secret check the front desk header uses. A confirmed front desk request runs as the user through the server's
+  own routes.
 - Housekeeping (`gate/housekeeping.rs`): the temp file sweep and the daemon.log trim run at start, report-only
-  (`rust-board-dryrun.log`) unless `CKANBAN_RUST_DELETE=1`; the satellite skips them.
+  (`rust-board-dryrun.log`) unless `CKANBAN_RUST_DELETE=1`.
 - `cron/preview` uses `schedules::cron` (brought in here; R10 builds the scheduler on it).
 - `tests/fixtures/gate.json`: Bun's answers for `requestRefusal`, `isAllowedSocket`, `cronError`, `describeCron`,
   `nextRuns` (in America/Los_Angeles, DST days included) and `isNewer`, written by
@@ -499,24 +485,14 @@ and `chats.ts`. Drafts, fresh chat and session, take-over and link-session came 
 - Checked: `chat.test.ts`, `chat-session.test.ts` and `quickchat.test.ts` whole in board mode; unit tests in the
   modules. Not yet: `data-files.test.ts` waits for a huddle helper's spend (R11c).
 
-## F1: the checks before the switch
+## F1: the checks before the switch (tools removed in P4)
 
-- `bun run test:contract:rust-board`: every file in `test/contract` is listed in `contract-files.txt`, none filtered;
-  the runner also sets `CKANBAN_PARITY_RS` and `CKANBAN_PARITY_MCP`, so `rust-parity`, `mcp-parity` and
-  `board-parity.test.ts` run against Bun too.
-- `test/contract/board-parity.test.ts`: one script across the areas (a run from Ready, a chat that resumes it, a
-  question, a blocked run, a feature with a task, comments, a schedule, a one-time job, every list scope, each
-  ticket's view, activity, outputs and usage) on Bun's full mode and on the Rust board, each on a fresh data folder;
-  answers and the files under `profiles/` must match with ids, times, session ids and temp paths masked.
-- `scripts/rust-board-dryrun.ts` (`prepare`, `run bun|rust|rust-delete`, `compare`, `run rust --serve`, `clean`): a
-  copy of the real data folder in `/private/tmp/ckanban-f1`, made safe (paths rewritten into the copy, boards' folders
-  as git clones with no remote, phone access, push, webhook and Telegram cut off, saved keys replaced, Chrome, claude,
-  gh and tailscale stubbed, automation checks that find nothing, Desktop folders never read). Each server starts on a
-  fresh clone of it; the script reads every board's pages and every ticket's views and records what was written and
-  removed. `compare` lists the differences by route and file, and the report-only deletes beside Bun's real ones.
-- `CKANBAN_RUST_BOARD=1 bun scripts/rust-trial-bench.ts --server '["rust/target/release/ckanban-rs","dev"]'`: the
-  10,000-ticket bench in board mode (the satellite runs from the bench's copy of the code).
-- Results and the differences found: `docs/rust-port.md`, "The Rust board: ready to switch?".
+F1 ran every contract test in board mode (`test:contract:rust-board`), a board parity script on Bun's full mode and
+the Rust board side by side, a dry run on a copy of the real data folder (`scripts/rust-board-dryrun.ts`) and the
+10,000-ticket bench (`scripts/rust-trial-bench.ts`). Results: `docs/rust-port.md`, "The Rust board: ready to
+switch?". Since P4 `bun run test` runs every contract test against this board, the parity script checks it against
+Bun's recorded answers (`test/contract/golden/board-parity.json`), and the big-board check is `bun run speedcheck`;
+the dry run and the bench are in version history (fca356b2).
 
 ## The helper (P1a, P1b, `src/helper/`)
 
@@ -551,8 +527,6 @@ writer of `notify.json`; every file is written in Bun's bytes, so a switch back 
   ticket's `POST .../notify`. The ticket's `seen` route stops its reminders (`Writes::set_opened`). Adding or removing
   a phone push device is the user's own (`userOnly`, in Bun too since P1b): a program that added its own address
   would get every message.
-- The satellite reads the helper's files and push.json (again when they change, never writing them) and runs no
-  Telegram since P1c; it still asks `helper-send-message` (the Settings test, when Bun answers it).
 
 ## Telegram and the front desk (P1c, `src/telegram/`)
 

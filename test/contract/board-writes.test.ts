@@ -7,8 +7,8 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { chmodSync, existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
-import { BUN_DAEMON_CMD, type Daemon, startDaemon, until } from "./daemon";
-import { Golden, RECORD } from "./golden";
+import { type Daemon, startDaemon, until } from "./daemon";
+import { Golden } from "./golden";
 
 const SLUG = "writes";
 const SECRET = "sntrys_SECRET_value_9d1c42aa";
@@ -230,17 +230,13 @@ describe("board writes without a run", () => {
 describe("writes as Bun's did", () => {
   test("the same answers and the same bytes in the data folder as Bun (golden/board-writes.json)", async () => {
     const golden = new Golden("board-writes");
-    // Recording (golden.ts): the same script on Bun alone.
-    const bun = RECORD ? await startDaemon({ cmd: BUN_DAEMON_CMD, env: { CKANBAN_RUST_BOARD: "0" }, before: ({ home }) => seed(home) }) : null;
-    try {
-      const theirs = bun ? await script(bun, false) : steps;
-      // Bun's linker settles the new tickets in the background (parentChecked): wait for it before reading files.
-      if (bun) await until(() => readdirSync(join(bun.home, "profiles", SLUG, "tickets")).every((id) => readFileSync(join(bun.home, "profiles", SLUG, "tickets", id, "ticket.md"), "utf8").includes("parentChecked")) || null, 15_000, "Bun's linker").catch(() => null);
+    {
+      const theirs = steps;
       // Answers by value (key order isn't part of the API); the files below are compared byte for byte.
       const sorted = (v: unknown): unknown => Array.isArray(v) ? v.map(sorted)
         : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).sort(([x], [y]) => x.localeCompare(y)).map(([k, x]) => [k, sorted(x)])) : v;
       for (const s of theirs) golden.match(`step ${s.what}`, { what: s.what, status: s.status, data: normalize(JSON.stringify(sorted(s.data))) });
-      const fs = files((bun ?? d).home);
+      const fs = files(d.home);
       // Tickets, comments, the board, avatars and snippets are all in the comparison.
       for (const end of ["ticket.md", "comments.jsonl", "profile.json", "avatars.json", "snippets.json"]) {
         expect({ end, found: Object.keys(fs).some((k) => k.endsWith(end)) }).toEqual({ end, found: true });
@@ -249,8 +245,6 @@ describe("writes as Bun's did", () => {
       golden.match("files", norm.map(([k]) => k));
       for (const [k, v] of norm) golden.match(`file ${k}`, v);
       golden.done();
-    } finally {
-      await bun?.stop();
     }
   }, 120_000);
 });

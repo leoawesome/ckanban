@@ -2,14 +2,13 @@
 // the areas (ticket writes, runs on the fake Claude with a chat follow-up, a question, a feature with a task,
 // comments, schedules and one-time jobs, the reads of the board, the Inbox, a ticket's views) on a fresh data folder.
 // The answers and the files it leaves, ids, times, session ids and temp paths masked, must be Bun's: recorded in
-// golden/board-parity.json (golden.ts) from Bun's full mode before P4 removed it (`CKANBAN_GOLDEN_RECORD=1` on a
-// commit that still has it records them again).
+// golden/board-parity.json (golden.ts) from Bun's full mode before P4 removed it.
 import { afterAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
-import { BUN_DAEMON_CMD, DAEMON_CMD, type Daemon, startDaemon, until } from "./daemon";
-import { Golden, RECORD } from "./golden";
+import { DAEMON_CMD, type Daemon, startDaemon, until } from "./daemon";
+import { Golden } from "./golden";
 import { Scripts, scriptDir, settled } from "./runs";
 
 const SLUG = "parity";
@@ -159,16 +158,16 @@ async function runOn(cmd: string[], env: Record<string, string>): Promise<{ step
 describe("the board answers and writes as Bun's did", () => {
   test("one script, compared with Bun's recorded answers and files", async () => {
     const golden = new Golden("board-parity");
-    const side = await (RECORD ? runOn(BUN_DAEMON_CMD, { CKANBAN_RUST_BOARD: "0" }) : runOn(DAEMON_CMD, {}));
+    const side = await runOn(DAEMON_CMD, {});
     const m = masker();
     const steps = side.steps.map((x) => ({ what: x.what, status: x.status, data: m(JSON.stringify(sorted(x.data), null, 1)) }));
     // Paths first (their ids are known from the answers), then each file's text in the order of the masked paths.
     const paths = Object.keys(side.files).map((k) => [m(k), k] as const).sort(([x], [y]) => x.localeCompare(y));
     const fs = Object.fromEntries(paths.map(([masked, k]) => [masked, m(side.files[k]!)]));
-    // CKANBAN_PARITY_OUT=<dir>: this side written there (steps.txt) to read the differences with `diff`.
+    // CKANBAN_PARITY_OUT=<dir>: this side written there (server.txt) to read the differences with `diff`.
     if (process.env.CKANBAN_PARITY_OUT) {
       mkdirSync(process.env.CKANBAN_PARITY_OUT, { recursive: true });
-      writeFileSync(join(process.env.CKANBAN_PARITY_OUT, RECORD ? "bun.txt" : "server.txt"),
+      writeFileSync(join(process.env.CKANBAN_PARITY_OUT, "server.txt"),
         [...steps.map((x) => `=== ${x.what} ${x.status}\n${x.data}`), ...Object.entries(fs).map(([k, v]) => `=== file ${k}\n${v}`)].join("\n"));
     }
     golden.match("steps", steps.map((x) => x.what));

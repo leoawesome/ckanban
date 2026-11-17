@@ -6,8 +6,8 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { BUN_DAEMON_CMD, type Daemon, startDaemon, until } from "./daemon";
-import { Golden, RECORD } from "./golden";
+import { type Daemon, startDaemon, until } from "./daemon";
+import { Golden } from "./golden";
 
 const SLUG = "reads";
 const OTHER = "other";
@@ -232,16 +232,7 @@ async function answer(x: Daemon, path: string): Promise<{ status: number; data: 
 describe("the answers are Bun's", () => {
   test("every read route, against Bun's answers on the same files (golden/board-reads.json)", async () => {
     const golden = new Golden("board-reads");
-    // Recording (golden.ts): Bun alone on the same files.
-    const bun = RECORD ? await startDaemon({ cmd: BUN_DAEMON_CMD, env: { CKANBAN_RUST_BOARD: "0" }, before: ({ home, project }) => seed(home, project) }) : null;
-    try {
-      for (const path of READS) {
-        const mine = await answer(bun ?? d, path);
-        golden.match(path, { path, ...mine });
-      }
-      golden.done();
-    } finally {
-      await bun?.stop();
-    }
+    for (const path of READS) golden.match(path, { path, ...(await answer(d, path)) });
+    golden.done();
   }, 120_000);
 });

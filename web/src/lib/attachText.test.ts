@@ -1,8 +1,21 @@
 import { expect, test } from "bun:test";
-import { cleanFileName as serverClean, FILE_EXTS as SERVER_EXTS, MAX_ATTACHMENT_BYTES as SERVER_MAX } from "../../../src/board/attachments";
 import {
   ACCEPT, ATTACHMENT_SRC, PHOTO_ACCEPT, cleanFileName, draftFiles, FILE_EXTS, fileHolder, fileHref, fileKind, formatSize, MAX_ATTACHMENT_BYTES, refusal,
 } from "./attachText";
+
+// The server is the Rust binary now; these are the values and the name cleaner the Bun server had
+// (src/board/attachments.ts), so the UI stays pinned to them.
+const SERVER_EXTS = [
+  "pdf", "docx", "xlsx", "pptx",
+  "txt", "md", "csv", "tsv", "json", "js", "jsx", "ts", "tsx", "py", "rb", "go", "java", "c", "h", "cpp", "cs", "php",
+  "swift", "kt", "rs", "html", "css", "yaml", "yml", "xml", "toml", "ini", "log", "sql", "sh",
+];
+const SERVER_MAX = 25 * 1024 * 1024;
+function serverClean(name: string): string {
+  const out = name.replace(/\[/g, "(").replace(/]/g, ")").replace(/[<>`\\]/g, "")
+    .replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 120).trim();
+  return out || "file";
+}
 
 const PDF = "0123456789abcdef0123456789abcdef.pdf";
 

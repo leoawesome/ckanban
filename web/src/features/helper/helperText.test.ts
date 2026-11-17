@@ -1,10 +1,7 @@
 import { expect, test } from "bun:test";
-import { mkdtempSync, readFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { MessageStore } from "../../../../src/helper/messages";
 import { asksNight, groupByDay, isHeldLine, levelLabel, levelTone, messageHash, messagesRoute, nightQuestion, sendTrail, type Message } from "./helperText";
-import { nightQuestion as serverNightQuestion } from "../../../../src/helper/settings";
 
 const msg = (over: Partial<Message>): Message => ({
   id: "m_1", at: "2026-11-09T14:10:00", level: "urgent", oneLine: "Stop the old webhook?", text: "full", why: null, items: [], sends: [], readAt: null, ...over,
@@ -67,17 +64,6 @@ test("Should have pinged me only on items the helper held for a summary", () => 
   expect(isHeldLine(undefined)).toBe(false);
 });
 
-test("the message store reports the unread count when a message is added or read (live Messages, N new)", () => {
-  const root = mkdtempSync(join(tmpdir(), "ck-msgs-"));
-  const seen: number[] = [];
-  const s = new MessageStore(root, Date.now, (n) => seen.push(n));
-  const a = s.add({ level: "summary", oneLine: "2 wait", text: "2 wait" });
-  s.add({ level: "summary", oneLine: "held", text: "held", held: true });
-  s.markRead(a.id);
-  s.markRead(a.id); // already read: no news
-  expect(seen).toEqual([1, 1, 0]);
-});
-
 test("helper screens use plain words: no watcher agent, no webhook outside the JSON option", () => {
   for (const f of ["chat/Messages.tsx", "helper/Inbox.tsx", "board/NowView.tsx", "helper/helper.ts"]) {
     const src = readFileSync(join(import.meta.dir, "..", f), "utf8");
@@ -91,7 +77,8 @@ test("helper screens use plain words: no watcher agent, no webhook outside the J
 
 test("the night question on a message page: only while the user hasn't chosen; practice alerts badge as Practice", () => {
   const night = { start: "22:00", end: "07:00" };
-  expect(nightQuestion(night)).toBe(serverNightQuestion(night));
+  // The server is the Rust binary now; this is the question the Bun server asked (src/helper/settings.ts).
+  expect(nightQuestion(night)).toBe("Should urgent alerts wake you at night (22:00-07:00)? I'd only do it when harm keeps growing, like customers billed twice.");
   expect(asksNight({ nightAsk: true }, null)).toBe(true);
   expect(asksNight({ nightAsk: true }, false)).toBe(false);
   expect(asksNight({ heldOvernight: "Held overnight: Billing, marked urgent 22:35" }, null)).toBe(true);
@@ -100,11 +87,4 @@ test("the night question on a message page: only while the user hasn't chosen; p
   expect(asksNight({}, null)).toBe(false);
   expect(levelLabel("test", false, true)).toBe("Practice");
   expect(levelTone("test", false, true)).toBe("urgent");
-});
-
-test("a practice message never counts as new", () => {
-  const s = new MessageStore(mkdtempSync(join(tmpdir(), "ck-msg-")));
-  s.add({ level: "test", oneLine: "Practice alert", text: "x", practice: true });
-  s.add({ level: "summary", oneLine: "1 new", text: "y" });
-  expect(s.unread()).toBe(1);
 });

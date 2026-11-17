@@ -42,6 +42,8 @@ const shots = args.includes("--shots");
 const only = arg("--only");
 const SRC = resolve(import.meta.dir, "..", "..");
 const BUN = process.execPath;
+/** The server: the Rust binary of this source folder (built first), serving the copy's web page (CKANBAN_REPO). */
+const SERVER = join(SRC, "rust", "target", "release", "ckanban-rs");
 const SLUG = "big";
 const started = performance.now();
 const say = (s: string) => console.log(`${((performance.now() - started) / 1000).toFixed(0).padStart(4)}s  ${s}`);
@@ -197,6 +199,8 @@ try {
   say("Installing dependencies and building the UI in the copy...");
   await sh([BUN, "install"], CODE, "bun install");
   await sh([BUN, "run", "build:web"], CODE, "UI build");
+  say("Building the Rust server (a no-op when it is up to date)...");
+  await sh(["/bin/bash", join(SRC, "scripts", "build-rust.sh")], SRC, "Rust build");
   say(`Generating a ${tickets.toLocaleString("en-US")}-ticket board...`);
   const gen = JSON.parse((await sh([BUN, "scripts/speedcheck/gen-board.ts", "--home", HOME, "--claude", CLAUDE, "--folder", FOLDER, "--tickets", String(tickets)], CODE, "board generator")).trim().split("\n").at(-1)!);
   say(`Board: ${gen.tickets} tickets (${gen.done} Done, ${gen.backlog} Backlog, ${gen.review} Review), 2 chats of 6,250 entries, huddles, jobs, quick chats`);
@@ -206,9 +210,9 @@ try {
   say(`Starting the daemon on port ${port} (fake Claude)...`);
   // One file handle for both streams, so log lines don't overwrite each other.
   const logFd = openSync(LOG, "a");
-  daemon = Bun.spawn([BUN, "src/cli.ts", "dev"], {
+  daemon = Bun.spawn([SERVER, "dev"], {
     cwd: CODE,
-    env: { ...process.env, ...env, CKANBAN_PORT: String(port), CKANBAN_REMOTE_PORT: String(remotePort) },
+    env: { ...process.env, ...env, CKANBAN_PORT: String(port), CKANBAN_REMOTE_PORT: String(remotePort), CKANBAN_REPO: CODE },
     stdout: logFd,
     stderr: logFd,
     stdin: "ignore",

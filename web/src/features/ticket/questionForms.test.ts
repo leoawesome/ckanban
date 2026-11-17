@@ -2,8 +2,6 @@
 import { expect, test } from "bun:test";
 import { inlineMarkdown, miniMarkdown, plainMarkdown } from "./miniMarkdown";
 import { repeatsForm, signature } from "./questionForms";
-import { parseQuestions } from "../../../../src/runs/session";
-import { openQuestionsRule } from "../../../../src/runs/prompts";
 
 test("markdown: raw HTML is escaped, never passed through", () => {
   expect(miniMarkdown(`<img src=x onerror="alert(1)"> & <script>x</script>`))
@@ -36,15 +34,13 @@ test("markdown: simple lists", () => {
   expect(plainMarkdown("Ship **now** or [later](https://x.y) with `code`?")).toBe("Ship now or later with code?");
 });
 
-test("context: kept from the tool input; old forms without it still read, and it doesn't change what saved answers match", () => {
-  const input = [{ question: "Raise the timeout?", context: "  The lookup came back **late**.  ", options: [{ label: "Yes", recommended: true }, { label: "No" }] }];
-  const qs = parseQuestions(input)!;
-  expect(qs[0].context).toBe("The lookup came back **late**.");
-  const old = parseQuestions([{ question: "Raise the timeout?", options: [{ label: "Yes", recommended: true }, { label: "No" }] }])!;
-  expect(old[0]).not.toHaveProperty("context");
+test("context doesn't change what saved answers match", () => {
+  // The server is the Rust binary now; these are forms as the Bun server parsed them (src/runs/session.ts
+  // parseQuestions), one with context and an old one without.
+  const options = [{ label: "Yes", recommended: true }, { label: "No", recommended: false }];
+  const qs = [{ question: "Raise the timeout?", context: "The lookup came back **late**.", multiSelect: false, options }];
+  const old = [{ question: "Raise the timeout?", multiSelect: false, options }];
   expect(signature(qs)).toBe(signature(old));
-  expect(openQuestionsRule(qs)).toContain(`"context":"The lookup came back **late**."`);
-  expect(openQuestionsRule(old)).not.toContain("context");
 });
 
 test("a reply that only repeats the form above it counts as a repeat; a real message doesn't", () => {

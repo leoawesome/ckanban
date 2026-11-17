@@ -131,28 +131,28 @@ Short answers on what runs where, what leaves your Mac, phone access, cost and u
 
 ## Development
 
-Requires [Bun](https://bun.sh) ≥ 1.3.5 (the embedded terminal uses Bun's built-in PTY; on older Bun everything else works and the terminal says to upgrade).
+The server, CLI and MCP server are the Rust binary `ckanban-rs` (`rust/`, [rust/README.md](rust/README.md)); Bun only builds the web page and runs the tests. Requires Rust (rustup; the version is pinned in `rust-toolchain.toml`) and [Bun](https://bun.sh).
 
 ```bash
 bun install && (cd web && bun install)
-bun run test           # server tests, files in parallel (use a fake claude binary)
+scripts/build-rust.sh  # build the server: rust/target/release/ckanban-rs
+bun run build:web      # build the UI into web/dist (the server serves it)
+bun run test           # the contract tests (through the Rust server), UI and script tests, in parallel (a fake claude binary)
 bun run test --related # only the tests your changes can affect
-bun run test --big-board # also the 10,000-ticket freeze check (opt-in)
-bun run build:web      # build the UI into web/dist
-bun run dev            # API + UI on :7777 from source
+cd rust && ~/.cargo/bin/cargo test   # the Rust unit tests
+bun run dev            # build the server, then API + UI on :7777 from source
 cd web && bun run dev  # Vite dev server with /api proxy (view only: changes need :7777)
-bun run build:bin      # standalone binaries in dist/ (UI embedded)
 ```
 
-`bun run test` runs test files side by side (`bun test --parallel` through `scripts/test.ts`: at most two suites run at once on one machine, a later one waits for a free slot, and two at once share the cores; `CKANBAN_TEST_SLOTS` and `CKANBAN_TEST_WORKERS` change that), slowest first using `test/timings.json`; refresh that file with `bun run test:timings` after adding or splitting slow test files. `bun test <path>` runs one file. Unit tests sit next to the code they test; `test/` holds cross-area tests (`test/integration/`), the contract tests (`test/contract/`, checked against [contracts/](contracts/)), fixtures and shared helpers. Each folder in `src/` and `web/src/` has a short `README.md`; `CLAUDE.md` lists them under "Where things live".
+`bun run test` builds the Rust server first (`scripts/build-rust.sh`; a no-op when nothing in `rust/` changed, minutes the first time in a fresh copy) and runs test files side by side (`bun test --parallel` through `scripts/test.ts`: at most two suites run at once on one machine, a later one waits for a free slot, and two at once share the cores; `CKANBAN_TEST_SLOTS` and `CKANBAN_TEST_WORKERS` change that), slowest first using `test/timings.json`; refresh that file with `bun run test:timings` after adding or splitting slow test files. `bun test <path>` runs one file. `test/contract/` holds the outside-in tests of the server (checked against [contracts/](contracts/)); UI unit tests sit next to the code in `web/src/`. Each folder in `web/src/` and `rust/` has a short `README.md`; `CLAUDE.md` lists them under "Where things live".
 
-A full `bun run test` that passes remembers the exact code it tested; running it again on the same code (docs aside) says so and stops at once, and `--force` runs it anyway. `bun run test --related` runs only the test files that import a file changed since the branch left main (committed or not), plus the tests that use a changed fixture in `test/fixtures/` (by name, or through a helper in `test/`), and everything when shared setup changes (`package.json`, `test/preload.ts`, the runner); related and single-file runs start at once instead of waiting for a full run's slot: use it while building and as a task's landing check; a feature (main ticket) gets one full run after its last task lands, and a ticket on its own runs it in full before landing. Both live in `scripts/test-plan.ts`. The 10,000-ticket freeze check (`test/big-board.test.ts`, the daemon's regular jobs on a big temp board) is skipped unless you pass `--big-board` (or set `CKANBAN_BIG_BOARD=1`): it writes tens of thousands of temp files and made every run minutes slower, so run it when you add or change a daemon job that goes over every ticket, chat or log.
+A full `bun run test` that passes remembers the exact code it tested; running it again on the same code (docs aside) says so and stops at once, and `--force` runs it anyway. `bun run test --related` runs only the test files that import a file changed since the branch left main (committed or not), plus the tests that use a changed fixture in `test/fixtures/` (by name, or through a helper in `test/`), every contract test when anything in `rust/` changed, and everything when shared setup changes (`package.json`, `test/preload.ts`, the runner, `scripts/build-rust.sh`); related and single-file runs start at once instead of waiting for a full run's slot: use it while building and as a task's landing check; a feature (main ticket) gets one full run after its last task lands, and a ticket on its own runs it in full before landing. Both live in `scripts/test-plan.ts`.
 
-Run from source as the daemon: `bun src/cli.ts install`. Data layout and env overrides: [docs/features.md](docs/features.md#data-layout).
+Run from source as the daemon: `rust/target/release/ckanban-rs install`. Data layout and env overrides: [docs/features.md](docs/features.md#data-layout).
 
 ### Speed check (on demand)
 
-`bun run speedcheck` checks how the board holds up on a big board, with no AI and nothing touching your real board. Run it when the board feels slow, to find why, and again to check a fix; it is never part of `bun run test`, CI or a release. It copies this checkout (uncommitted changes too) into `/tmp`, builds it, fills a temp data folder with a 10,000-ticket board (long chats, huddles, jobs, old run logs), starts a daemon from the copy on free ports with a fake `claude`, and drives headless Chrome at 1280x800 and 390x844: first load, Done column scroll and a fast-scroll crash check, a 6,250-entry chat, search, ⌘K, a drag and a 300-task feature. It prints each step's time against a limit, the daemon's `[lag]` freezes and any page crash, then deletes everything (also on Ctrl-C). It takes about 3 to 4 minutes and needs Google Chrome (or `CHROME_PATH`). Options: `--tickets 3000`, `--only desktop|phone`, `--keep` (keep the temp folder), `--shots` (a screenshot per step). Files: `scripts/speedcheck/`.
+`bun run speedcheck` checks how the board holds up on a big board, with no AI and nothing touching your real board. Run it when the board feels slow, to find why, and again to check a fix; it is never part of `bun run test`, CI or a release. It copies this checkout (uncommitted changes too) into `/tmp`, builds its web page (and this checkout's Rust server), fills a temp data folder with a 10,000-ticket board (long chats, huddles, jobs, old run logs), starts the Rust server on it on free ports with a fake `claude`, and drives headless Chrome at 1280x800 and 390x844: first load, Done column scroll and a fast-scroll crash check, a 6,250-entry chat, search, ⌘K, a drag and a 300-task feature. It prints each step's time against a limit, the daemon's `[lag]` freezes and any page crash, then deletes everything (also on Ctrl-C). It takes about 3 to 4 minutes and needs Google Chrome (or `CHROME_PATH`). Options: `--tickets 3000`, `--only desktop|phone`, `--keep` (keep the temp folder), `--shots` (a screenshot per step). Files: `scripts/speedcheck/`.
 
 ### Releasing
 
@@ -163,6 +163,8 @@ git tag vX.Y.Z && git push origin vX.Y.Z
 ```
 
 GitHub Actions takes the release notes from that CHANGELOG section, runs the tests, builds `ckanban-darwin-arm64` / `ckanban-darwin-x64` with the UI embedded, and publishes a GitHub Release and the `npx ckanban` installer. It stops early if CHANGELOG has no section for the version. Users get it with `ckanban update`.
+
+**Not working since the Rust port's P4:** the release workflow and `scripts/build-bin.ts` still compile Bun's `src/cli.ts`, which is now only a hand-off to the Rust binary. A release needs the Rust binary built and published first (not done yet: the port so far is for Leo's Mac only).
 
 Design: `docs/superpowers/specs/2026-09-29-claude-kanban-design.md`.
 

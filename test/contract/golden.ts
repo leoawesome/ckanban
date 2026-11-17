@@ -1,12 +1,11 @@
-// Bun's answers, recorded once before P4 removed the Bun server, for the tests that used to run Bun and the Rust
-// server side by side (board-parity, mcp-parity). `CKANBAN_GOLDEN_RECORD=1` (only possible on a commit that still has
-// Bun's server: the last one is named in docs/rust-port.md) writes test/contract/golden/<name>.json from Bun; without
-// it each test checks the server under test against that file, value by value in order.
+// Bun's answers, recorded before P4 removed the Bun server, for the tests that used to run Bun's server and the Rust
+// one side by side (board-parity, board-reads, board-writes, board-family-writes, mcp-parity). Each test checks the
+// server under test against test/contract/golden/<name>.json, value by value in order. They were recorded with
+// `CKANBAN_GOLDEN_RECORD=1` on the commit "wip: P4 the Rust server runs without Bun..." (4f3447eb), the last one with
+// both Bun's server and the recording code; to record again, check that commit out.
 import { expect } from "bun:test";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-
-export const RECORD = process.env.CKANBAN_GOLDEN_RECORD === "1";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 
 export class Golden {
   readonly file: string;
@@ -15,29 +14,18 @@ export class Golden {
 
   constructor(name: string) {
     this.file = join(import.meta.dir, "golden", `${name}.json`);
-    if (!RECORD) {
-      if (!existsSync(this.file)) throw new Error(`${this.file} is missing: it is recorded from Bun (CKANBAN_GOLDEN_RECORD=1)`);
-      this.kept = JSON.parse(readFileSync(this.file, "utf8"));
-    }
+    if (!existsSync(this.file)) throw new Error(`${this.file} is missing: it was recorded from Bun (see golden.ts)`);
+    this.kept = JSON.parse(readFileSync(this.file, "utf8"));
   }
 
-  /** Recording: keeps Bun's `value`. Checking: the server's `value` must be the one Bun gave at this point. */
+  /** The server's `value` must be the one Bun gave at this point. */
   match(label: string, value: unknown) {
-    if (RECORD) {
-      this.kept.push({ label, value });
-      return;
-    }
     const want = this.kept[this.next++];
     expect({ label, value }).toEqual(want ?? { label: "(nothing recorded here)", value: null });
   }
 
-  /** Recording: writes the file. Checking: every recorded value was checked. */
+  /** Every recorded value was checked. */
   done() {
-    if (RECORD) {
-      mkdirSync(dirname(this.file), { recursive: true });
-      writeFileSync(this.file, JSON.stringify(this.kept, null, 1) + "\n");
-      return;
-    }
     expect(this.next).toBe(this.kept.length);
   }
 }

@@ -84,7 +84,7 @@ fn form_decode(s: &str) -> String {
 }
 
 /// JS `Number(s)` for a query value: None for NaN (the caller lets Bun answer then).
-fn js_number(s: &str) -> Option<f64> {
+pub(crate) fn js_number(s: &str) -> Option<f64> {
     let t = js::trim(s);
     if t.is_empty() {
         return Some(0.0);
@@ -266,19 +266,44 @@ impl Sessions {
         }
     }
 
-    /// `chatReach`: who may search or read a ticket's chat. Some(Err(reply)) refuses; None: a case only Bun decides yet
-    /// (a main ticket's family, a reply to the user's typed message, another board), so Bun answers the request.
+    /// `chatReach`: who may search or read a ticket's chat. A run reads its own ticket's chat, and a main ticket its
+    /// family's; a chat answering the user's typed message any ticket's, on any board; the user's own Claude any.
+    /// Some(Err(reply)) refuses.
     fn reach(&self, req: &Req, slug: &str, target: &str) -> Option<Result<(), Reply>> {
+        use crate::tickets::rights::{Who, is_manager, other_board, split_run};
         if req.huddle {
             return Some(Err(Reply { status: 403, body: json!({ "error": "search_chat and read_chat work in a ticket's own runs, not for huddle helpers" }) }));
         }
         let Some(run) = &req.run else { return Some(Ok(())) };
-        let mut it = run.split('/');
-        let (run_slug, run_id) = (it.next().unwrap_or(""), it.next().unwrap_or(""));
-        if run_slug == slug && !run_id.is_empty() && run_id == target {
+        let (run_slug, run_id) = split_run(run);
+        let caller = (run_slug == slug && !run_id.is_empty()).then_some(run_id.as_str());
+        if caller == Some(target) {
             return Some(Ok(()));
         }
-        None
+        let refuse = |status: u16, msg: String| Some(Err(Reply { status, body: json!({ "error": msg }) }));
+        let Some(tickets) = self.board.get() else {
+            return refuse(503, "the board is still starting; try again in a moment".into());
+        };
+        let who = Who { tickets, hooks: tickets.hooks() };
+        let manager = caller.and_then(|c| tickets.get(slug, c)).is_some_and(|t| is_manager(&t));
+        if manager && who.in_family(slug, caller.unwrap_or(""), target) {
+            return Some(Ok(()));
+        }
+        // `askedBy`: a chat answering the user's typed message there (its ticket must exist).
+        if !run_slug.is_empty() && !run_id.is_empty() && who.user_asked_run(&run_slug, &run_id) && tickets.get(&run_slug, &run_id).is_some() {
+            return Some(Ok(()));
+        }
+        let Some(caller) = caller else {
+            let (status, msg) = other_board("reading chats", slug, &run_slug);
+            return refuse(status, msg);
+        };
+        refuse(
+            403,
+            format!(
+                "{target} is out of reach: from this run you may search the chat of your own ticket ({caller}){}; other tickets' chats only in a reply to a message the user typed in this chat.",
+                if manager { " and of its tool tickets (get_family lists them)" } else { "" }
+            ),
+        )
     }
 
     /// `chatSources`: a ticket's chat, oldest session first, with tool outputs when asked.

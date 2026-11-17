@@ -1,6 +1,7 @@
 // Starts a real ckanban daemon as a separate process for the contract tests, and talks to it from the outside only:
-// HTTP, the CLI and the data folder's files. Nothing here (or in any test/contract file) imports from src/ or web/,
-// so the same tests can check another server (a Rust port): set CKANBAN_CONTRACT_DAEMON / CKANBAN_CONTRACT_CLI (below).
+// HTTP, the CLI and the data folder's files. Nothing here (or in any test/contract file) imports from src/ or web/.
+// The server is the Rust binary (`rust/target/release/ckanban-rs`, built by scripts/build-rust.sh; `bun run test`
+// builds it first); CKANBAN_CONTRACT_DAEMON / CKANBAN_CONTRACT_CLI (below) point the tests at another one.
 //
 // Each daemon gets its own temp data folder (CKANBAN_HOME), temp HOME, temp Claude config folder, a fake `claude`
 // (test/fixtures/fake-claude.ts), stub osascript/caffeinate/open/tailscale/gh on PATH and a stub Google Chrome
@@ -29,17 +30,16 @@ export function commandFromEnv(name: string, fallback: string[], env: Record<str
 }
 
 /**
- * The one place that says how to start the server and run the CLI. Another server (a port) is tested by setting
+ * The one place that says how to start the server and run the CLI. Another server is tested by setting
  * CKANBAN_CONTRACT_DAEMON and CKANBAN_CONTRACT_CLI to JSON arrays, e.g. '["/tmp/ckanban-rs","dev"]'.
  */
-/** The Bun daemon alone, whatever CKANBAN_CONTRACT_DAEMON says (the parity test runs it next to the other server). */
-export const BUN_DAEMON_CMD = [process.execPath, join(REPO, "src", "cli.ts"), "dev"];
-export const DAEMON_CMD = commandFromEnv("CKANBAN_CONTRACT_DAEMON", BUN_DAEMON_CMD);
-export const CLI_CMD = commandFromEnv("CKANBAN_CONTRACT_CLI", [process.execPath, join(REPO, "src", "cli.ts")]);
+export const SERVER_BIN = join(REPO, "rust", "target", "release", "ckanban-rs");
+export const DAEMON_CMD = commandFromEnv("CKANBAN_CONTRACT_DAEMON", [SERVER_BIN, "dev"]);
+export const CLI_CMD = commandFromEnv("CKANBAN_CONTRACT_CLI", [SERVER_BIN]);
 export const FAKE_CLAUDE = join(REPO, "test", "fixtures", "fake-claude.ts");
 
 export interface Daemon {
-  /** The started server's process id (`ckanban-rs` when it fronts the Bun daemon). */
+  /** The started server's process id. */
   pid: number;
   port: number;
   url: string;
@@ -151,9 +151,6 @@ export async function startDaemon(opts: StartOptions = {}): Promise<Daemon> {
     // Plan usage never reaches Anthropic or the Mac keychain: a closed local port unless a test starts its own fake.
     CKANBAN_USAGE_URL: "http://127.0.0.1:9/api/oauth/usage",
     CKANBAN_NO_KEYCHAIN: "1",
-    // `bun run test:contract:rust-board`: the server under test runs the board in Rust (ckanban-rs board mode).
-    ...(process.env.CKANBAN_RUST_BOARD ? { CKANBAN_RUST_BOARD: process.env.CKANBAN_RUST_BOARD } : {}),
-    ...(process.env.CKANBAN_TMP_BUNLOG ? { CKANBAN_TMP_BUNLOG: process.env.CKANBAN_TMP_BUNLOG } : {}),
     ...opts.env,
   };
   opts.before?.({ home, claudeDir, project });

@@ -6,6 +6,10 @@ real work (today's spend 122 ms instead of 173 ms). The catch: users will not fe
 (tickets, runs, chat) moves to Rust, because the freezes come from Bun loading the board, and that move is one big
 step, not many small ones.
 
+**Update, 18 Nov 2026 (P4):** the port is done for Leo's Mac. Bun's server, CLI and MCP code under `src/` is deleted;
+`ckanban-rs dev` is the whole server and serves the web page from `web/dist`. Bun only builds the web page and runs the
+tests. See "P4: Bun's server removed" at the end, including the way back.
+
 Measured on 2026-11-16 on the same Mac as the baseline (Bun 1.4.2, 10 cores). The Mac's load was about 7 (the
 baseline ran at 13.5), so the Bun baseline was run again right before the Rust run, and both sets below come from that
 pair. Every number is the median of 5 fresh server starts.
@@ -188,7 +192,7 @@ come 0.9 s sooner. It answers its first request later (it loads the board before
 (Rust plus the Bun satellite). The board page's ticket list is about 20 ms slower than Bun's, a follow-up worth a look.
 On the copy of Leo's data the longest wait during start was 51 to 135 ms against Bun's 137 to 237 ms.
 
-## Trying it on the real board
+## Trying it on the real board (before P4; the script is gone)
 
 From Terminal, not from a board chat (the switch restarts the board, and the script refuses while board runs are
 active):
@@ -209,3 +213,24 @@ behind and is now out of date (it may name an older Bun), so after an install de
 `rm ~/Library/LaunchAgents/io.ckanban.daemon.plist.before-rust-trial`. Then run `scripts/rust-trial.sh on` again if you
 want to keep trying Rust. Don't run `off` after an install without deleting the copy first: it would put the old file
 back.
+
+## P4: Bun's server removed (18 Nov 2026)
+
+- `ckanban-rs dev` runs the board itself with no Bun child: no satellite, no front mode, no shadow mode. A route no
+  Rust code takes gets Bun's JSON 404; any path outside `/api/` is the built web page (`web/dist`, Bun's content
+  types, `index.html` for the UI's own routes). The page is read from the source folder (`CKANBAN_REPO`, else the
+  folder above the binary), so `bun run build:web` and a restart show a new UI.
+- Deleted: `src/` (Bun's server, CLI, MCP server and their unit tests) except `src/cli.ts`, which now only hands every
+  command to `rust/target/release/ckanban-rs` (old launchd files and `bun src/cli.ts mcp` registrations keep working);
+  `test/integration/`, `test/big-board.test.ts`, the Bun-checked fixture generators (`test/rust-*-fixtures.test.ts`;
+  their fixtures stay in `rust/` and are checked by `cargo test`), `test/support/`; the trial scripts
+  (`rust-trial.sh`, the bench, the overhead check, the dry run, `test-contract-rust*.ts`, `mcp-tools-json.ts`).
+- Tests: `bun run test` builds the Rust binary and runs every contract test against it, plus the UI and script tests.
+  The five tests that compared Bun's server with Rust side by side check Rust against Bun's answers and files recorded
+  before the deletion (`test/contract/golden/`). The Rust unit tests are `cargo test`.
+- Not done (outside this step's limits): the release workflow and `scripts/build-bin.ts` still build Bun's binary
+  from `src/cli.ts`, so a release would ship only the hand-off; CI (`.github/workflows/ci.yml`) has no Rust toolchain
+  step for the contract tests. A Rust release (binary with the web page, installer, `ckanban update`) is its own step.
+- Way back: check out fca356b2 (the last commit before P4), `bun install && bun run build:web && scripts/build-rust.sh`,
+  then `scripts/rust-trial.sh board` (Rust board with Bun's satellite, as on Leo's Mac from 17 Nov) or
+  `scripts/rust-trial.sh off` (Bun alone). The data files are the same on both sides.

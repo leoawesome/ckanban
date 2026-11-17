@@ -7,12 +7,13 @@
  * 300 Backlog, 150 Review, a feature with 300 tasks (280 Done), a ticket chat and a quick chat of 6,250 entries each,
  * two chats of 1,000, 3,000 quick chats, 2,000 closed huddles, 3,000 finished one-time jobs and a schedule with 5,000
  * lines of history. Counts that grow with the board scale with --tickets; the feature and the long chats stay fixed.
- * Writes ticket files directly (one Store call makes the template), so 10,000 tickets take seconds.
+ * Writes ticket files directly (from a template in the format the board writes), so 10,000 tickets take seconds.
  */
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { encodeProjectDir } from "../../src/runs/claude";
-import { Store } from "../../src/core/store";
+
+/** Claude Code's folder name for a project path (`encodeProjectDir`). */
+const encodeProjectDir = (path: string) => path.replace(/[^a-zA-Z0-9]/g, "-");
 
 const args = process.argv.slice(2);
 const arg = (name: string) => {
@@ -36,12 +37,17 @@ mkdirSync(FOLDER, { recursive: true });
 writeFileSync(join(FOLDER, "README.md"), "Speed check project folder.\n");
 mkdirSync(PROJ, { recursive: true });
 
-const store = new Store(HOME);
-store.saveProfile({ name: "Big", slug: SLUG, path: FOLDER, baseBranch: "main", maxParallel: 3, model: null, createdAt: new Date().toISOString() } as any);
-const first = store.createTicket(SLUG, { title: "T0", body: "", status: "done" } as any);
+mkdirSync(join(HOME, "profiles", SLUG), { recursive: true });
+writeFileSync(join(HOME, "profiles", SLUG, "profile.json"),
+  JSON.stringify({ name: "Big", slug: SLUG, path: FOLDER, baseBranch: "main", maxParallel: 3, model: null, createdAt: new Date().toISOString() }, null, 2) + "\n");
 const TD = join(HOME, "profiles", SLUG, "tickets");
-const tpl = readFileSync(join(TD, first.id, "ticket.md"), "utf8");
-rmSync(join(TD, first.id), { recursive: true, force: true });
+/** A new ticket's file as the board writes it (frontmatter, then the description). */
+const first = { id: "t_20261101_0000" };
+const tpl = [
+  "---", `id: ${first.id}`, "title: T0", "status: done", "mode: interview", "order: 0", "sessionId: null", "worktree: null", "branch: null",
+  "prUrl: null", "outcome: null", "lastActivity: null", "lastRunAt: null", "runCount: 0", "error: null",
+  "createdAt: 2026-11-01T00:00:00.000Z", "updatedAt: 2026-11-01T00:00:00.000Z", "---", "",
+].join("\n");
 
 const L = (o: unknown) => JSON.stringify(o);
 const VOCAB = "board ticket recall summary freeze daemon slice index token search chat phone layout cache run log spend inbox huddle schedule automation feature review button modal theme sync upload".split(" ");

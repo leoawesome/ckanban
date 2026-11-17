@@ -2,7 +2,7 @@
 //! - `GET /api/profiles/:p/learned[?count=1]`, `POST .../learned/seen`, `.../learned/changes/:id/undo|redo`,
 //!   `.../learned/lessons/:id/save|drop|keep` (`src/api/huddle-config.ts`): anyone reads, only the user changes.
 //! - `POST /api/profiles/:p/find-links` (`src/api/profiles.ts`): the user only.
-//! - `GET /api/profiles/:p/tickets/:id/usage` (`src/api/ticket-info.ts`).
+//! - `GET /api/profiles/:p/tickets/:id/usage` and `.../activity[?before=<byte>]` (`src/api/ticket-info.ts`).
 //! - `GET /api/team-usage` (`src/api/system.ts`).
 
 use std::sync::Arc;
@@ -25,7 +25,7 @@ pub fn claims(method: &str, parts: &[String]) -> bool {
     match p(2) {
         Some("learned") => true,
         Some("find-links") => parts.len() == 3 && method == "POST",
-        Some("tickets") => parts.len() == 5 && p(4) == Some("usage") && method == "GET",
+        Some("tickets") => parts.len() == 5 && matches!(p(4), Some("usage" | "activity")) && method == "GET",
         _ => false,
     }
 }
@@ -39,6 +39,8 @@ pub struct Call<'a> {
     pub from_run: bool,
     /// Whether the caller passes the user-only check (asked only for find-links).
     pub user: &'a (dyn Fn() -> BoxFuture<'static, bool> + Send + Sync),
+    /// The query's `before` (`.../activity`), as sent.
+    pub before: Option<String>,
     /// The plan usage answer (`usage.get()`), for a ticket's Usage tab.
     pub plan: &'a (dyn Fn() -> BoxFuture<'static, Value> + Send + Sync),
 }
@@ -83,7 +85,35 @@ pub async fn answer(x: &Arc<Extras>, c: &Call<'_>) -> Answer {
                 Err(e) => fail(502, format!("Couldn't find links: {e}")),
             }
         }
+        _ if c.parts[4] == "activity" => activity(x, c, slug, &c.parts[3]).await,
         _ => ticket_usage(x, c, slug, &c.parts[3]).await,
+    }
+}
+
+/// The run log's newest page; `?before=` (the previous answer's `before`) pages back, null once the first entry is in
+/// (`readActivityPageAsync`).
+async fn activity(x: &Arc<Extras>, c: &Call<'_>, slug: &str, id: &str) -> Answer {
+    if x.core.index.ticket(slug, id).is_none() {
+        return fail(404, format!("ticket {id} not found"));
+    }
+    let before = match c.before.as_deref() {
+        None => None,
+        Some(raw) => match crate::sessions::routes::js_number(raw) {
+            Some(n) if n >= 0.0 && n.fract() == 0.0 && n.is_finite() => Some(n as u64),
+            _ => return fail(400, "before must be a byte offset from a previous page"),
+        },
+    };
+    let file = ckanban_core::DataDir::new(x.root()).activity_path(slug, id);
+    let page = tokio::task::spawn_blocking(move || -> std::io::Result<Value> {
+        let Some(log) = crate::runs::run_log::open_log(&file) else { return Ok(json!({ "entries": [], "before": null })) };
+        let p = ckanban_core::jsonl::read_page(&log, before, None)?;
+        Ok(json!({ "entries": p.entries, "before": p.before }))
+    })
+    .await;
+    match page {
+        Ok(Ok(v)) => ok(v),
+        Ok(Err(e)) => fail(500, e.to_string()),
+        Err(e) => fail(500, e.to_string()),
     }
 }
 

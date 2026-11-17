@@ -17,15 +17,18 @@ the document and the contract tests in the same commit.
 | `cli.md` | Every `ckanban` command: arguments, output, exit codes, the routes it calls and the environment variables it reads. Also the `ckanban mcp` tools and the routes behind them. |
 | `schemas/*.schema.json` | JSON Schema (draft 2020-12) for every saved JSON file and JSONL line in the data folder (`data-files.md`, "Schemas and checks", lists which file uses which). Unknown fields are allowed: a port must keep fields it doesn't know, except where `data-files.md` says the Bun daemon drops them. |
 
-The source of truth is still the code (`src/core/types.ts`, `src/api/server.ts`, `src/core/store.ts`,
-`src/cli/cli.ts`, `src/cli/ticket-cli.ts`, `src/cli/client.ts`, `src/mcp/server.ts`). If a document and the code disagree, the
-code wins and the document is the bug.
+The source of truth is the code: the Rust server, CLI and MCP server in `rust/` since the Rust port's P4 removed Bun's
+server (`src/` before that). If a document and the code disagree, the code wins and the document is the bug. Where the
+documents name a Bun file (`src/...`), it is the code as it was before P4 (`git show 4f3447eb:src/<path>`).
 
 ## Contract tests
 
 `test/contract/` checks the contract from the outside only: it starts the daemon as its own process and then uses only
 HTTP, the CLI and reading the data folder. The tests import nothing from `src/` or `web/`
-(`test/contract/no-src-imports.test.ts` fails if one does), so the same tests can later check the Rust server.
+(`test/contract/no-src-imports.test.ts` fails if one does). The server they start is the Rust binary
+(`rust/target/release/ckanban-rs`, which `bun run test` builds first). The tests that used to run Bun's server and the
+Rust one side by side (`board-parity`, `board-reads`, `board-writes`, `board-family-writes`, `mcp-parity`) now check
+the server against Bun's answers and files recorded before P4 (`test/contract/golden/`, `golden.ts`).
 
 - `daemon.ts` starts a daemon: a free port, a temp data folder (`CKANBAN_HOME`), a temp `HOME`, a temp Claude config
   folder, a temp plain project folder (no git), the fake Claude from `test/fixtures/fake-claude.ts`, and stub
@@ -103,10 +106,9 @@ HTTP, the CLI and reading the data folder. The tests import nothing from `src/` 
 - `runs-restart.test.ts`: `POST /api/restart` holds new runs until the active one ends, then the daemon exits and
   the held ticket runs after the next start; a daemon stopped mid-run resumes a work run in its session, a follow-up
   wake as a follow-up, and wakes a main ticket from its saved events.
-- `mcp-parity.test.ts`: with `CKANBAN_PARITY_MCP` (a JSON array naming a port of the MCP server), Bun's `ckanban mcp`
-  and the port run side by side against one daemon and must give the same answers: `initialize`, `tools/list` byte
-  for byte, and about 100 calls across every group, in and outside a run, refusals and argument errors included (ids and
-  times masked where each call creates its own). Skipped without it.
+- `mcp-parity.test.ts`: two `ckanban mcp` servers against one daemon; the first must give Bun's recorded answers
+  (`golden/mcp-parity.json`) and the second the same as the first: `initialize`, `tools/list`, and about 100 calls
+  across every group, in and outside a run, refusals and argument errors included (ids and times masked).
 - `data-files.test.ts`: after a mix of actions (tickets, chats, side calls, schedules, jobs, automations, quick
   chats, huddles, settings, plan usage), every file in the data folder matches a path listed in `data-files.md`, and
   every saved file with a schema matches it and is written in its documented style. User-only actions go through the
@@ -159,5 +161,4 @@ program from `CKANBAN_CLAUDE_BIN`, the Claude config folder from `CLAUDE_CONFIG_
 `CKANBAN_TICK_MS` (the period of the timers that fire schedules, jobs, automations and follow-ups; see "Work the board
 starts by itself" in `api.md`).
 
-`bun run test:contract:rust` does this for the Rust front server (`rust/`): it builds `ckanban-rs` (release) and runs
-every contract test with it as the daemon, and `ckanban-rs mcp` as the MCP server (`mcp.test.ts`, `mcp-parity.test.ts`). It needs cargo, so `bun run test` leaves it out.
+`bun run test:contract` runs only the contract tests (after building the Rust server).

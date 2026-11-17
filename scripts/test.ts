@@ -9,8 +9,12 @@
 // sets the worker count by hand. Extra arguments go to `bun test`.
 //
 // A full run (no extra arguments) on code that already passed stops at once and says so (`--force` runs it anyway);
-// `--related` runs only the test files a change can affect. See scripts/test-plan.ts. `--big-board` also runs the
-// opt-in 10,000-ticket freeze check (test/big-board.test.ts), for changes to daemon jobs that go over every ticket.
+// `--related` runs only the test files a change can affect. See scripts/test-plan.ts. (The 10,000-ticket freeze check
+// is `bun run speedcheck` since P4 removed Bun's daemon.)
+//
+// The contract tests (test/contract) start the Rust server, so the run first builds it (scripts/build-rust.sh, a
+// no-op when nothing in rust/ changed; minutes the first time in a fresh copy). CKANBAN_TEST_NO_RUST_BUILD=1 skips
+// that (the binary must then be there already). `cargo test` (the Rust unit tests) is separate: see rust/README.md.
 import { mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { availableParallelism, tmpdir } from "node:os";
 import { join } from "node:path";
@@ -20,14 +24,12 @@ const cwd = process.cwd();
 let rest = process.argv.slice(2);
 const force = rest.includes("--force") || process.env.CKANBAN_TEST_FORCE === "1";
 const related = rest.includes("--related");
-if (rest.includes("--big-board")) process.env.CKANBAN_BIG_BOARD = "1";
-const bigBoard = process.env.CKANBAN_BIG_BOARD === "1";
-rest = rest.filter((a) => a !== "--force" && a !== "--related" && a !== "--big-board");
+rest = rest.filter((a) => a !== "--force" && a !== "--related");
 
 // Which runs to make: each is a list of `bun test` arguments (paths or filters).
-// Tests live next to the code they test (src/, web/src/, scripts/) and in test/ (outside-in, integration and
-// board-wide tests); the full run covers all four folders.
-const TEST_ROOTS = ["./src", "./web/src", "./scripts", "./test"];
+// Tests live next to the code they test (web/src/, scripts/) and in test/ (the contract tests of the Rust server and
+// board-wide checks); the full run covers all three folders.
+const TEST_ROOTS = ["./web/src", "./scripts", "./test"];
 let runs: string[][] = [TEST_ROOTS];
 let full = rest.length === 0;
 if (related && rest.length === 0) {
@@ -47,9 +49,8 @@ if (related && rest.length === 0) {
 }
 
 // Skip when this exact code already passed the full suite (a related run is covered by that too).
-// The key notes whether the big-board check ran, so a pass without it doesn't skip a `--big-board` run.
 const code0 = rest.length === 0 ? codeKey(cwd) : null;
-const key = code0 && bigBoard ? `${code0}-big` : code0;
+const key = code0;
 const passed = key && !force ? passedAt(key) : null;
 if (passed) {
   const ago = Math.round((Date.now() - passed) / 60_000);
@@ -126,6 +127,16 @@ for (let i = 0; i < slots; i++) if (join(dir, `slot-${i}`) !== mine && holder(i)
 const fromEnv = Number(process.env.CKANBAN_TEST_WORKERS);
 const workers = fromEnv > 0 ? Math.floor(fromEnv) : Math.max(2, Math.floor(cores / (others + 1)));
 if (workers < cores) console.error(`${others > 1 ? `${others} other test runs are` : "Another test run is"} going on: using ${workers} of ${cores} cores.`);
+
+// The Rust server the contract tests start.
+if (process.env.CKANBAN_TEST_NO_RUST_BUILD !== "1") {
+  const build = Bun.spawnSync(["/bin/bash", join(cwd, "scripts", "build-rust.sh")], { cwd, stdout: "inherit", stderr: "inherit" });
+  if (build.exitCode !== 0) {
+    release();
+    console.error("The Rust server didn't build (see above); the contract tests need it.");
+    process.exit(build.exitCode ?? 1);
+  }
+}
 
 let child: ReturnType<typeof Bun.spawn> | null = null;
 for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"] as const) process.on(sig, () => child?.kill(sig));

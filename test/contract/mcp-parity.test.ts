@@ -2,16 +2,15 @@
 // outside a board run, with their refusals and argument errors. Two servers run against one contract daemon and get
 // the same calls; calls that change the board go to the first, then to the second, and the second must answer as the
 // first (ids and times it makes differently masked). The first one's answers must be Bun's, recorded in
-// golden/mcp-parity.json (golden.ts) while both ran side by side before P4: `CKANBAN_GOLDEN_RECORD=1` with
-// CKANBAN_PARITY_MCP naming the port records them from Bun's server, on a commit that still has it.
+// golden/mcp-parity.json (golden.ts) while both ran side by side before P4.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { CLI_CMD, type Daemon, startDaemon } from "./daemon";
-import { Golden, RECORD, runMasker } from "./golden";
+import { type Daemon, startDaemon } from "./daemon";
+import { Golden, runMasker } from "./golden";
 import { MCP_CMD, type Mcp, startMcp } from "./mcp";
 
-const PORT_CMD: string[] | null = process.env.CKANBAN_PARITY_MCP ? JSON.parse(process.env.CKANBAN_PARITY_MCP) : RECORD ? null : MCP_CMD;
-/** Recording: Bun's own `ckanban mcp`. Checking: the server under test, twice. */
-const BUN_CMD = RECORD ? [...CLI_CMD, "mcp"] : MCP_CMD;
+/** The server under test, twice (the first stands where Bun's server stood). */
+const PORT_CMD = MCP_CMD;
+const BUN_CMD = MCP_CMD;
 const golden = new Golden("mcp-parity");
 /** Ticket rows sorted by what follows the id: ids made the same day are random, so "newest first" differs per run. */
 const rowsSorted = (text: string) => {
@@ -54,7 +53,7 @@ async function same(who: "user" | "run", name: string, args: Record<string, unkn
 
 const newTicket = async (title: string, extra: Record<string, unknown> = {}) => (await d.api("POST", `${P}/tickets`, { title, ...extra })).data.id as string;
 
-describe.skipIf(!PORT_CMD)("MCP answers as Bun's", () => {
+describe("MCP answers as Bun's", () => {
   beforeAll(async () => {
     d = await startDaemon();
     expect((await d.api("POST", "/api/profiles", { name: "Par", path: d.project })).status).toBe(201);

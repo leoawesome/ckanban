@@ -1,7 +1,5 @@
 import { expect, test } from "bun:test";
 import { isFinished, isOneDateCron, scheduleGroup } from "./scheduleGroups";
-import { lastPause } from "../../../../src/schedules/quiet";
-import type { ScheduleHistoryEntry } from "../../../../src/core/types";
 
 const NOW = new Date("2026-11-13T12:00:00Z").getTime();
 const days = (n: number) => new Date(NOW + n * 86_400_000).toISOString();
@@ -51,14 +49,4 @@ test("recurring schedules are never finished", () => {
 test("the 300-day line", () => {
   expect(isFinished({ ...base, nextRunAt: days(299) }, NOW)).toBe(false);
   expect(isFinished({ ...base, nextRunAt: days(301) }, NOW)).toBe(true);
-});
-
-test("lastPause: the last pause, unless resumed after it", () => {
-  const edit = (at: string, action: "paused" | "resumed" | "updated", by: "user" | { ticketId: string } = "user"): ScheduleHistoryEntry =>
-    ({ at, kind: "edited", action, fields: ["enabled"], by });
-  expect(lastPause([])).toBeNull();
-  expect(lastPause([edit("a", "paused", { ticketId: "t_1" }), { at: "b", kind: "fired", trigger: "schedule", ticketId: "t_2" }]))
-    .toEqual({ at: "a", by: { ticketId: "t_1" } });
-  expect(lastPause([edit("a", "paused"), edit("b", "resumed")])).toBeNull();
-  expect(lastPause([edit("a", "paused"), edit("b", "resumed"), edit("c", "paused"), edit("d", "updated")])).toEqual({ at: "c", by: "user" });
 });

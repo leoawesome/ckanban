@@ -1,6 +1,5 @@
 // Outside-in contract: reading quick chats saved before the start, and who may change them. Chats and a transcript are
-// written as files before the daemon starts (no runs, no phone access), so the same file passes with the board in Bun
-// and with the board in Rust (`bun run test:contract:rust-board`). Sending, stopping and the rest of a chat's life are
+// written as files before the daemon starts (no runs, no phone access). Sending, stopping and the rest of a chat's life are
 // in quickchat.test.ts. See contracts/api.md "Quick chats" and contracts/data-files.md.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";

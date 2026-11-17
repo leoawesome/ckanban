@@ -3,18 +3,30 @@
 import { expect, test } from "bun:test";
 import { featureRows, featureTasks, newestFirst, taskTally, tasksUnder } from "../family/family";
 import { planDone } from "../family/planText";
-import { familyCard } from "../../../../src/board/main-ticket";
 import { stepsText } from "../board/cardState";
 import { taskProgress } from "./tasksText";
-import { statusFacts } from "../../../../src/board/feature";
-import type { Ticket } from "../../../../src/core/types";
+
+// The server is the Rust binary now. These are the Bun server's answers for the families below, so the UI's counts
+// stay pinned to them: the status facts (src/board/feature.ts statusFacts) for M and S, and M's family card for Y
+// (src/board/main-ticket.ts familyCard).
+type Facts = { groups: { total: number; counts: Record<string, number> }[]; loose: { total: number; counts: Record<string, number> } };
+const M_FACTS: Facts = {
+  groups: [
+    { total: 4, counts: { done: 1, passed: 1, working: 1, in_review: 1 } },
+    { total: 1, counts: { waiting: 1 } },
+    { total: 0, counts: {} },
+  ],
+  loose: { total: 1, counts: { done: 1 } },
+};
+const S_FACTS: Facts = { groups: [], loose: { total: 1, counts: { done: 1 } } };
+const Y_CARD = { tools: 10, toolsDone: 9, tasks: 9, tasksDone: 9, running: [], working: [] };
 
 let n = 0;
-const tk = (id: string, x: Partial<Ticket> = {}) => ({
+const tk = (id: string, x: Record<string, unknown> = {}) => ({
   id, title: id, status: "backlog", outcome: null, body: "", order: 0, sessionId: null, worktree: null, branch: null, prUrl: null,
   lastActivity: null, lastRunAt: null, runCount: 0, error: null, createdAt: new Date(Date.UTC(2026, 10, 15, 10, n++)).toISOString(),
   updatedAt: "2026-11-15T10:00:00.000Z", mode: "auto", ...x,
-}) as Ticket;
+}) as any;
 
 /**
  * M with: a loose done task; group G holding a done task, a waiting task and nested group G2 (two tasks, one passed
@@ -41,7 +53,7 @@ function family() {
 
 test("the status, the Tasks tab badge and the list head count the same tasks", () => {
   const ts = family();
-  const status = taskProgress(statusFacts(ts, "M", () => false));
+  const status = taskProgress(M_FACTS);
   const badge = taskTally(featureRows(ts, "M"));
   const head = featureTasks(newestFirst(featureRows(ts, "M"))).length;
   // Tasks: T1, G1, G21, G22, G3, P1. Done: T1, G1, G21 (a passed test is finished).
@@ -51,7 +63,7 @@ test("the status, the Tasks tab badge and the list head count the same tasks", (
   expect(featureTasks(featureRows(ts, "M")).map((t) => t.id).sort()).toEqual(["G1", "G21", "G22", "G3", "P1", "T1"]);
   // A task's badge counts its whole feature too; a sub-feature counts only its own tasks.
   expect(taskTally(featureRows(ts, "G22"))).toEqual(status);
-  expect(taskTally(featureRows(ts, "S"))).toEqual(taskProgress(statusFacts(ts, "S", () => false)));
+  expect(taskTally(featureRows(ts, "S"))).toEqual(taskProgress(S_FACTS));
   expect(taskTally(featureRows(ts, "S"))).toEqual({ done: 1, total: 1 });
 });
 
@@ -82,8 +94,7 @@ test("nested groups: the badge, the list head, the plan, Plan finished and the c
   expect(taskTally(rows)).toEqual(want);
   expect(featureTasks(newestFirst(rows)).length).toBe(9);
   expect(planDone(tasksUnder(rows, "Y"))).toEqual({ finished: true, ...want });
-  const fc = familyCard(ts[0], rows.slice(1).map((r) => r.ticket), ts, () => false, 0);
-  expect({ done: fc.tasksDone, total: fc.tasks }).toEqual(want);
+  const fc = Y_CARD;
   expect(stepsText(fc)).toBe("9 of 9 tasks");
   // A group's own plan counts only the tasks inside it.
   expect(planDone(tasksUnder(rows, "K"))).toEqual({ finished: true, done: 4, total: 4 });

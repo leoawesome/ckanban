@@ -343,7 +343,10 @@ wave 1 landed, shadow mode running on the real board. The flip itself is likely 
 - **P3 the last Bun commands:** `browser-mcp`, `artifact`, `remote`, `update`; the last 13 MCP tools in `ON_BUN`. Done
   17 Nov: the CLI and `ckanban-rs mcp` never start Bun; `update` answers as from source until P4 ports the release download.
 - **P4 Bun gone:** the release binary built from Rust (with the web UI embedded), the installer and `ckanban update`
-  on it, Bun's server code deleted, the contract tests kept as the only tests of the outside behaviour.
+  on it, Bun's server code deleted, the contract tests kept as the only tests of the outside behaviour. Done 18 Nov
+  for Leo's Mac only (no release): `src/` deleted but for a hand-off in `src/cli.ts`, the server serves `web/dist`,
+  the contract tests run against the binary, the side-by-side tests check Bun's recorded answers
+  (`test/contract/golden/`). The release binary, installer and `ckanban update` stay to do (`docs/rust-port.md`, P4).
 
 ## 8. Rules every Rust task follows
 

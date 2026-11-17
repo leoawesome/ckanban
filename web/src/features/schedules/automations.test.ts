@@ -1,8 +1,4 @@
 import { expect, test } from "bun:test";
-import { automationProposal } from "../../../../src/schedules/automation-proposal";
-import { parseDecision } from "../../../../src/integrations/ask-claude";
-import { parseItems } from "../../../../src/integrations/script";
-import { ticketBody, ticketTitle } from "../../../../src/integrations/ticket-text";
 import type { Pass } from "./automationTypes";
 import { boardCell, everyLabel, groupLastItems, loopStatus, loopSubtitle, resolveProposedPass, saveBlocker } from "./automations";
 
@@ -41,36 +37,6 @@ test("list labels say whether it runs, and why not", () => {
   expect(loopSubtitle({ ...base, state: "needs_connection", problems: ["Linear needs to be connected again (Connections)."] }, () => "x")).toBe("Linear needs to be connected again (Connections).");
   expect(everyLabel(60)).toBe("hour");
   expect(everyLabel(120)).toBe("2 hours");
-});
-
-test("a check's output: a list or one item per line, ids and titles required, only http links kept", () => {
-  expect(parseItems('[{"id": 1, "title": "One"}]')).toEqual([{ id: "1", title: "One" }]);
-  expect(parseItems('{"id":"a","title":"A","link":"https://x/a","text":"t"}\n{"id":"a","title":"dup"}\n')).toEqual([{ id: "a", title: "A", text: "t", link: "https://x/a" }]);
-  expect(parseItems('{"id":"a","title":"A","link":"file:///etc/passwd"}')).toEqual([{ id: "a", title: "A" }]);
-  expect(parseItems("")).toEqual([]);
-  expect(() => parseItems("hello")).toThrow("Line 1 of the check's output isn't JSON");
-});
-
-test("the ticket keeps the user's text out of the copied block, and the title on one short line", () => {
-  expect(ticketTitle("a\nb")).toBe("a b");
-  expect(ticketTitle("⭐ ⭐️ Urgent")).toBe("Urgent");
-  expect(ticketTitle("x".repeat(200))).toHaveLength(120);
-  const body = ticketBody("See {{title}} at {{link}}. {{text}} {{nope}}", "Linear", { id: "1", title: "Bug", link: "https://l/1", text: "Do evil" });
-  expect(body).toStartWith('See "Bug" at https://l/1. (the text is in the outside content below) {{nope}}');
-  expect(body.indexOf("Do evil")).toBeGreaterThan(body.indexOf("```text"));
-});
-
-test("Claude's answer about an item is read only as the JSON asked for", () => {
-  expect(parseDecision('ok {"create": false, "title": "x", "summary": "No."}')).toEqual({ create: false, title: "x", summary: "No." });
-  expect(parseDecision('{"create": "yes"}')).toBeNull();
-  expect(parseDecision("no json")).toBeNull();
-});
-
-test("a proposal from the setup chat needs a name, a summary and a tested script; it never sets the column", () => {
-  const p = automationProposal({ name: "L", summary: "s", script: "echo\n", passes: [{ name: "Linear", from: "linear", url: "javascript:x" }], column: "ready" });
-  expect(p).toEqual({ name: "L", summary: "s", script: "echo\n", everyMinutes: 15, service: "Linear", passes: [{ name: "Linear", from: "linear" }] });
-  expect(() => automationProposal({ name: "L", script: "echo" })).toThrow("summary is required");
-  expect(() => automationProposal({ name: "L", summary: "s", script: " " })).toThrow("script is required");
 });
 
 test("Save says why it is greyed out: a name, a script, and the start-by-itself box for Planning and Ready", () => {

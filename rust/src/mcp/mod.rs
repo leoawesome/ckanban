@@ -1,6 +1,6 @@
 //! `ckanban-rs mcp`: the stdio MCP server (newline-delimited JSON-RPC 2.0), the port of `ckanban mcp`
 //! (src/mcp/server.ts). Same protocol answers, the same 69 tools with the same names, descriptions and input schemas
-//! (tools.json, generated from Bun's TOOLS by scripts/mcp-tools-json.ts), and the same answers and refusals: the tools
+//! (tools.json, generated from Bun's TOOLS before P4, edited by hand since), and the same answers and refusals: the tools
 //! call the daemon over HTTP (client.rs) and build the same texts.
 //!
 //! Every tool runs here (one file per group, as in src/mcp/); none starts Bun.
@@ -28,7 +28,7 @@ use tokio::sync::Mutex;
 
 use client::{Client, Fail, R, RUN_ENV, err};
 
-/// What tools/list answers: Bun's TOOLS, generated (scripts/mcp-tools-json.ts).
+/// What tools/list answers: Bun's TOOLS as generated before P4 (the source since).
 const TOOLS_JSON: &str = include_str!("tools.json");
 
 pub mod sha256;

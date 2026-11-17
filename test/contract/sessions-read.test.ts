@@ -1,6 +1,5 @@
 // Outside-in contract: reading a ticket's Claude session from transcripts already on disk. Tickets and transcripts are
-// written as files before the daemon starts (no runs), so the same file passes with the board in Bun and with the
-// board in Rust (`bun run test:contract:rust-board`). Covers the conversation (with an earlier chat left behind by
+// written as files before the daemon starts (no runs). Covers the conversation (with an earlier chat left behind by
 // "Send in a fresh chat"), tool, agent and workflow details, search_chat and read_chat with their reach rules, the
 // board folder's Claude sessions, `session.updated` when a transcript grows, and the summaries file. See
 // contracts/api.md "Ticket chat, runs and conversation" and contracts/data-files.md.
@@ -183,6 +182,6 @@ test("a transcript that grows is announced as session.updated, and summaries are
   const saved = JSON.parse(readFileSync(file, "utf8"));
   expect(saved.tag).toMatch(/^2:/);
   // With the board in Rust, the Rust watcher made them (Bun as its satellite neither watches nor writes this file).
-  if (process.env.CKANBAN_RUST_BOARD === "1") expect(saved.tag).toMatch(/^2:rust:/);
+  expect(saved.tag).toMatch(/^2:rust:/);
   expect(saved.items[NOW].s).toMatchObject({ title: "Reading session", lastMessage: { role: "assistant", text: "Fixed it, really." } });
 }, 60_000);

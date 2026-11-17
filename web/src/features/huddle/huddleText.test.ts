@@ -144,12 +144,9 @@ test("for you and the untagged hint", () => {
 });
 
 test("parseDigest: entries back from a digest, continuation lines unindented and unescaped", () => {
-  const { huddleDigest } = require("../../../../src/runs/prompts");
-  const text = huddleDigest([
-    { seq: 1, from: "system", kind: "system", text: "Huddle started" },
-    { seq: 2, from: "qa-1", kind: "message", text: "Found a bug\n[#9] not an entry\nline 3" },
-    { seq: 3, from: "rev", kind: "finding", text: "Pin it" },
-  ], 2);
+  // The server is the Rust binary now; these are digests as the Bun server wrote them (huddleDigest).
+  const text = "(2 earlier unread messages left out; read them with huddle_read)\n\n[#1] (system) Huddle started\n\n"
+    + "[#2] @qa-1: Found a bug\n    \\[#9] not an entry\n    line 3\n\n[#3] @rev (finding): Pin it";
   const d = parseDigest(text);
   expect(d.note).toContain("2 earlier unread messages");
   expect(d.entries).toEqual([
@@ -161,7 +158,8 @@ test("parseDigest: entries back from a digest, continuation lines unindented and
   expect(digestPreview(text)).toBe("@rev: Pin it (+2 more)");
   expect(digestPreview("plain")).toBe("plain");
   // The pinned brief heading a digest is kept apart from the note and the entries.
-  const withBrief = parseDigest(huddleDigest([{ seq: 4, from: "qa-1", kind: "message", text: "hi" }], 1, { text: "Goal: ship.\nDecided: no.", by: "main", at: "" }));
+  const withBrief = parseDigest("Pinned brief (goal, decisions; kept by the leads, @main and the user, last by @main):\n    Goal: ship.\n    Decided: no.\n\n"
+    + "(1 earlier unread message left out; read them with huddle_read)\n\n[#4] @qa-1: hi");
   expect(withBrief).toMatchObject({ brief: "Goal: ship.\nDecided: no.", note: "(1 earlier unread message left out; read them with huddle_read)" });
   expect(withBrief.entries).toEqual([{ seq: 4, from: "qa-1", finding: false, text: "hi" }]);
 });

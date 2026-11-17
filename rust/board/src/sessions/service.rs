@@ -28,6 +28,8 @@ pub struct Sessions {
     /// Who runs what (R7a); "nothing running" until the run loop lands.
     pub runs: Mutex<Arc<dyn RunControl>>,
     watcher: Mutex<Option<Arc<Watcher>>>,
+    /// The board's tickets and run state, for `chatReach`'s family and user-request rules (set at start).
+    pub board: std::sync::OnceLock<Arc<crate::tickets::writer::Tickets>>,
 }
 
 impl Sessions {
@@ -45,6 +47,7 @@ impl Sessions {
             tickets: FileTickets::new(ckanban_core::DataDir::new(root)),
             feed,
             runs: Mutex::new(Arc::new(StandIn)),
+            board: std::sync::OnceLock::new(),
             watcher: Mutex::new(None),
         })
     }

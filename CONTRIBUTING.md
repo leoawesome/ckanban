@@ -24,9 +24,9 @@ bun install && (cd web && bun install)
 
 Layout:
 
-- `src/` is the Bun + TypeScript server and CLI, one folder per feature (`board/`, `runs/`, `huddle/`...), each with a short `README.md`.
+- `rust/` is the server, CLI and MCP server in Rust (`ckanban-rs`), see `rust/README.md`; `src/cli.ts` only hands commands to it.
 - `web/` is the React + Vite board UI; `web/src/features/` has one folder per feature, next to the shared `app/`, `components/`, `hooks/` and `lib/`.
-- Unit tests sit next to the file they test (`*.test.ts`). `test/` holds the tests that cross areas (`integration/`, `big-board.test.ts`), the outside-in contract tests (`contract/`), fixtures and shared helpers. They use a fake `claude` binary, so no real sessions run.
+- UI unit tests sit next to the file they test (`*.test.ts`); the Rust code has its own (`cargo test`). `test/contract/` holds the outside-in contract tests of the server, `test/fixtures/` their fakes. They use a fake `claude` binary, so no real sessions run.
 - `contracts/` describes the web API, data files and CLI so another implementation can match them.
 - `docs/` holds user docs and design notes.
 

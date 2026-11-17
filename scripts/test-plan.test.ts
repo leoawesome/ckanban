@@ -1,9 +1,26 @@
 import { expect, test } from "bun:test";
 import { mkdirSync, utimesSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import { run } from "../src/runs/git";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { changedFiles, codeKey, fixtureUsers, passedAt, recordPass, relatedBase, relatedPlan } from "./test-plan";
-import { makeRepo, tempDir } from "../test/support/helpers";
+
+const tempDir = (prefix: string) => mkdtempSync(join(tmpdir(), prefix));
+async function run(cmd: string[], cwd: string): Promise<{ stdout: string }> {
+  const r = Bun.spawnSync(cmd, { cwd, stdout: "pipe", stderr: "pipe" });
+  if (r.exitCode !== 0) throw new Error(`${cmd.join(" ")}: ${r.stderr.toString()}`);
+  return { stdout: r.stdout.toString() };
+}
+/** A git repo on main with one commit. */
+async function makeRepo(): Promise<string> {
+  const dir = tempDir("ck-plan-repo-");
+  await run(["git", "init", "-q", "-b", "main"], dir);
+  for (const [k, v] of [["user.email", "t@example.com"], ["user.name", "T"], ["commit.gpgsign", "false"]]) await run(["git", "config", k!, v!], dir);
+  writeFileSync(join(dir, "README.md"), "x\n");
+  await run(["git", "add", "."], dir);
+  await run(["git", "commit", "-qm", "init"], dir);
+  return dir;
+}
 
 test("the code fingerprint follows code changes, new files included, and ignores docs and timings", async () => {
   const dir = await makeRepo();
@@ -69,12 +86,18 @@ test("changed files count the branch's commits since main plus uncommitted and n
   expect(changedFiles(dir, base)).toEqual(["README.md", "committed.ts", "new.ts"]);
 });
 
-test("--related runs everything when shared setup changes, and adds tests that start a changed file by path", () => {
-  expect(relatedPlan(["src/board/board.ts"])).toEqual({ full: false, extra: [] });
-  expect(relatedPlan(["src/board/board.ts", "package.json"])).toEqual({ full: true, reason: "package.json" });
+test("--related runs everything when shared setup changes, and every contract test when the Rust server changes", () => {
+  expect(relatedPlan(["web/src/app/App.tsx"])).toEqual({ full: false, extra: [] });
+  expect(relatedPlan(["web/src/app/App.tsx", "package.json"])).toEqual({ full: true, reason: "package.json" });
   expect(relatedPlan(["test/preload.ts"]).full).toBe(true);
-  expect(relatedPlan(["src/cli/cli.ts"])).toEqual({ full: false, extra: ["test/integration/agent-access.test.ts"] });
-  expect(relatedPlan(["src/cli/cli.ts", "test/integration/agent-access.test.ts"])).toEqual({ full: false, extra: [] });
+  expect(relatedPlan(["scripts/build-rust.sh"]).full).toBe(true);
+  const rust = relatedPlan(["rust/board/src/lib.rs"]);
+  expect(rust.full).toBe(false);
+  if (!rust.full) {
+    expect(rust.extra).toContain("test/contract/tickets.test.ts");
+    expect(rust.extra.every((f) => f.startsWith("test/contract/"))).toBe(true);
+  }
+  expect(relatedPlan(["rust/README.md"])).toEqual({ full: false, extra: [] });
 });
 
 test("--related runs the tests that use a changed fixture, directly or through a helper in test/", () => {
@@ -97,5 +120,5 @@ test("--related runs the tests that use a changed fixture, directly or through a
   // In this repo: a change to the fake claude runs its users, not the whole suite.
   const plan = relatedPlan(["test/fixtures/fake-claude.ts"]);
   expect(plan.full).toBe(false);
-  if (!plan.full) expect(plan.extra).toContain("src/board/watchdog.test.ts");
+  if (!plan.full) expect(plan.extra).toContain("test/contract/runs-life.test.ts");
 });
