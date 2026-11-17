@@ -127,6 +127,8 @@ function masker(): (text: string) => string {
     .replace(/^id: [0-9a-z]{8}$/gm, name("id"))
     .replace(/(?<=^|[{,\s])"id": ?\d{10,}/g, '"id":<n>')
     .replace(/"(durationMs|duration_ms|elapsedMs|pid)": ?\d+/g, '"$1":0')
+    // "in 26344 days" until a far-off job: one less every day.
+    .replace(/\bin \d+ days\b/g, "in <n> days")
     .replace(/\/tmp\/[^"\n\\]*|\/private\/var\/[^"\n\\]*|\/var\/folders\/[^"\n\\]*/g, "<path>")
     // Bun's linker settles each new ticket in the background; when it does is a race.
     .replace(/^parentChecked: true\n/gm, "")

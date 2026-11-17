@@ -45,12 +45,15 @@ export function runMasker(): (text: string) => string {
     .replace(/(?:(?<=\\n)|(?<![a-z0-9]))[hsjc]_[0-9a-z]{6,}(?![a-z0-9])/g, name("id"))
     .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g, name("uuid"))
     .replace(/(schedule|job) [a-z0-9]{8}\b/g, (_, k) => `${k} <id>`)
-    // Schedule and job ids: 8 lowercase letters and digits; at the start of a list row, any 8.
-    .replace(/(?:(?<=\\n)|^)[0-9a-z]{8}(?=  \[)/g, name("id"))
+    // Schedule and job ids: 8 lowercase letters and digits; before "  [" (a list row, "Updated: <id>  [active]"), any 8,
+    // even all letters (about 7% of random ids have no digit).
+    .replace(/(?:(?<=\\n)|(?<![0-9a-zA-Z_-]))[0-9a-z]{8}(?=  \[)/g, name("id"))
     .replace(/(?:(?<=\\n)|(?<![0-9a-zA-Z_-]))(?=[0-9a-z]{0,7}\d)(?=[0-9a-z]{0,7}[a-z])[0-9a-z]{8}(?![0-9a-zA-Z_-])/g, name("id"))
     .replace(/\d{4}-\d\d-\d\d[ T]\d\d:\d\d(:\d\d(\.\d+)?Z?)?/g, (m) => (m.startsWith("2099") ? m : "<time>"))
     .replace(/\d{8}T\d{9}Z(-\d+)?/g, "<stamp>")
     .replace(/\(\d+\.\d s\)|in \d+\.\d s/g, "<secs>")
+    // "in 26343 days" until a far-off job: one less every day.
+    .replace(/\bin \d+ days\b/g, "in <n> days")
     .replace(/(localhost|127\.0\.0\.1):\d+/g, "$1:<port>")
     // The Mac's system version in a bug report (changes with every macOS update).
     .replace(/OS%3A\+[^%]+(%28[^%]*%29)?/g, "OS%3A+<os>")

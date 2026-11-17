@@ -401,7 +401,7 @@
  },
  {
   "label": "user list_jobs",
-  "value": "{\"name\":\"list_jobs\",\"isError\":false,\"text\":\"Jobs on board par:\\n<id0>  [scheduled]  Later: Thu 1 Jan 09:00 (in 26343 days), command `echo hi`\"}"
+  "value": "{\"name\":\"list_jobs\",\"isError\":false,\"text\":\"Jobs on board par:\\n<id0>  [scheduled]  Later: Thu 1 Jan 09:00 (in <n> days), command `echo hi`\"}"
  },
  {
   "label": "user list_jobs",
@@ -417,7 +417,7 @@
  },
  {
   "label": "user schedule_job",
-  "value": "{\"name\":\"schedule_job\",\"isError\":false,\"text\":\"Scheduled job <id> on board par: J runs Thu 1 Jan 10:00 (in 26343 days).\"}"
+  "value": "{\"name\":\"schedule_job\",\"isError\":false,\"text\":\"Scheduled job <id> on board par: J runs Thu 1 Jan 10:00 (in <n> days).\"}"
  },
  {
   "label": "user schedule_job",

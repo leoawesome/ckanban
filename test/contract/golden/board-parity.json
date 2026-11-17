@@ -213,7 +213,7 @@
   "value": {
    "what": "job",
    "status": 201,
-   "data": "{\n \"action\": {\n  \"command\": \"echo hi\",\n  \"kind\": \"command\"\n },\n \"at\": \"2099-01-02T09:30:00.000Z\",\n \"createdAt\": \"<time>\",\n \"firedAt\": null,\n \"id\": \"<id12>\",\n \"name\": \"Echo\",\n \"result\": null,\n \"sourceTicketId\": null,\n \"state\": \"scheduled\",\n \"updatedAt\": \"<time>\",\n \"when\": \"Fri 2 Jan 09:30 (in 26344 days)\"\n}"
+   "data": "{\n \"action\": {\n  \"command\": \"echo hi\",\n  \"kind\": \"command\"\n },\n \"at\": \"2099-01-02T09:30:00.000Z\",\n \"createdAt\": \"<time>\",\n \"firedAt\": null,\n \"id\": \"<id12>\",\n \"name\": \"Echo\",\n \"result\": null,\n \"sourceTicketId\": null,\n \"state\": \"scheduled\",\n \"updatedAt\": \"<time>\",\n \"when\": \"Fri 2 Jan 09:30 (in <n> days)\"\n}"
   }
  },
  {
@@ -221,7 +221,7 @@
   "value": {
    "what": "job run",
    "status": 200,
-   "data": "{\n \"action\": {\n  \"command\": \"echo hi\",\n  \"kind\": \"command\"\n },\n \"at\": \"2099-01-02T09:30:00.000Z\",\n \"createdAt\": \"<time>\",\n \"firedAt\": \"<time>\",\n \"id\": \"<id12>\",\n \"name\": \"Echo\",\n \"result\": null,\n \"sourceTicketId\": null,\n \"state\": \"running\",\n \"updatedAt\": \"<time>\",\n \"when\": \"Fri 2 Jan 09:30 (in 26344 days)\"\n}"
+   "data": "{\n \"action\": {\n  \"command\": \"echo hi\",\n  \"kind\": \"command\"\n },\n \"at\": \"2099-01-02T09:30:00.000Z\",\n \"createdAt\": \"<time>\",\n \"firedAt\": \"<time>\",\n \"id\": \"<id12>\",\n \"name\": \"Echo\",\n \"result\": null,\n \"sourceTicketId\": null,\n \"state\": \"running\",\n \"updatedAt\": \"<time>\",\n \"when\": \"Fri 2 Jan 09:30 (in <n> days)\"\n}"
   }
  },
  {
@@ -229,7 +229,7 @@
   "value": {
    "what": "jobs",
    "status": 200,
-   "data": "[\n {\n  \"action\": {\n   \"command\": \"echo hi\",\n   \"kind\": \"command\"\n  },\n  \"at\": \"2099-01-02T09:30:00.000Z\",\n  \"createdAt\": \"<time>\",\n  \"firedAt\": \"<time>\",\n  \"id\": \"<id12>\",\n  \"name\": \"Echo\",\n  \"result\": {\n   \"durationMs\":0,\n   \"exitCode\": 0,\n   \"output\": \"hi\\n\",\n   \"timedOut\": false\n  },\n  \"sourceTicketId\": null,\n  \"state\": \"done\",\n  \"updatedAt\": \"<time>\",\n  \"when\": \"Fri 2 Jan 09:30 (in 26344 days)\"\n }\n]"
+   "data": "[\n {\n  \"action\": {\n   \"command\": \"echo hi\",\n   \"kind\": \"command\"\n  },\n  \"at\": \"2099-01-02T09:30:00.000Z\",\n  \"createdAt\": \"<time>\",\n  \"firedAt\": \"<time>\",\n  \"id\": \"<id12>\",\n  \"name\": \"Echo\",\n  \"result\": {\n   \"durationMs\":0,\n   \"exitCode\": 0,\n   \"output\": \"hi\\n\",\n   \"timedOut\": false\n  },\n  \"sourceTicketId\": null,\n  \"state\": \"done\",\n  \"updatedAt\": \"<time>\",\n  \"when\": \"Fri 2 Jan 09:30 (in <n> days)\"\n }\n]"
   }
  },
  {
