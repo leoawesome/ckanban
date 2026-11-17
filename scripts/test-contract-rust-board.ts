@@ -42,6 +42,8 @@ if (import.meta.main) {
   const env = {
     ...process.env, CKANBAN_RUST_BOARD: "1", CKANBAN_CONTRACT_DAEMON: JSON.stringify([bin, "dev"]), CKANBAN_CONTRACT_CLI: JSON.stringify([bin]),
     CKANBAN_CONTRACT_MCP: JSON.stringify([bin, "mcp"]), CKANBAN_BUN: process.execPath,
+    // The parity tests (rust-parity, mcp-parity, board-parity) compare ckanban-rs with Bun; without these they skip.
+    CKANBAN_PARITY_RS: JSON.stringify([bin, "dev"]), CKANBAN_PARITY_MCP: JSON.stringify([bin, "mcp"]),
   };
   const failed: string[] = [];
   for (const e of entries) {

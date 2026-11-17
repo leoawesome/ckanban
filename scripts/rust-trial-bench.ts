@@ -6,6 +6,8 @@
  *   bun scripts/rust-trial-bench.ts --server '["/path/ckanban-rs","dev"]' --name rust
  *   bun scripts/rust-trial-bench.ts --out docs/rust-trial-baseline.json  also write the JSON there (always printed as a table)
  *   bun scripts/rust-trial-bench.ts --runs 5 --tickets 10000 --fresh-board
+ *   CKANBAN_RUST_BOARD=1 bun scripts/rust-trial-bench.ts --server '["/path/ckanban-rs","dev"]' --name rust-board
+ *                                                                      the Rust board (board mode, F1), Bun as its satellite
  *
  * `--server` is a JSON array; `{code}` in it is replaced by the /tmp copy of this checkout (with its dependencies
  * installed), e.g. '["/path/ckanban-rs","dev"]' or '["bun","{code}/src/cli.ts","dev"]' (the default).
@@ -221,6 +223,9 @@ async function startServer(d: ReturnType<typeof dirs>, bin: string): Promise<Ser
     TMPDIR: process.env.TMPDIR ?? "/tmp",
     LANG: "en_US.UTF-8",
     TZ: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    // Board mode (`CKANBAN_RUST_BOARD=1 bun scripts/rust-trial-bench.ts --server ...`): passed on, and the Bun satellite
+    // runs from the /tmp copy of the code, never from this checkout.
+    ...(process.env.CKANBAN_RUST_BOARD ? { CKANBAN_RUST_BOARD: process.env.CKANBAN_RUST_BOARD, CKANBAN_REPO: CODE, CKANBAN_BUN: BUN } : {}),
   };
   const proc = Bun.spawn(cmdFor(), { cwd: d.project, env, stdout: fd, stderr: fd, stdin: "ignore" });
   const url = `http://127.0.0.1:${port}`;

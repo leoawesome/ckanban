@@ -29,16 +29,11 @@ browsers.test.ts
 # routes) need ticket writes and runs: they come with R2a and R7a, which call rust/board/src/git (landing, pr).
 board-files.test.ts
 
-# R11b: teammates and role notes; squads (their card on a ticket goes through R2a's ticket writes).
-huddle.test.ts | built-ins, a board teammate|save, change and delete a squad
-huddle-team.test.ts | role notes|learned: the view
-
-# R11a: huddle rooms (start, posts from the user, a helper and the host's run, findings, the brief, close and the
-# board's own summary, events; a helper's proposed teammate saved or discarded). Left for later: the tests where a
-# helper runs (its copy and hand-ins, the budget stop: R11c), the room test's lesson pile (R12's learner), the auto
-# huddle (R7a, R11c), team-usage and learned (R12).
-huddle.test.ts | start from a roster
-huddle-team.test.ts | learnings: a helper's proposed teammate
+# R11b: teammates, role notes and squads. R11a: huddle rooms (start, posts from the user, a helper and the host's run,
+# findings, the brief, close and the board's own summary, events; a helper's proposed teammate saved or discarded).
+# With R11c (helpers' runs, hand-ins, the budget stop, auto huddles) and R12 (lessons, team usage) both files are whole.
+huddle.test.ts
+huddle-team.test.ts
 
 # R8: quick chats saved before the start (list, pages, one chat, conversation, tool details) and who may change them.
 # quickchat.test.ts needs the phone access port in Rust (R13: its user actions come that way), ticket writes (R2a),
@@ -118,3 +113,15 @@ jobs.test.ts
 automations.test.ts
 schedule-firing.test.ts
 mcp.test.ts
+
+# F1: the rest, so every file in test/contract is listed whole (the flip's rule). cli-daemon (the daemon commands with
+# ckanban-rs as the CLI), data-files (every file a board-mode daemon writes is one contracts/data-files.md lists),
+# the two static checks, and the parity tests: rust-parity (Rust's own routes against Bun alone) and mcp-parity
+# (`ckanban-rs mcp` against Bun's, over a board-mode daemon); the runner sets their CKANBAN_PARITY_* variables.
+# board-parity: one script on Bun in full mode and on the Rust board, files and answers compared.
+cli-daemon.test.ts
+data-files.test.ts
+no-src-imports.test.ts
+schema.test.ts
+rust-parity.test.ts
+mcp-parity.test.ts
