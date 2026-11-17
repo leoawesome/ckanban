@@ -241,6 +241,30 @@ static RESERVED_PREFIX: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^(CKANBAN_|CLAUDE|ANTHROPIC_|AWS_BEARER_TOKEN_BEDROCK|VERTEX_|GH_|DYLD_|LD_|NODE_|BUN_|npm_|GIT_|LC_|XDG_|SSL_|HTTPS?_PROXY|ALL_PROXY|NO_PROXY|MCP_|OTEL_|DISABLE_|PYTHON)").unwrap()
 });
 
+/// `boardKeyEnv`: the environment variables a run on this board gets, each saved key under its name (never another
+/// board's).
+pub fn board_key_env(root: &Path, slug: &str) -> std::collections::BTreeMap<String, String> {
+    let passes = fs::read(root.join(PASSES_FILE))
+        .ok()
+        .and_then(|t| serde_json::from_slice::<Value>(&t).ok())
+        .and_then(|v| v.get("passes").and_then(Value::as_array).cloned())
+        .unwrap_or_default();
+    let mut out = std::collections::BTreeMap::new();
+    for p in passes {
+        let s = |k: &str| p.get(k).and_then(Value::as_str);
+        let url = p.get("url").is_some_and(|u| !u.is_null() && u != "" && u != &Value::Bool(false));
+        if s("kind") != Some("key") || s("board") != Some(slug) || url {
+            continue;
+        }
+        let (Some(name), Some(secret)) = (s("envName"), s("secret")) else { continue };
+        if secret.is_empty() || key_name_error(name).is_some() {
+            continue;
+        }
+        out.insert(name.to_string(), secret.to_string());
+    }
+    out
+}
+
 /// `keyNameError`.
 pub fn key_name_error(name: &str) -> Option<String> {
     if !ENV_NAME.is_match(name) {

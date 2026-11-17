@@ -205,13 +205,20 @@ async fn dev() -> u8 {
     };
     let shadow = shadow::prepare(&root, board.is_some());
     let accept = tokio::spawn(serve(listener, proxy, native, board.clone(), shadow));
+    // Board mode: a restart the board asked for (`POST /api/restart`, once its work is done) ends this process like a
+    // SIGTERM; launchd starts it again.
+    let exit = board.as_ref().map(|b| b.exit.clone()).unwrap_or_else(|| Arc::new(tokio::sync::Notify::new()));
     let code = tokio::select! {
         status = child.wait() => match status {
             Ok(s) => exit_code(s),
             Err(e) => fail(format!("lost the daemon: {e}")),
         },
-        _ = sigterm.recv() => stop_child(&mut child).await,
-        _ = sigint.recv() => stop_child(&mut child).await,
+        _ = sigterm.recv() => stop_all(&board, &mut child).await,
+        _ = sigint.recv() => stop_all(&board, &mut child).await,
+        _ = exit.notified() => {
+            eprintln!("ckanban-rs: restarting");
+            stop_all(&board, &mut child).await
+        }
     };
     accept.abort();
     if let Some(p) = phone_accept {
@@ -222,6 +229,14 @@ async fn dev() -> u8 {
 }
 
 /// Board mode ended with `code` (board_mode.rs): the core stops; 0 is a clean stop, anything else counts as a crash.
+/// Board mode's runs stop first (marked so the next start resumes them), then the satellite.
+async fn stop_all(board: &Option<Arc<board_mode::BoardMode>>, child: &mut Child) -> u8 {
+    if let Some(b) = board {
+        b.shutdown().await;
+    }
+    stop_child(child).await
+}
+
 fn stop_board(board: &Option<Arc<board_mode::BoardMode>>, code: u8) -> u8 {
     if let Some(b) = board {
         b.stop(code);

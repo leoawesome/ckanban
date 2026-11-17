@@ -93,6 +93,7 @@ pub fn wanted(method: &str, path: &str) -> bool {
         ("POST" | "DELETE", ["profiles", _, "tickets", _, "snooze"]) => true,
         ("POST", ["profiles", _, "tickets", _, "key-cards", _]) => true,
         (m, ["profiles", _, "tickets", _, rest @ ..]) if crate::families::routes::wanted(m, rest) => true,
+        (m, ["profiles", _, "tickets", _, rest @ ..]) if crate::runloop::routes::wanted(m, rest) => true,
         ("PUT", ["profiles", _, "tickets", _, "automation-cards" | "squad-cards" | "teammate-cards" | "closed-forms" | "schedule-delete-cards" | "helper-rule-cards", _]) => {
             true
         }
@@ -109,6 +110,8 @@ pub struct Writes {
     in_flight: parking_lot::Mutex<std::collections::HashSet<String>>,
     /// Families, plans and the feature status (R2b), once board mode has made them.
     families: std::sync::OnceLock<Arc<crate::families::Families>>,
+    /// The run loop (R7a): chat, queue, stop, limits, follow-ups.
+    runs: std::sync::OnceLock<Arc<crate::runloop::RunLoop>>,
 }
 
 /// `body(req)`: the JSON body; 400 when it isn't JSON.
@@ -126,12 +129,26 @@ pub(crate) fn body_obj(req: &Req) -> Result<Map<String, Value>, Refusal> {
 
 impl Writes {
     pub fn new(tickets: Arc<Tickets>, reads: Arc<Reads>, sessions: Arc<dyn SessionInfo>, save_keys: SaveKeys) -> Writes {
-        Writes { tickets, reads, sessions, save_keys, in_flight: Default::default(), families: Default::default() }
+        Writes { tickets, reads, sessions, save_keys, in_flight: Default::default(), families: Default::default(), runs: Default::default() }
     }
 
     /// R2b's families: the family routes answer from them, and a run's ticket is placed in its feature.
     pub fn set_families(&self, f: Arc<crate::families::Families>) {
         let _ = self.families.set(f);
+    }
+
+    /// The run loop (R7a): its routes answer from it.
+    pub fn set_runs(&self, r: Arc<crate::runloop::RunLoop>) {
+        let _ = self.runs.set(r);
+    }
+
+    /// `view(profile, t)` for the run loop's routes.
+    pub fn view_pub(&self, slug: &str, t: &Tk) -> Value {
+        self.view(slug, t)
+    }
+    /// The ticket's view now (null when it is gone).
+    pub fn view_now_pub(&self, slug: &str, id: &str) -> Value {
+        self.view_now(slug, id)
     }
 
     fn hooks(&self) -> Arc<dyn BoardHooks> {
@@ -198,6 +215,12 @@ impl Writes {
                 let id = p[3];
                 if self.tickets.get(slug, id).is_none() {
                     return Some(err((404, format!("ticket {id} not found"))));
+                }
+                if crate::runloop::routes::wanted(m, &p[4..]) {
+                    return Some(match self.runs.get() {
+                        Some(r) => crate::runloop::routes::answer(r, self, req, slug, id, &p[4..]).unwrap_or_else(err),
+                        None => err((503, "the board is still starting; try again in a moment".into())),
+                    });
                 }
                 if crate::families::routes::wanted(m, &p[4..]) {
                     return Some(match self.families.get() {

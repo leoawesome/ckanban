@@ -25,9 +25,41 @@ pub struct Wired {
     pub families: Option<Arc<crate::families::Families>>,
     pub browsers: Option<Arc<Browsers>>,
     pub root: PathBuf,
+    /// The run loop's side (R7a).
+    pub runs: Option<Arc<crate::runloop::wiring::RunHooks>>,
 }
 
 impl BoardHooks for Wired {
+    fn run_state(&self, slug: &str, id: &str) -> super::hooks::RunState {
+        self.runs.as_ref().map(|r| r.run_state(slug, id)).unwrap_or_default()
+    }
+
+    fn request_self_move(&self, slug: &str, id: &str, status: &str) -> bool {
+        self.runs.as_ref().is_some_and(|r| r.request_self_move(slug, id, status))
+    }
+
+    fn stop_run(&self, slug: &str, id: &str, target: Option<&str>) -> BoxFuture<'_, ()> {
+        match &self.runs {
+            Some(r) => r.stop_run(slug, id, target),
+            None => Box::pin(async {}),
+        }
+    }
+
+    fn chat_next_run(&self, slug: &str, id: &str, text: &str) -> BoxFuture<'_, Result<(), String>> {
+        let r = match &self.runs {
+            Some(r) => r.chat_next_run(slug, id, text),
+            None => Err(super::hooks::NOT_YET.to_string()),
+        };
+        Box::pin(async move { r })
+    }
+
+    fn closes_form(&self, slug: &str, id: &str, uuid: &str) -> Result<Map<String, Value>, (u16, String)> {
+        match &self.runs {
+            Some(r) => r.closes_form(slug, id, uuid),
+            None => Err((409, format!("closing a question is {}", super::hooks::NOT_YET))),
+        }
+    }
+
     fn after_update(&self, slug: &str, id: &str, new_status: Option<&str>, by_user: bool, was_running: bool) -> BoxFuture<'_, ()> {
         let (slug, id, done) = (slug.to_string(), id.to_string(), new_status == Some("done"));
         let status = new_status.map(str::to_string);

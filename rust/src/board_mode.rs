@@ -57,6 +57,8 @@ use ckanban_board::sessions::service::Sessions;
 use ckanban_board::team::{self, Team};
 use ckanban_board::tickets::routes::{self as write_routes, Reply, Writes};
 use ckanban_board::tickets::wiring::{TicketOps, Wired};
+use ckanban_board::runloop::wiring::{RunActions, RunHooks};
+use ckanban_board::runloop::{RunLoop, RunLoopDeps, RunLoopOptions};
 use ckanban_core::time::{iso, now_ms};
 use serde_json::{Value, json};
 use bytes::Bytes;
@@ -97,6 +99,14 @@ pub struct BoardMode {
     git: Arc<GitRoutes>,
     /// R2a: the ticket and board writes.
     writes: Arc<Writes>,
+    /// R7a: the run loop.
+    pub runs: Arc<RunLoop>,
+    /// What the satellite asks of the board (R7a: Telegram messages and marks, comments).
+    actions: Arc<dyn ckanban_board::api::BoardActions>,
+    /// Notified when a requested restart may go ahead (no work left, or 2 minutes passed): `dev()` then stops.
+    pub exit: Arc<tokio::sync::Notify>,
+    /// Keep-awake while boards with "Keep this Mac awake" have work going (`GET /api/awake`).
+    awake: Arc<ckanban_board::runs::awake::StayAwake>,
     /// The pass store, for key cards (set once the satellite answers: it hears of the passes file changing).
     passes: Arc<std::sync::OnceLock<Arc<passes::Passes>>>,
     public_port: u16,
@@ -134,6 +144,9 @@ pub async fn prepare(root: &Path, public_port: u16, remote_port: u16, internal_p
     let sessions = Sessions::new(root, text_masker(root));
     let mut services = Services::stand_ins();
     services.sessions = sessions.clone();
+    // R7a: the run loop, made once the ticket writes and families exist; services made before it ask it through this.
+    let late_runs = ckanban_board::runloop::wiring::LateRuns::new();
+    services.runs = late_runs.clone();
     let browsers = Browsers::new(root, Arc::new(FileLookup::new(root)), services.sessions.clone());
     services.devices = browsers.clone();
     services.satellite = Arc::new(SatelliteClient::new(internal_port, public_port, secret));
@@ -190,11 +203,35 @@ pub async fn prepare(root: &Path, public_port: u16, remote_port: u16, internal_p
     families.set_landing(landing.clone());
     let f = families.clone();
     core.on_stop("plans", move || f.shutdown());
+    // R7a: the run loop (chat, runs, queue, slots, limits, follow-ups, stop, the restart gate, recovery).
+    let mut opts = RunLoopOptions::from_env();
+    let key_root = root.to_path_buf();
+    opts.key_env = Arc::new(move |slug: &str| passes::board_key_env(&key_root, slug));
+    opts.mask = text_masker(root);
+    let json_mask = masker(root);
+    opts.mask_json = Arc::new(move |t: &str| json_mask(t));
+    opts.tools_version = crate::mcp::tools_version();
+    let runs = RunLoop::new(RunLoopDeps {
+        root: root.to_path_buf(),
+        tickets: core.tickets.clone(),
+        bus: core.bus.clone(),
+        families: families.clone(),
+        git: landing.clone(),
+        sessions: sessions.clone(),
+        huddles: core.services.huddles.clone(),
+        browsers: Some(browsers.clone()),
+        devices: browsers.clone(),
+        satellite: core.services.satellite.clone(),
+        opts,
+    });
+    late_runs.set(runs.clone());
+    families.set_runs(runs.clone());
     core.tickets.set_hooks(Arc::new(Wired {
-        git: Some(landing),
+        git: Some(landing.clone()),
         families: Some(families.clone()),
         browsers: Some(browsers.clone()),
         root: root.to_path_buf(),
+        runs: Some(Arc::new(RunHooks { runs: runs.clone() })),
     }));
     let passes: Arc<std::sync::OnceLock<Arc<passes::Passes>>> = Arc::new(std::sync::OnceLock::new());
     let p = passes.clone();
@@ -204,7 +241,25 @@ pub async fn prepare(root: &Path, public_port: u16, remote_port: u16, internal_p
     });
     let writes = Arc::new(Writes::new(core.tickets.clone(), core.reads.clone(), sessions.clone(), save_keys));
     writes.set_families(families);
+    writes.set_runs(runs.clone());
+    // Quick chats hold their messages while a restart waits, and the restart waits for their replies.
+    let (r1, r2) = (runs.clone(), runs.clone());
+    chats.set_gate(ckanban_board::quickchat::service::RestartGate { pending: Arc::new(move || r1.restart_pending()), work_changed: Arc::new(move || r2.restart_work_changed()) });
+    let c = chats.clone();
+    runs.on_restart_busy(Arc::new(move || c.restart_busy()));
+    let h = core.services.huddles.clone();
+    runs.on_restart_busy(Arc::new(move || h.restart_busy()));
+    // recover(): what the last daemon left (Bun's or Rust's), once every board's tickets are loaded.
+    let r = runs.clone();
+    let index = core.index.clone();
+    let _ = tokio::task::spawn_blocking(move || {
+        index.wait_loaded(Duration::from_secs(600));
+        r.recover();
+    })
+    .await;
+    let awake = start_run_timers(&core, &runs, ops.clone(), root);
     team.set_ticket_cards(Arc::new(ckanban_board::tickets::wiring::SquadCards { tickets: core.tickets.clone() }));
+    let runs_for_actions = runs.clone();
     Some(Arc::new(BoardMode {
         core,
         team,
@@ -216,6 +271,10 @@ pub async fn prepare(root: &Path, public_port: u16, remote_port: u16, internal_p
         hooks,
         git,
         writes,
+        runs,
+        actions: Arc::new(RunActions { runs: runs_for_actions }),
+        exit: Arc::new(tokio::sync::Notify::new()),
+        awake,
         passes,
         public_port,
         remote_port,
@@ -227,6 +286,53 @@ pub async fn prepare(root: &Path, public_port: u16, remote_port: u16, internal_p
         tell: OnceLock::new(),
         _lock: lock,
     }))
+}
+
+/// The run loop's timers (Bun's `startDaemon` after `recover()`): automatic continues after a usage limit, due
+/// follow-ups (`CKANBAN_TICK_MS` shortens their period for tests), the PR poller, keep-awake. Each stops with the core.
+fn start_run_timers(core: &Arc<Core>, runs: &Arc<RunLoop>, ops: Arc<TicketOps>, root: &Path) -> Arc<ckanban_board::runs::awake::StayAwake> {
+    let every = |name: &'static str, ms: u64, f: Arc<dyn Fn() + Send + Sync>| {
+        let task = tokio::spawn(async move {
+            let mut tick = tokio::time::interval(Duration::from_millis(ms.max(10)));
+            loop {
+                tick.tick().await;
+                let f = f.clone();
+                if tokio::task::spawn_blocking(move || f()).await.is_err() {
+                    eprintln!("[board] {name} tick failed");
+                }
+            }
+        });
+        core.on_stop(name, move || task.abort());
+    };
+    let tick_ms = std::env::var("CKANBAN_TICK_MS").ok().and_then(|v| v.parse::<u64>().ok()).filter(|n| *n > 0);
+    let r = runs.clone();
+    every("limit-watcher", 30_000, Arc::new(move || r.limit_tick()));
+    let r = runs.clone();
+    every("followups", tick_ms.unwrap_or(30_000), Arc::new(move || r.follow_up_tick()));
+    let minutes = std::fs::read_to_string(root.join("config.json"))
+        .ok()
+        .and_then(|t| serde_json::from_str::<Value>(&t).ok())
+        .and_then(|v| v.get("prPollMinutes").and_then(Value::as_f64))
+        .unwrap_or(5.0);
+    let poller = ckanban_board::git::pr::start_poller(ops, Arc::new(ckanban_board::git::pr::GhCli), minutes.max(0.0) as u64);
+    core.on_stop("pr-poller", move || poller.abort());
+    let (r, root2, bus) = (runs.clone(), root.to_path_buf(), core.bus.clone());
+    let awake = ckanban_board::runs::awake::StayAwake::new(ckanban_board::runs::awake::StayAwakeOptions {
+        wanted: Box::new(move || {
+            r.busy_boards().iter().any(|slug| {
+                let p = ckanban_core::DataDir::new(root2.clone()).profile(slug).map(|p| p.record.0);
+                p.and_then(|p| p.get("keepAwake").cloned()) != Some(Value::Bool(false))
+            })
+        }),
+        on_change: Some(Box::new(move |held| bus.emit_json(json!({ "type": "awake.updated", "held": held })))),
+        platform: None,
+        pid: None,
+        spawn: None,
+        interval_ms: None,
+    });
+    let stop = awake.start();
+    core.on_stop("keep-awake", stop);
+    awake
 }
 
 fn fall_back(root: &Path, reason: &str, crashes: Vec<String>) -> Option<Arc<BoardMode>> {
@@ -287,6 +393,10 @@ pub enum Own {
     ClaudeProjects,
     ClaudeDefaults,
     PickFolder,
+    /// `GET`/`POST /api/restart` (R7a: the restart gate).
+    Restart,
+    /// `GET /api/awake`.
+    Awake,
 }
 
 
@@ -305,6 +415,8 @@ pub fn own_route(method: &Method, path: &str) -> Option<Own> {
         ("claude", Some("projects")) if get => Own::ClaudeProjects,
         ("claude", Some("defaults")) if get => Own::ClaudeDefaults,
         ("pick-folder", _) if post => Own::PickFolder,
+        ("restart", None) if (get || post) && parts.len() == 1 => Own::Restart,
+        ("awake", None) if get && parts.len() == 1 => Own::Awake,
         _ => return None,
     })
 }
@@ -788,6 +900,13 @@ impl BoardMode {
             }
             Own::ClaudeDefaults => self.json_at(StatusCode::OK, &system::claude_defaults(&self.versions)),
             Own::PickFolder => self.json_at(StatusCode::OK, &system::pick_folder().await),
+            Own::Awake => self.json_at(StatusCode::OK, &json!({ "held": self.awake.held() })),
+            Own::Restart if parts.method == Method::GET => self.json_at(StatusCode::OK, &self.runs.restart_state()),
+            Own::Restart => {
+                let exit = self.exit.clone();
+                let (running, pending) = self.runs.request_restart(Arc::new(move || exit.notify_one()), ckanban_board::runloop::rules::RESTART_MAX_WAIT_MS);
+                self.json_at(StatusCode::OK, &json!({ "running": running, "alreadyPending": pending }))
+            }
             Own::Profile => {
                 let host = request::header_text(h, "host");
                 let port = if via == Listener::Remote { 0 } else { self.remote_port };
@@ -811,7 +930,7 @@ impl BoardMode {
         if name == "replay" {
             return self.replay(&b, native, proxy).await;
         }
-        match edge::inbound(&*self.core.services.actions, name, &b).await {
+        match edge::inbound(&*self.actions, name, &b).await {
             Some((status, v)) => {
                 if !status.is_success() {
                     eprintln!("ckanban-rs: the satellite's {name}: {}", v.get("error").and_then(Value::as_str).unwrap_or(""));
@@ -883,6 +1002,12 @@ impl BoardMode {
                 let _ = tell.send(line);
             }
         });
+    }
+
+    /// Before the process ends: every run is stopped without an outcome (chat replies cut off are marked) so the next
+    /// start resumes them; waits at most 6 s (Bun's `board.shutdown()`).
+    pub async fn shutdown(&self) {
+        self.runs.shutdown().await;
     }
 
     /// Board mode ended with `code`: stop the core; a clean stop (0) is not counted as a crash.

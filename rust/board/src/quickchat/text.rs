@@ -74,6 +74,15 @@ static URL_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(&format!(r"/api/attachments/([0-9a-f]{{32}}\.(?:{alt}))\b")).unwrap()
 });
 
+/// `localizeUrls`: the UI's attachment URLs become paths in the attachments folder (no note: a slash command must stay
+/// the whole message).
+pub fn localize_urls(text: &str, dir: &Path) -> String {
+    if !text.contains("/api/attachments/") {
+        return text.to_string();
+    }
+    URL_RE.replace_all(text, |c: &Captures| dir.join(&c[1]).to_string_lossy().into_owned()).into_owned()
+}
+
 /// `localizeAttachments`: the UI's attachment URLs become paths in the attachments folder, with a note for Claude.
 pub fn localize_attachments(prompt: &str, dir: &Path) -> String {
     if !prompt.contains("/api/attachments/") {

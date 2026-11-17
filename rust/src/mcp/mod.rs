@@ -30,6 +30,21 @@ use client::{Client, Fail, R, RUN_ENV, err};
 
 /// What tools/list answers: Bun's TOOLS, generated (scripts/mcp-tools-json.ts).
 const TOOLS_JSON: &str = include_str!("tools.json");
+
+pub mod sha256;
+
+/// `toolsVersion`: a fingerprint of the board tools' names, descriptions and options (the first 16 hex of SHA-256 of
+/// `JSON.stringify(TOOLS.map((t) => [t.name, t.description, t.inputSchema]))`), so a resumed session hears when a new
+/// version changed them. None when the list can't be read.
+pub fn tools_version() -> Option<String> {
+    let tools: Vec<serde_json::Value> = serde_json::from_str(TOOLS_JSON).ok()?;
+    let list: Vec<serde_json::Value> = tools
+        .iter()
+        .map(|t| serde_json::Value::Array(vec![t.get("name").cloned().unwrap_or(serde_json::Value::Null), t.get("description").cloned().unwrap_or(serde_json::Value::Null), t.get("inputSchema").cloned().unwrap_or(serde_json::Value::Null)]))
+        .collect();
+    let text = ckanban_board::runs::js::stringify(&serde_json::Value::Array(list));
+    Some(sha256::hex(text.as_bytes())[..16].to_string())
+}
 /// Per tool: changes, allowInRun, plannerScope (same order).
 const FLAGS_JSON: &str = include_str!("tool-flags.json");
 

@@ -387,7 +387,10 @@ impl RunHandle {
 
 /// `startRun`: spawns Claude and returns its handle at once (on a tokio runtime).
 pub fn start_run(opts: RunOptions) -> RunHandle {
-    let ctl = Arc::new(Ctl { shared: Mutex::new(Shared { open: false, queue: VecDeque::new() }), wake: Notify::new(), stopped: AtomicBool::new(false), pid: AtomicU32::new(0) });
+    // With a first message, input counts as open at once (Bun's stdin is writable as soon as `startRun` returns): a
+    // message sent before the process is up is queued behind the first one.
+    let open = opts.input.is_some();
+    let ctl = Arc::new(Ctl { shared: Mutex::new(Shared { open, queue: VecDeque::new() }), wake: Notify::new(), stopped: AtomicBool::new(false), pid: AtomicU32::new(0) });
     let (tx, rx) = watch::channel(None);
     let c = ctl.clone();
     tokio::spawn(async move {
