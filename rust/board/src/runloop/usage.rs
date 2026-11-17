@@ -59,3 +59,23 @@ pub fn ticket_runs(d: &ActivityDigest) -> Vec<TicketRun> {
     }
     out.into_iter().map(|c| c.r).collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn a_run_costs_what_its_session_total_grew() {
+        let mut d = ActivityDigest::default();
+        d.run_entries = vec![
+                json!({ "run": 1, "event": { "type": "ckanban_run", "kind": "work" } }),
+                json!({ "run": 1, "event": { "type": "result", "session_id": "s", "total_cost_usd": 0.5 } }),
+                json!({ "run": 2, "event": { "type": "ckanban_run", "kind": "follow-up" } }),
+                json!({ "run": 2, "event": { "type": "result", "session_id": "s", "total_cost_usd": 0.75 } }),
+            ];
+        let runs = ticket_runs(&d);
+        assert_eq!(runs.len(), 2);
+        assert_eq!((runs[1].kind.as_str(), runs[1].run, runs[1].cost_usd), ("follow-up", 2.0, 0.25));
+    }
+}

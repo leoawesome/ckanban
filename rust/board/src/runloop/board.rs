@@ -138,6 +138,13 @@ pub struct State {
     pub rewinding: HashSet<String>,
 }
 
+/// The board's saved keys as a run's environment.
+pub type KeyEnv = Arc<dyn Fn(&str) -> BTreeMap<String, String> + Send + Sync>;
+/// Lists the board of each piece of other work a restart waits for.
+pub type BusyList = Arc<dyn Fn() -> Vec<String> + Send + Sync>;
+/// What an ask_ticket fork tells its asker when a restart cuts it off.
+pub type CutOff = Arc<dyn Fn() + Send + Sync>;
+
 /// What the loop is built with (`BoardOptions` and the board's services).
 #[derive(Clone)]
 pub struct RunLoopOptions {
@@ -151,7 +158,7 @@ pub struct RunLoopOptions {
     /// How long ask_ticket waits for an answer.
     pub ask_timeout_ms: u64,
     /// The board's saved keys as a run's environment (`boardKeyEnv`).
-    pub key_env: Arc<dyn Fn(&str) -> BTreeMap<String, String> + Send + Sync>,
+    pub key_env: KeyEnv,
     /// `maskSaved` (plain text).
     pub mask: TextMask,
     /// `maskSavedJson` (JSON text).
@@ -223,10 +230,10 @@ pub struct RunLoop {
     pub(super) state: Mutex<State>,
     pub(super) decide: ReentrantMutex<()>,
     /// Other work a restart waits for (huddle agents mid-turn, quick chats), by board, repeats included.
-    pub(super) restart_busy: Mutex<Vec<Arc<dyn Fn() -> Vec<String> + Send + Sync>>>,
+    pub(super) restart_busy: Mutex<Vec<BusyList>>,
     pub(super) run_ended: Mutex<Vec<RunEnded>>,
     /// Running ask_ticket forks with what to tell their asker if a restart cuts them off.
-    pub(super) asks: Mutex<Vec<(Arc<RunHandle>, Arc<dyn Fn() + Send + Sync>)>>,
+    pub(super) asks: Mutex<Vec<(Arc<RunHandle>, CutOff)>>,
     /// Runs as each attempt's activity log number (`runCount + 1` at the start of a work run).
     pub(super) versions: crate::runs::model_versions::ModelVersions,
     pub(super) digests: Arc<crate::runs::activity_digest::ActivityDigests>,

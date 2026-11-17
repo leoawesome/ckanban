@@ -333,8 +333,11 @@ impl RunLoop {
         };
         let mut system_prompt: Option<String> = None;
         let slash = chat.as_ref().and_then(|c| c.slash.clone());
-        if slash.is_some() && resume_text.is_none() {
-            if let Some(cut) = prompt.find("\n\n<ckanban-context") {
+        if slash.is_some()
+            && resume_text.is_none()
+            && let Some(cut) = prompt.find("\n\n<ckanban-context")
+        {
+            {
                 system_prompt = Some(format!("The user's message in this turn is a slash command sent from the kanban board's ticket chat. The board's instructions for this run:\n\n{}", &prompt[cut + 2..]));
                 prompt.truncate(cut);
             }
@@ -988,7 +991,7 @@ impl RunLoop {
         } else if ty == Some("assistant") && let Some(usage) = ev.get("message").and_then(|m| m.get("usage")).filter(|u| js::truthy(Some(u))) {
             let mut sp = spend.lock();
             let mid = ev.get("message").and_then(|m| m.get("id")).and_then(Value::as_str).map(str::to_string).unwrap_or_else(|| format!("#{}", sp.main.len()));
-            let model = ev.get("message").and_then(|m| m.get("model")).map(|m| js::to_string(m)).unwrap_or_default();
+            let model = ev.get("message").and_then(|m| m.get("model")).map(js::to_string).unwrap_or_default();
             let cost = crate::sessions::workflows::message_cost(&model, usage);
             if sp.main.insert(mid.clone(), cost).is_none() {
                 sp.main_order.push(mid);

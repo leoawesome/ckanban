@@ -318,6 +318,11 @@ fn start_run_timers(core: &Arc<Core>, runs: &Arc<RunLoop>, ops: Arc<TicketOps>, 
         .unwrap_or(5.0);
     let poller = ckanban_board::git::pr::start_poller(ops, Arc::new(ckanban_board::git::pr::GhCli), minutes.max(0.0) as u64);
     core.on_stop("pr-poller", move || poller.abort());
+    // Run logs of tickets Done for over 30 days are compressed a few at a time (report-only until
+    // CKANBAN_RUST_DELETE=1, plan 5.3).
+    let compressor = ckanban_board::runs::run_log_compress::RunLogCompressor::new(root, runs.clone(), Default::default());
+    let stop = compressor.start();
+    core.on_stop("run-log-compress", stop);
     let (r, root2, bus) = (runs.clone(), root.to_path_buf(), core.bus.clone());
     let awake = ckanban_board::runs::awake::StayAwake::new(ckanban_board::runs::awake::StayAwakeOptions {
         wanted: Box::new(move || {

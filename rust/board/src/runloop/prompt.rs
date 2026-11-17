@@ -10,7 +10,7 @@ use std::sync::Arc;
 use serde_json::{Map, Value, json};
 
 use super::board::{RunError, RunLoop, now_iso, obj, ts, uuid};
-use crate::families::rules::{fit_parent, is_feature, level_of};
+use crate::families::rules::{fit_parent, is_feature};
 use crate::families::status::{read_status, write_status};
 use crate::index::family::{feature_root, feature_rows, main_of};
 use crate::index::store::BoardList;
@@ -91,11 +91,6 @@ pub fn run_options(t: Option<&Tk>, p: Option<&Map<String, Value>>, workflows: bo
     let pu = p.and_then(|p| p.get("ultracode")).and_then(Value::as_bool);
     let on = tu.or_else(|| legacy(te)).or(pu).or_else(|| legacy(pe)).unwrap_or(false);
     (effort, workflows && on)
-}
-
-/// `runsTasks` of family.ts: a group or round runs tasks of its own.
-fn runs_tasks(t: &Tk) -> bool {
-    t.main || (t.tool && matches!(t.kind.as_deref(), Some("group" | "round")))
 }
 
 /// `followUpPlace`: where follow-up work on a ticket goes.
@@ -491,10 +486,5 @@ impl RunLoop {
         let choice: Option<pt::ChromeChoice> = chrome.and_then(|c| serde_json::from_value(c.to_json()).ok());
         let note = crate::prompts::rules::chrome_choice_note(choice.as_ref(), &board);
         RunBrowsers { servers, note, no_chrome: !board.is_empty() && choice.is_none() }
-    }
-
-    /// `levelOf` re-exported for the follow-up place.
-    pub(super) fn level(&self, list: &BoardList, id: &str) -> usize {
-        level_of(list, id)
     }
 }

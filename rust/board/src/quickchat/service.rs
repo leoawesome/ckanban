@@ -7,8 +7,7 @@
 //! one chat file's read and write (a few KB), so two changes of one chat never lose one, as in Bun's single thread.
 //! File work runs on blocking threads; a run's callbacks only queue events and append one log line.
 //!
-//! Not here yet, each marked `STAND-IN` below: the restart gate's "a restart is pending" (R7a: until then a message
-//! that comes as a run ends always starts a new run), board browsers for the runs (R9: none), the Telegram front desk's
+//! Not here yet, each marked `STAND-IN` below: board browsers for the runs (R9: none), the Telegram front desk's
 //! hooks (R13/P1: a front desk chat refuses to run, as Bun does when the front desk isn't plugged in), and the Context
 //! panel's refresh after a run (R7b).
 
@@ -84,7 +83,7 @@ impl QuickChatOptions {
     }
 }
 
-/// The restart gate as quick chats see it. STAND-IN until R7a: never pending, and nobody listens for work changes.
+/// The restart gate as quick chats see it (board mode sets it from the run loop, R7a); the default: never pending.
 #[derive(Clone)]
 pub struct RestartGate {
     /// `board.isRestartPending()`: messages that come as a run ends are held for after the restart.

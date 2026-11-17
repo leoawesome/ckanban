@@ -8,7 +8,7 @@
 # R0: the switch and its fallbacks; the event stream (the satellite's events re-emitted on Rust's stream). The other
 # event stream test creates a ticket, which needs R2a.
 rust-board-mode.test.ts
-callers.test.ts | event stream|internal port|terminal's WebSocket
+callers.test.ts
 
 # R1: the read routes from the Rust index (boards, ticket list scopes, one ticket, /api/tickets, /api/inbox), the same
 # answers as Bun on a board written as files, and shadow mode. Tests of the C1 files that create no ticket; the rest
@@ -22,7 +22,7 @@ sessions-read.test.ts
 
 # R9: browsers, devices and the terminal, answered by Rust. Left for later: the tests that create a ticket (R2a) or
 # start a run (R7a): a ticket's take and release, a run holding a board browser, the terminal of a ticket.
-browsers.test.ts | browsers view|named Chromes|changes are the user's only|POST adds a browser|names must be given|PATCH renames|ensure is only for|open starts Chrome|the sign-in screen|close on a browser|DELETE removes it and its folder|an empty list at first|POST adds or changes a device|bad names and callers|errors before the upgrade|one shell per folder
+browsers.test.ts
 
 # R6: a ticket's outputs, the files its chat mentions, its Changes tab, the board's Files panel, detect-setup and
 # version-history, answered by Rust. runs-git.test.ts and runs-life.test.ts (copies, merge into main, land, branch, PR
@@ -46,8 +46,8 @@ quickchat-read.test.ts
 system.test.ts
 connections.test.ts
 remote.test.ts
-helper.test.ts | refusals|settings|the helper|POST /api/notify/test|phone push|a bot token|pair: a code|unpair forgets
-usage.test.ts | GET /api/usage|an empty board spent nothing
+helper.test.ts
+usage.test.ts
 
 # R2a: ticket and board writes without a run (create, change, move, delete, comments, snooze, seen, the chat's
 # cards, boards, attachments, avatars, snippets), the same answers and file bytes as Bun on one script, saved keys
@@ -55,10 +55,10 @@ usage.test.ts | GET /api/usage|an empty board spent nothing
 # a key box answered after a run asked for it and the masking and bug report tests that build on its ticket (R7a),
 # check scripts (R10).
 board-writes.test.ts
-tickets.test.ts | ^(?!.*a message starts a run)
-board-items.test.ts | ^(?!.*GET /api/inbox)
-board-cards.test.ts | ^(?!.*follow-up: set)
-passes.test.ts | ^(?!.*(ask_keys box|saved value is masked|check scripts|bug reports))
+tickets.test.ts
+board-items.test.ts
+board-cards.test.ts
+passes.test.ts
 
 # R2b: families, plans and the feature status in Rust: partOf, sub-features, groups, gather, own work, showOnBoard,
 # the feature status (status.json, status.md, notes), the family routes, and the rules of merge-into-main and land
@@ -66,4 +66,20 @@ passes.test.ts | ^(?!.*(ask_keys box|saved value is masked|check scripts|bug rep
 # part of board-families.test.ts (a main ticket's run makes tool tickets, which then run) and the C3 merge and land
 # tests in runs-git.test.ts need runs (R7a).
 board-family-writes.test.ts
-board-families.test.ts | feature status|partOf, sub-features, groups and gather
+board-families.test.ts
+
+# R7a: the run loop (chat, runs, the queue, slots and the folder wait, stop, stall, caps, usage-limit waits, follow-ups,
+# the restart gate and recover(), ask_ticket, Branch, follow-up work, PR routes), which also lets the files above pass
+# whole (each line there that had a filter lost it now). rust-board-switch.test.ts: runs cut off by Bun's stop resume
+# in the Rust board, and the reverse. Left for R7b: slash commands (chat.test.ts), rewind and fork
+# (chat-session.test.ts); data-files.test.ts (quick chat "Say it simpler" in its set-up), quickchat.test.ts (context,
+# simplify, rewind, fork, Make ticket). R10: mcp.test.ts's schedules group, jobs, automations, schedule firing. R11a/c:
+# huddle.test.ts, huddle-team.test.ts.
+runs-life.test.ts
+runs-control.test.ts
+runs-restart.test.ts
+runs-git.test.ts
+rust-board-switch.test.ts
+cli-board.test.ts
+chat.test.ts | ^(?!.*slash commands)
+chat-session.test.ts | ^(?!.*rewind and fork)

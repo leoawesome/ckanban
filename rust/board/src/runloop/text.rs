@@ -36,7 +36,7 @@ pub fn strip_bullet(l: &str) -> String {
 
 /// `addTelegramSpend`: what turns Telegram started cost today ("Spent from Telegram today"), 60 days kept.
 pub fn add_telegram_spend(root: &Path, cost: f64, now: f64) {
-    if !(cost > 0.0) || !cost.is_finite() {
+    if cost.is_nan() || cost <= 0.0 || !cost.is_finite() {
         return;
     }
     let file = root.join("telegram-spend.json");
@@ -65,5 +65,37 @@ pub fn add_telegram_spend(root: &Path, cost: f64, now: f64) {
     let text = format!("{}\n", crate::runs::js::stringify(&Value::Object(out)));
     if let Err(e) = ckanban_core::atomic::atomic_write(&file, text.as_bytes()) {
         eprintln!("[board] telegram spend: {e}");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn result_body_drops_result_lines_and_the_planning_marker() {
+        let text = "Done.\nCKANBAN_RESULT: {\"status\":\"done\"}\n<ckanban-move to=\"planning\"/>\nBye";
+        assert_eq!(crate::runs::js::trim(&result_body(text)), "Done.\n\n\nBye");
+        assert!(moves_to_planning(text));
+        assert!(!stays(text));
+        assert!(stays("ok <ckanban-stay/>"));
+    }
+
+    #[test]
+    fn bullets_and_marks_are_stripped() {
+        assert_eq!(strip_bullet("## > - Which colour? "), "Which colour?");
+        assert_eq!(strip_bullet("plain"), "plain");
+    }
+
+    #[test]
+    fn telegram_spend_adds_up_per_day() {
+        let d = tempfile::tempdir().unwrap();
+        let now = 1_763_000_000_000.0;
+        add_telegram_spend(d.path(), 0.25, now);
+        add_telegram_spend(d.path(), 0.5, now);
+        add_telegram_spend(d.path(), -1.0, now);
+        add_telegram_spend(d.path(), f64::NAN, now);
+        let v: Value = serde_json::from_str(&std::fs::read_to_string(d.path().join("telegram-spend.json")).unwrap()).unwrap();
+        assert_eq!(v.get(&super::super::limit::day_key(now)).and_then(Value::as_f64), Some(0.75));
     }
 }

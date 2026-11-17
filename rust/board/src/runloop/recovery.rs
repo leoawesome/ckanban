@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 
-use serde_json::{Map, Value, json};
+use serde_json::{Value, json};
 
 use super::board::{ActiveRun, RunError, RunLoop, corrupt, now_iso, obj, ts, uuid};
 use super::rules;

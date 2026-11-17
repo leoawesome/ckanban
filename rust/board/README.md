@@ -52,7 +52,7 @@ Bun in full mode takes the same `board.lock` (`src/core/board-lock.ts`), so two 
   names only, go to `<data>/rust-shadow.log`, counts to `<data>/rust-shadow.json`. Read only. To run it on the real
   board: add `CKANBAN_RUST_SHADOW=1` to the front's launchd environment and `ckanban restart`; remove it to stop.
 - One empty folder per later task (filled as each lands): `index` (R1, done), `tickets` (R2a, done), `families` (R2b, done), `runs` (R3), `prompts` (R4, done),
-  `sessions` (R5), `git` (R6, done), `runloop` (R7a), `chat` (R7b), `quickchat` (R8), `browsers` (R9), `schedules` (R10),
+  `sessions` (R5), `git` (R6, done), `runloop` (R7a, done), `chat` (R7b), `quickchat` (R8), `browsers` (R9), `schedules` (R10),
   `huddles` (R11a), `team` (R11b, done), `huddle_agents` (R11c), `extras` (R12), `gate` (R13).
 
 ## The run engine (R3, `src/runs/`)
@@ -300,6 +300,48 @@ Ported from `src/board/board-families.ts`, `board-plans.ts`, `board-main.ts` (wi
   `<data>/rust-board-dryrun.log` and delete nothing until `CKANBAN_RUST_DELETE=1` (plan 5.3).
 - Pure logic is checked against Bun: `tests/fixtures/git.json` (written by `test/rust-git-fixtures.test.ts`,
   `UPDATE_RUST_FIXTURES=1`).
+
+## R7a: the run loop (`src/runloop/`)
+
+The board's runs in Rust, ported from `src/board/board.ts` and its parts (`board-queue`, `board-devices`,
+`board-limits`, `board-followups`, `board-recovery`, `board-types`), `src/usage/limit.ts`, `src/schedules/followup.ts`,
+and what the loop calls from `board-main.ts`, `board-features.ts`, `board-repo.ts`, `board-tickets.ts` and
+`board-plans.ts` (roles, chat flags and environment, feature notes, status notes and the status nudge, ask_ticket,
+Branch, follow-up work, run rights, Telegram messages). `RunLoop` (`board.rs`) is made in `rust/src/board_mode.rs`
+once the ticket writes, families and R6's `landing::Git` exist.
+- `board.rs`: `chat`, `start`, `begin`, `execute`, `drainQueue`, `endStatus`, `dropRun`, the end of a run (devices and
+  board browsers let go, the move asked for in the chat, dispatch, plans, `onRunEnd`). `once.rs`: `executeOnce` (where
+  it works, the prompt, the claude process on R3's runner, its events: drafts, workflows and their spend, the run log,
+  the card line; then the result: questions, blocked, done, stall restart, spending cap, usage limit, a passing API
+  error retried once, a lost session started over once). `prompt.rs`: roles, `chatArgs`, `chatEnv`, `runBrowsers`,
+  feature and status notes, fresh prompts and fresh chats.
+- `queue.rs` (steer, delivered, held, send/edit/discard, a repeated form answer, the Planning interview), `slots.rs`
+  (running, holds a slot, `dispatch`, the folder wait, stopping a workflow), `limits.rs` (stall actions, caps, usage
+  limits and the automatic continue), `followups.rs`, `recovery.rs` (Stop, a main ticket's family Stop, shutdown, the
+  restart gate, `recover`, fresh session, fresh chat, take over, link a session, the status nudge), `ask.rs`,
+  `branch.rs` (Branch and the PR box), `followwork.rs`, `routes.rs`.
+- `rules.rs`, `limit.rs`, `followup.rs`: the pure rules, checked against Bun by `tests/fixtures/runloop.json`
+  (written by `test/rust-board-runloop-fixtures.test.ts`, `UPDATE_RUST_FIXTURES=1`; `tests/runloop_rules.rs`).
+- `wiring.rs`: `LateRuns` (the `RunControl` the services made before the loop ask), `PlanRuns` for R2b, `RunHooks`
+  (the run half of the ticket writes' hooks: run rights, a move asked in the chat, Stop on a move, key cards, Close
+  question), `RunActions` (the satellite's Telegram messages, marks and comments), the run log compressor's board.
+
+Threads: the loop's calls are blocking (ticket writes); `decide` (a reentrant lock) is held while a choice is made and
+acted on, never across a wait for a run or an await; run state locks are never held across a ticket write (its event's
+view asks who runs). Each run is one tokio task; its events are handled on the runner's task in order.
+
+In board mode: the routes `chat`, `queued/:msg`, `stop`, `stall`, `cap-continue`, `limit`, `follow-up` (set, stop,
+now), `ask`, `link-session`, `fresh-session`, `take-over`, `fresh-chat`, `setup`, `branch`, `follow-up-work`, `pr/*`,
+`check-pr`, `workflow/:tool/stop` (inside `tickets::routes::Writes`), and `GET/POST /api/restart`, `GET /api/awake`
+(own routes). A restart the board asked for ends `ckanban-rs` once the work is done (at most 2 minutes), like a
+SIGTERM: runs are stopped without an outcome, chat replies marked interrupted, and the next start (Rust or Bun)
+resumes them (`test/contract/rust-board-switch.test.ts` checks both directions). Timers: usage-limit continues,
+follow-ups (`CKANBAN_TICK_MS`), the PR poller, keep-awake, run log compression (report-only, plan 5.3). The
+satellite's mirror gets `runtime` lines when the running tickets or a session summary change.
+
+STAND-INs, each marked in the code: slash commands and the rewind snapshot (R7b), "What we did before" (R12), a quiet
+schedule's open items and its history line (R10), the Mac banner of a plan event (the satellite), closing a session
+open in the board's own terminal on Take over (R9/R7b).
 
 ## Tests
 

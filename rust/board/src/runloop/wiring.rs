@@ -291,3 +291,30 @@ impl RunLoop {
         dropped
     }
 }
+
+fn compress_ticket(t: &crate::index::ticket::Tk) -> crate::runs::run_log_compress::CompressTicket {
+    crate::runs::run_log_compress::CompressTicket {
+        id: t.id.clone(),
+        status: t.status.clone(),
+        done_at: t.s("doneAt").filter(|s| !s.is_empty()).map(str::to_string),
+        updated_at: t.updated_at.clone(),
+        run_count: t.get("runCount").and_then(Value::as_f64),
+    }
+}
+
+/// The run log compressor's view of the board (R3's `CompressBoard`): the index's listings, the runs going now.
+impl crate::runs::run_log_compress::CompressBoard for RunLoop {
+    fn profiles(&self) -> Vec<String> {
+        self.boards()
+    }
+    fn tickets(&self, slug: &str) -> Vec<crate::runs::run_log_compress::CompressTicket> {
+        self.tickets.list(slug).tickets.iter().map(|t| compress_ticket(t)).collect()
+    }
+    fn ticket(&self, slug: &str, id: &str) -> Option<crate::runs::run_log_compress::CompressTicket> {
+        self.tickets.get(slug, id).map(|t| compress_ticket(&t))
+    }
+    fn is_running(&self, slug: &str, id: &str) -> bool {
+        RunLoop::is_running(self, slug, id)
+    }
+    fn activity_compressed(&self, _slug: &str, _id: &str) {}
+}
