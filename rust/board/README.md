@@ -51,7 +51,7 @@ Bun in full mode takes the same `board.lock` (`src/core/board-lock.ts`), so two 
   out (live fields taken from Bun's answer, Inbox sessions from `session-summaries.json`); differences, ids and field
   names only, go to `<data>/rust-shadow.log`, counts to `<data>/rust-shadow.json`. Read only. To run it on the real
   board: add `CKANBAN_RUST_SHADOW=1` to the front's launchd environment and `ckanban restart`; remove it to stop.
-- One empty folder per later task (filled as each lands): `index` (R1, done), `tickets` (R2a, done), `families` (R2b), `runs` (R3), `prompts` (R4, done),
+- One empty folder per later task (filled as each lands): `index` (R1, done), `tickets` (R2a, done), `families` (R2b, done), `runs` (R3), `prompts` (R4, done),
   `sessions` (R5), `git` (R6, done), `runloop` (R7a), `chat` (R7b), `quickchat` (R8), `browsers` (R9), `schedules` (R10),
   `huddles` (R11a), `team` (R11b, done), `huddle_agents` (R11c), `extras` (R12), `gate` (R13).
 
@@ -106,7 +106,7 @@ are `serde_json` maps with Bun's key order.
   takes stock.
 - `routes.rs`: in board mode Rust answers `GET` conversation, tool, agent, workflow script and helper agent,
   `chat/search`, `chat/read` and `sessions`. Bun still answers a workflow stop and a chat search or read from another
-  ticket's run (family and "asked by the user" reach need R2b).
+  ticket's run (family and "asked by the user" reach: R2b's rules are in, the run state they read comes with R7a).
 - `ticket_files.rs`: `TicketSource`, read from the ticket files until the ticket store (R1/R2a) replaces it.
 - `service.rs`: `Sessions`, the `SessionInfo` the other modules use (summaries from the watcher, no file read).
 
@@ -238,7 +238,7 @@ The only code that writes `ticket.md` in board mode (plan 2.2). Ported from `src
   written (`set_mask`). Blocking: call from the blocking pool; async hooks run through `writer::block`.
 - `hooks::BoardHooks`: what later steps plug in (R2b families and plans, R7a runs and run rights, R10 schedules,
   R11a huddles, R12 the linker, R13 the helper). Stand-ins refuse family links (`partOf`, gather, rounds) rather
-  than write them unchecked. `wiring::Wired` plugs in what is already in Rust: R6's Done cleanup and the copy of a
+  than write them unchecked; in board mode `Wired` answers them with R2b's `Families`. `wiring::Wired` plugs in what is already in Rust: R6's Done cleanup and the copy of a
   deleted ticket (both report-only until `CKANBAN_RUST_DELETE=1`), R9's browser picks and terminal shells.
   `wiring::TicketOps` is R6's `BoardOps` over these writes. A step that lands adds its piece to `Wired`.
 - `rights`: `runRights`, `runStart`, `inFamily`. `routes::Writes`: the routes (`wanted` lists them); `profiles`:
@@ -246,6 +246,38 @@ The only code that writes `ticket.md` in board mode (plan 2.2). Ported from `src
   letters only), models and kinds.
 - Checked against Bun by `test/contract/board-writes.test.ts`: one script of writes on both, the same answers (by
   value) and the same bytes in the data folder.
+
+## R2b: families, plans, main tickets and the feature status (`src/families/`)
+
+Ported from `src/board/board-families.ts`, `board-plans.ts`, `board-main.ts` (without git and runs),
+`board-features.ts`, `feature.ts`, `main-ticket.ts`, `plan.ts`, the family rules of
+`web/src/features/family/family.ts` and the routes of `src/api/ticket-info.ts` / `ticket-actions.ts` named below.
+- `rules`: `wouldLoop`, `levelOf`, `fitParent`, `isFeature`, `groupsOf`, `nextRoundTitle` and `linkProblem` (one
+  sub-feature level, at most `MAX_LEVEL` deep), worked out on a copy of the listing with the moved ticket in place.
+- `plan`: `planStep`, `planProblem`, `resultWakesMain`, `finishedLine`, `progressStep`, `familySig`, `wakeTable`.
+- `status`: status.json and status.md byte for byte (`clipText`, `applyPatch`, `statusFacts`, `statusSections`,
+  `statusMarkdown`, `writeStatus`).
+- `board::Families` (made in `rust/src/board_mode.rs`): `set_part_of`, `make_own_work`, `set_show_on_board`,
+  `place_in_feature`, `gather`, `ensure_plan`, `start_plan`, `pause_plan`, `mark_plan_done`, `resume_stopped_plan`,
+  `unpark_main`, `holds_review`, `open_steps`, `push_event`, `report_to_main`, `note_user_message`, `result_card`,
+  `advance_plans` (one pass per board at a time; a wake waits 3 s so results arriving together make one wake),
+  `feature_status`, `update_status`, `add_status_note`, `refresh_status_file`, `record_milestone` (R6's land), and the
+  saved changes list (git log by the `Ckanban-Feature` trailer, or the files the family's tickets edited) built on a
+  thread of its own. status.json is changed under one lock. What needs a run goes through `PlanRuns` (wake, dispatch,
+  auto-fresh, the Planning interview, notifications); R7a sets it with `Families::set_runs`. Until then nothing runs:
+  a plan moves its tool tickets to Ready and records its wakes, and Ready work waits.
+- Plugged into the ticket writes through `tickets::wiring::Wired` (`place_in_feature`, `set_part_of`, `new_step`,
+  `gather`, `after_create`, `after_update`, `board_changed`) and `TicketOps` (`push_event`, `holds_review`,
+  `record_milestone`). The create route places a run's `partOf` in its feature (Bun's own-feature, open-feature and
+  depth rules) and makes a ticket a run creates inside its main ticket's family a tool ticket of the nearest manager.
+- `routes`: `GET family`, `GET family-view`, `GET/POST status`, `POST status/notes`, `POST own-work`, `POST gather`,
+  `POST plan`, `POST merge-into-main`, `POST land` (through `tickets::routes::Writes`).
+- `old_plans`: a board with an old-style plan (a planned ticket that is neither main nor tool) makes the start step
+  "old plans" fail, so board mode falls back to Bun (fallback 2), whose one-time migration (`retire-plans.ts`)
+  turns it into main tickets; the next start finds none. The step waits for the start-up load.
+- Checked against Bun: `tests/fixtures/families.json` (written by `test/rust-board-families-fixtures.test.ts`,
+  `UPDATE_RUST_FIXTURES=1`; `tests/families.rs`), and `test/contract/board-family-writes.test.ts` (one script of
+  family writes on both servers: the same answers and the same bytes of ticket.md, comments, status.json, status.md).
 
 ## R6: git, copies of the folder, landing, files (`src/git/`)
 
@@ -261,7 +293,8 @@ The only code that writes `ticket.md` in board mode (plan 2.2). Ported from `src
   is a read-only stand-in the start-up sweep still uses).
 - `routes`: what board mode answers now (files alone, no ticket writes): a ticket's `outputs`, `find-files`, `file`,
   `diff`; the board's `files`, `file`, `open-file`, `detect-setup`; `/api/version-history`. Anything unusual goes to
-  the satellite. The write routes (`merge-into-main`, `land`, `branch`, `setup`, `pr/*`, `check-pr`) come with R7a.
+  the satellite. `merge-into-main` and `land` are answered by R2b's family routes over `landing::Git`; the other
+  write routes (`branch`, `setup`, `pr/*`, `check-pr`) come with R7a.
 - At start (`start_jobs`): setup detection, and the worktree sweep in report-only mode.
 - Background deletes are report-only (`src/dryrun.rs`): the sweep and the Done cleanup append their decisions to
   `<data>/rust-board-dryrun.log` and delete nothing until `CKANBAN_RUST_DELETE=1` (plan 5.3).

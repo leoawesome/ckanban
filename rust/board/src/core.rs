@@ -268,6 +268,20 @@ mod tests {
         let d = tempfile::tempdir().unwrap();
         let core = Core::new(d.path(), Services::stand_ins());
         core.start(Core::steps()).await.unwrap();
-        assert_eq!(Core::steps().iter().map(|s| s.name).collect::<Vec<_>>(), ["load tickets", "load lists", "recover", "huddles", "quick chats", "timers"]);
+        assert_eq!(Core::steps().iter().map(|s| s.name).collect::<Vec<_>>(), ["load tickets", "old plans", "load lists", "recover", "huddles", "quick chats", "timers"]);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn an_old_style_plan_refuses_the_start() {
+        let d = tempfile::tempdir().unwrap();
+        let dir = d.path().join("profiles/b/tickets");
+        for (id, extra) in [("t_20260101_aaaa", ""), ("t_20260101_bbbb", "parentId: t_20260101_aaaa\n")] {
+            std::fs::create_dir_all(dir.join(id)).unwrap();
+            let md = format!("---\nid: {id}\ntitle: {id}\nstatus: backlog\norder: 1\ncreatedAt: 2026-01-01T00:00:00.000Z\nupdatedAt: 2026-01-01T00:00:00.000Z\n{extra}---\n");
+            std::fs::write(dir.join(id).join("ticket.md"), md).unwrap();
+        }
+        let core = Core::new(d.path(), Services::stand_ins());
+        let err = core.start(Core::steps()).await.unwrap_err();
+        assert!(err.starts_with("startup: old plans: board b has 1 old-style plan"), "{err}");
     }
 }

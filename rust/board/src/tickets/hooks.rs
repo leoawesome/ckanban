@@ -5,7 +5,7 @@
 //!
 //! Stand-ins keep board mode safe until then: nothing runs, so no run has rights and nothing is stopped; family
 //! links that need R2b's rules (`partOf`, gather, plan tool tickets) are refused with `NOT_YET` instead of being
-//! written without their checks.
+//! written without their checks (board mode plugs R2b's `families::Families` in through `wiring::Wired`).
 
 use futures_util::future::BoxFuture;
 use serde_json::{Map, Value};
