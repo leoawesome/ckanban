@@ -87,7 +87,7 @@ pub async fn run(bin: &str, args: &[String], timeout: Duration, cwd: &Path, on_s
             RunOut { code, stdout: out.lock().clone(), stderr: err.lock().clone(), timed_out: false }
         }
         Err(_) => {
-            let _ = child.start_kill();
+            terminate(child);
             r_out.abort();
             r_err.abort();
             RunOut { code: -1, stdout: out.lock().clone(), stderr: format!("timed out after {}s", (timeout.as_millis() as f64 / 1000.0).round() as u64), timed_out: true }
@@ -118,8 +118,26 @@ pub async fn session_statuses(bin: &str, cwd: &Path, mcp_config: Option<String>,
     };
     // Don't wait for the stream to end after a timeout: children of the killed CLI can hold the pipe open.
     let found = tokio::time::timeout(timeout, read).await.ok().flatten();
-    let _ = child.start_kill();
+    terminate(child);
     found
+}
+
+/// Bun's `p.kill()`: SIGTERM, so Claude can stop the MCP servers it started; SIGKILL (kill_on_drop) only if it is
+/// still there 5 s later. The child is reaped in the background.
+fn terminate(child: tokio::process::Child) {
+    let mut child = child;
+    if let Some(pid) = child.id() {
+        // SAFETY: a plain signal to our own child's pid, which `child` still holds (not reaped yet).
+        unsafe {
+            libc::kill(pid as libc::pid_t, libc::SIGTERM);
+        }
+    }
+    tokio::spawn(async move {
+        if tokio::time::timeout(Duration::from_secs(5), child.wait()).await.is_err() {
+            let _ = child.start_kill();
+            let _ = child.wait().await;
+        }
+    });
 }
 
 /// A running `claude mcp login` on a terminal: cancel it, or type a pasted address into it.

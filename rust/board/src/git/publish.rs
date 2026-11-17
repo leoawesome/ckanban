@@ -64,15 +64,19 @@ impl Publisher {
     /// that file is already being published.
     pub fn start(self: &Arc<Self>, slug: &str, id: &str, name: &str, file: PathBuf) -> Result<Value, (u16, String)> {
         let key = format!("{slug}/{id}");
+        let job = json!({ "file": name, "state": "publishing", "at": now() });
         {
+            // The check and the new job under one lock: a second request at the same moment gets the 409.
             let mut all = self.jobs.lock();
             let list = all.entry(key.clone()).or_default();
-            if list.iter().any(|(n, j)| n == name && j.get("state").and_then(Value::as_str) == Some("publishing")) {
-                return Err((409, "this file is already being published".into()));
+            match list.iter().position(|(n, _)| n == name) {
+                Some(i) if list[i].1.get("state").and_then(Value::as_str) == Some("publishing") => {
+                    return Err((409, "this file is already being published".into()));
+                }
+                Some(i) => list[i].1 = job.clone(),
+                None => list.push((name.to_string(), job.clone())),
             }
         }
-        let job = json!({ "file": name, "state": "publishing", "at": now() });
-        self.set(&key, name, Some(job.clone()));
         self.emit_ticket(slug, id);
         let (me, slug, id, name) = (self.clone(), slug.to_string(), id.to_string(), name.to_string());
         tokio::spawn(async move {
@@ -104,15 +108,23 @@ impl Publisher {
         }
         let url = r.get("url").and_then(Value::as_str).unwrap_or("").to_string();
         // The ticket was deleted meanwhile: nothing to save (its job stays, as in Bun).
-        let Some(t) = self.tickets.get(slug, id) else { return Ok(()) };
-        let mut links: Vec<Value> = t.json.get("shareLinks").and_then(Value::as_array).cloned().unwrap_or_default();
-        links.retain(|l| l.get("file").and_then(Value::as_str) != Some(name));
-        links.push(json!({ "file": name, "url": url, "at": now() }));
+        if self.tickets.get(slug, id).is_none() {
+            return Ok(());
+        }
         self.set(key, name, None);
-        let mut patch = Map::new();
-        patch.insert("shareLinks".into(), Value::Array(links));
-        self.tickets.update_quiet(slug, id, patch).map_err(|e| e.1)?;
-        self.emit_ticket(slug, id);
+        // Worked out under the board's lock, so two files of one ticket finishing together keep both links.
+        let t = self
+            .tickets
+            .update_with(slug, id, |meta| {
+                let mut links: Vec<Value> = meta.get("shareLinks").and_then(Value::as_array).cloned().unwrap_or_default();
+                links.retain(|l| l.get("file").and_then(Value::as_str) != Some(name));
+                links.push(json!({ "file": name, "url": url, "at": now() }));
+                let mut patch = Map::new();
+                patch.insert("shareLinks".into(), Value::Array(links));
+                Ok(patch)
+            })
+            .map_err(|e| e.1)?;
+        let _ = t;
         Ok(())
     }
 }

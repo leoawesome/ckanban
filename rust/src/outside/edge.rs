@@ -69,11 +69,25 @@ pub fn publish_run(bun: PathBuf, cli: PathBuf) -> ckanban_board::git::publish::P
             }
             // Not the board's own child markers: the helper is a top-level Claude (`helperEnv` drops the rest).
             cmd.env_remove("CKANBAN_SATELLITE").env_remove("CKANBAN_SATELLITE_EDGE");
-            cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped()).kill_on_drop(true);
-            let out = match tokio::time::timeout(PUBLISH_TIMEOUT, async { cmd.output().await }).await {
+            // Its own process group, so a timeout also ends the Claude it started.
+            cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped()).kill_on_drop(true).process_group(0);
+            let child = match cmd.spawn() {
+                Ok(c) => c,
+                Err(e) => return json!({ "ok": false, "error": format!("couldn't start the publishing helper: {e}") }),
+            };
+            let pid = child.id();
+            let out = match tokio::time::timeout(PUBLISH_TIMEOUT, child.wait_with_output()).await {
                 Ok(Ok(o)) => o,
-                Ok(Err(e)) => return json!({ "ok": false, "error": format!("couldn't start the publishing helper: {e}") }),
-                Err(_) => return json!({ "ok": false, "error": "publishing took too long" }),
+                Ok(Err(e)) => return json!({ "ok": false, "error": format!("the publishing helper failed: {e}") }),
+                Err(_) => {
+                    if let Some(pid) = pid {
+                        // SAFETY: a signal to the process group this server started for the helper.
+                        unsafe {
+                            libc::kill(-(pid as libc::pid_t), libc::SIGKILL);
+                        }
+                    }
+                    return json!({ "ok": false, "error": "publishing took too long" });
+                }
             };
             let text = String::from_utf8_lossy(&out.stdout);
             match text.lines().rev().find_map(|l| serde_json::from_str::<Value>(l).ok().filter(Value::is_object)) {

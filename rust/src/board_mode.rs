@@ -1534,6 +1534,26 @@ impl BoardMode {
             };
             return self.json_at(StatusCode::OK, &json!({ "status": status, "body": data }));
         }
+        // The outside services (P2), as the user who confirmed on this Mac: user-only actions still refuse (Bun's
+        // replay has no Origin).
+        if own_route(&m, path).is_none()
+            && let Some(outside) = self.outside.get()
+            && let Some(parts) = path.strip_prefix("/api/").and_then(api_parts)
+            && crate::outside::routes::claims(m.as_str(), &parts, outside.agents.is_some())
+        {
+            use crate::outside::{Answer, Call};
+            let bytes = body.map(|v| serde_json::to_vec(v).unwrap_or_default()).unwrap_or_default();
+            let query = req.uri().query().unwrap_or("").to_string();
+            let user = |what: &str| -> Result<(), Answer> { Err(Answer::error(403, crate::guard::refusal(what))) };
+            let call = Call { method: m.as_str(), parts: &parts, query: &query, body: &bytes, local: true, from_run: false, user: &user };
+            let (status, data) = match outside.answer(&call).await {
+                Some(Answer::Json(status, v)) => (status, v),
+                Some(Answer::Html(status, page)) => (status, Value::String(page)),
+                Some(Answer::Empty(status)) => (status, Value::Null),
+                None => (404, json!({ "error": "not found" })),
+            };
+            return self.json_at(StatusCode::OK, &json!({ "status": status, "body": data }));
+        }
         let res = match own_route(&m, path) {
             Some(own) => self.own(own, req, Listener::Local).await,
             None => {

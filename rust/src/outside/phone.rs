@@ -644,6 +644,8 @@ impl Phone {
         tokio::spawn(async move {
             tokio::time::sleep(FIRST_CHECK).await;
             let mut tick = tokio::time::interval(SERVE_CHECK);
+            // The first tick is now: the check below is the first one.
+            tick.tick().await;
             loop {
                 if me.active().is_some() {
                     me.check_serve().await;

@@ -181,7 +181,20 @@ impl AgentsAdmin {
                 if let Some(pid) = pid {
                     unsafe { libc::kill(pid as i32, libc::SIGTERM) };
                 }
-                wait.await
+                // Not forever: a CLI that ignores the signal, or a child holding its pipes, gets SIGKILL after 5 s and
+                // the request ends (a hung install would block every later one).
+                match tokio::time::timeout(std::time::Duration::from_secs(5), &mut wait).await {
+                    Ok(o) => o,
+                    Err(_) => {
+                        if let Some(pid) = pid {
+                            unsafe { libc::kill(pid as i32, libc::SIGKILL) };
+                        }
+                        match tokio::time::timeout(std::time::Duration::from_secs(5), &mut wait).await {
+                            Ok(o) => o,
+                            Err(_) => Err(std::io::Error::other(format!("claude {} didn't stop after 60s", args.iter().take(2).cloned().collect::<Vec<_>>().join(" ")))),
+                        }
+                    }
+                }
             }
         }
         .map_err(|e| Answer::error(502, e.to_string()))?;
