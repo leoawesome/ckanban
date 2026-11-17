@@ -122,7 +122,7 @@ export interface HelperCoreDeps {
 export interface HelperEdge {
   waitSeen(key: string, at: string): void;
   sendMessage(m: NewMessage, out: Omit<OutMessage, "messageId" | "ticket">): Promise<{ message: StoredMessage; results: ChannelResult[] }>;
-  writeSettings(s: NotifySettings): void;
+  writeSettings(s: NotifySettings): Promise<void>;
   action(name: string, b: Record<string, unknown>): Promise<string>;
 }
 

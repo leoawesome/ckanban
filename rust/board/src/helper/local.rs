@@ -32,7 +32,7 @@ pub fn make(year: i32, month0: i64, day: i64, hour: u32, minute: u32) -> f64 {
             LocalResult::Single(t) => return t.timestamp_millis() as f64,
             LocalResult::Ambiguous(a, b) => return a.timestamp_millis().min(b.timestamp_millis()) as f64,
             // In a spring-forward gap: JS moves the wall time forward by the gap (an hour almost everywhere).
-            LocalResult::None => naive = naive + Duration::hours(1),
+            LocalResult::None => naive += Duration::hours(1),
         }
     }
     f64::NAN

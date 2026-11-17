@@ -37,11 +37,11 @@ pub const RUN_TIMEOUT_MS: u64 = 90_000;
 pub const AWAKE_AHEAD_MS: f64 = 15.0 * 60_000.0;
 pub const URGENT_RETRY_MS: f64 = 5.0 * 60_000.0;
 pub const RUNS_KEEP: usize = 50;
-pub const UNSNOOZED_MAX_MS: f64 = 24.0 * 3600_000.0;
+pub const UNSNOOZED_MAX_MS: f64 = 24.0 * 3_600_000.0;
 pub const DIGEST_LEAD_MS: f64 = 5.0 * 60_000.0;
 pub const REACTIONS_KEEP: usize = 20;
 pub const PRACTICE_REMIND_MS: f64 = 60_000.0;
-pub const NIGHT_ASK_MAX_MS: f64 = 24.0 * 3600_000.0;
+pub const NIGHT_ASK_MAX_MS: f64 = 24.0 * 3_600_000.0;
 pub const PRACTICE_STOPPED: &str = "That stopped the reminder. Real alerts work the same way.";
 /// `snoozeForever`: a snooze "until I unsnooze" (an end from the year 9000 on).
 fn snooze_forever(until: &str) -> bool {

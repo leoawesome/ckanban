@@ -11,10 +11,10 @@ use serde_json::{Map, Value, json};
 
 pub type Rec = Map<String, Value>;
 
-pub const CLOSED_KEEP_MS: f64 = 7.0 * 24.0 * 3600_000.0;
+pub const CLOSED_KEEP_MS: f64 = 7.0 * 24.0 * 3_600_000.0;
 pub const FALLBACK_MS: f64 = 5.0 * 60_000.0;
 pub const BOOT_GRACE_MS: f64 = 2.0 * 60_000.0;
-pub const DIGEST_MS: f64 = 4.0 * 3600_000.0;
+pub const DIGEST_MS: f64 = 4.0 * 3_600_000.0;
 
 /// How the waits file was found at start-up.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -482,7 +482,7 @@ impl WaitStore {
         let now = (self.now)();
         let cut = now - CLOSED_KEEP_MS;
         self.records.retain(|_, r| r.as_object().is_none_or(|r| !(ro(r, "closedAt").is_some() && rms(r, "closedAt") < cut)));
-        let day = now - 24.0 * 3600_000.0;
+        let day = now - 24.0 * 3_600_000.0;
         self.notify_user_at.retain(|_, at| !at.as_f64().is_some_and(|a| a < day));
     }
 }

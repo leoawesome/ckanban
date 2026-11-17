@@ -146,7 +146,7 @@ export function rustHelperEdge(front: Front, written: (s: NotifySettings) => voi
       return { message: r.body.message, results: r.body.results ?? [] };
     },
     writeSettings(s) {
-      void rustCall(front, "notify-write", { settings: s })
+      return rustCall(front, "notify-write", { settings: s })
         .then((r) => logFailed("notify-write", r), (e) => console.error("satellite: notify-write", e))
         .finally(() => written(s));
     },

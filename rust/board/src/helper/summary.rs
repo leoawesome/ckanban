@@ -11,7 +11,7 @@ use super::text::cut;
 use crate::index::text::fixed2;
 use crate::runs::js::{self, trim};
 
-pub const STALE_MS: f64 = 3.0 * 24.0 * 3600_000.0;
+pub const STALE_MS: f64 = 3.0 * 24.0 * 3_600_000.0;
 pub const ROW_MAX: usize = 100;
 pub const LABEL_MAX: usize = 80;
 

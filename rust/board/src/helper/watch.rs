@@ -207,7 +207,12 @@ impl Watcher {
         }
     }
 
+    /// A ticket's session summary. Not for Done and Backlog tickets, which can't wait on the user (`ownAttention`):
+    /// the start-up stock-take over a big board then reads no transcript of them (the satellite never had them).
     fn session_of(&self, t: &Tk) -> Option<Value> {
+        if t.status == "done" || t.status == "backlog" {
+            return None;
+        }
         t.s("sessionId").filter(|s| !s.is_empty()).and_then(|s| self.core.board.session(s))
     }
 

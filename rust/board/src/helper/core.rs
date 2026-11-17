@@ -20,7 +20,7 @@ use super::notify_settings::{helper_on, read_notify};
 use super::text::{clock_time, cut1, direct_label, usage_limit_line};
 use super::waits::{self, NewWait, Rec, WaitStore, WaitsStart, is_open, pending, rb, ro, rs};
 
-pub const URGENT_RECENT_MS: f64 = 24.0 * 3600_000.0;
+pub const URGENT_RECENT_MS: f64 = 24.0 * 3_600_000.0;
 pub const LIMIT_BATCH_MS: f64 = 60_000.0;
 
 /// Why the runner hears about a record.

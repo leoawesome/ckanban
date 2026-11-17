@@ -18,7 +18,7 @@ pub const HELPER_SYSTEM: &str = include_str!("system.txt");
 pub const DECISION_SCHEMA_TEXT: &str = include_str!("schema.json");
 pub static DECISION_SCHEMA: LazyLock<Value> = LazyLock::new(|| serde_json::from_str(DECISION_SCHEMA_TEXT).expect("schema"));
 
-pub const SUMMARY_GAP_MS: f64 = 3.0 * 3600_000.0;
+pub const SUMMARY_GAP_MS: f64 = 3.0 * 3_600_000.0;
 pub const MIN_WAKE_MIN: f64 = 1.0;
 pub const MAX_WAKE_MIN: f64 = 24.0 * 60.0;
 pub const STEP_GAP_MIN: f64 = 5.0;

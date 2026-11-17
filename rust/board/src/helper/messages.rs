@@ -20,9 +20,9 @@ use crate::runs::js::{self, head16, len16, trim};
 
 pub type Msg = Map<String, Value>;
 
-pub const MESSAGES_KEEP_MS: f64 = 30.0 * 24.0 * 3600_000.0;
+pub const MESSAGES_KEEP_MS: f64 = 30.0 * 24.0 * 3_600_000.0;
 pub const MESSAGES_MAX: usize = 500;
-pub const HELD_KEEP_MS: f64 = 7.0 * 24.0 * 3600_000.0;
+pub const HELD_KEEP_MS: f64 = 7.0 * 24.0 * 3_600_000.0;
 pub const HELD_MAX: usize = 200;
 pub const NEAR_KEEP_MAX: usize = 300;
 pub const PAIR_MS: f64 = 90_000.0;
@@ -107,16 +107,15 @@ impl MessageStore {
     fn items(&mut self) -> &mut Vec<Msg> {
         if self.list.is_none() {
             let mut list = Vec::new();
-            match std::fs::read_to_string(&self.file) {
-                Ok(t) => match datafile::parse_json(&t) {
+            if let Ok(t) = std::fs::read_to_string(&self.file) {
+                match datafile::parse_json(&t) {
                     Some(v) => {
                         if let Some(a) = v.get("messages").and_then(Value::as_array) {
                             list = a.iter().filter_map(|m| m.as_object().filter(|m| m.get("id").is_some_and(Value::is_string)).cloned()).collect();
                         }
                     }
                     None => eprintln!("helper: messages.json could not be read (not JSON); starting a new one"),
-                },
-                Err(_) => {}
+                }
             }
             self.list = Some(list);
         }

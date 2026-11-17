@@ -76,7 +76,7 @@ async fn messages(h: &Helper, r: &Req) -> Answer {
     if p.len() == 1 && m == "GET" {
         let tab = as_tab(q(&r.query, "tab").as_deref().or(Some("all")));
         let n = q(&r.query, "limit").map(|l| js::number_of_str(&l).floor()).unwrap_or(0.0);
-        let limit = (if n.is_nan() || n == 0.0 { 30.0 } else { n }).max(1.0).min(100.0) as usize;
+        let limit = (if n.is_nan() || n == 0.0 { 30.0 } else { n }).clamp(1.0, 100.0) as usize;
         let cursor = |side: &str| -> Option<Cursor> {
             let at = q(&r.query, &format!("{side}At")).filter(|s| !s.is_empty())?;
             let id = q(&r.query, &format!("{side}Id")).filter(|s| !s.is_empty())?;
