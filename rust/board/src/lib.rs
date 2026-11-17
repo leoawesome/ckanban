@@ -21,7 +21,6 @@ pub mod extras; // R12
 pub mod families; // R2b
 pub mod gate; // R13
 pub mod git; // R6
-pub mod huddle_agents; // R11c
 pub mod huddles; // R11a
 pub mod index; // R1
 pub mod prompts; // R4

@@ -347,7 +347,7 @@ impl RunLoop {
     }
 
     /// The board's own tool servers (`board-tools.json`'s `mcpServers`), not ours.
-    fn board_tools(&self, slug: &str) -> Map<String, Value> {
+    pub(crate) fn board_tools(&self, slug: &str) -> Map<String, Value> {
         let file = ckanban_core::DataDir::new(self.root.clone()).profile_dir(slug).join("board-tools.json");
         let mut out = Map::new();
         if let Some(Value::Object(m)) = std::fs::read_to_string(file).ok().and_then(|t| crate::runs::js::parse(&t)).and_then(|v| v.get("mcpServers").cloned()) {
@@ -361,7 +361,7 @@ impl RunLoop {
     }
 
     /// `mcpConfig(helper mcp, servers)`: the board's servers, then ours.
-    pub(super) fn mcp_config(&self, servers: Map<String, Value>) -> String {
+    pub(crate) fn mcp_config(&self, servers: Map<String, Value>) -> String {
         let mut m = Map::new();
         for (k, v) in servers {
             if k != "ckanban" {
@@ -444,7 +444,7 @@ impl RunLoop {
 
     /// `runBrowsers`: each chosen board browser started and held for the run (`lease`); one that can't start is left
     /// out and the run told so. Nothing chosen: nothing changes.
-    pub(super) async fn run_browsers(&self, slug: &str, id: &str, lease: &str, out_dir: &std::path::Path) -> RunBrowsers {
+    pub(crate) async fn run_browsers(&self, slug: &str, id: &str, lease: &str, out_dir: &std::path::Path) -> RunBrowsers {
         let Some(b) = self.browsers.clone() else { return RunBrowsers::default() };
         let picks = self.devices.browser_picks(slug, Some(id));
         let list: Vec<Value> = picks.as_ref().and_then(Value::as_array).cloned().unwrap_or_default();

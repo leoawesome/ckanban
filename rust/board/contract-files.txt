@@ -100,6 +100,11 @@ board-extras.test.ts
 # R7b: slash commands (the / list, /model and /effort, refused commands, a project command sent to Claude), rewind,
 # undo and fork, Say it simpler, Help me understand, the Context panel and the Planning chat's terminal command for
 # tickets (chat.test.ts and chat-session.test.ts above lost their filters), and a quick chat's context, simplify,
-# rewind, undo, fork and Make ticket (quickchat.test.ts, whole). data-files.test.ts gets past the chat extras now and
-# waits for a huddle helper's spend (R11c).
+# rewind, undo, fork and Make ticket (quickchat.test.ts, whole).
 quickchat.test.ts
+
+# R11c: what runs for a huddle: helpers' runs in their own copy or a snapshot, ticket sessions' replies, costs and the
+# budget stop, hand-ins from a helper's copy, auto huddles started by the host's own run (and the board's slot), a
+# participant's session viewer. huddle.test.ts and huddle-team.test.ts pass whole (listed above). Copies and project
+# copies left in outputs are only reported after a close (rust-board-dryrun.log) until CKANBAN_RUST_DELETE=1.
+huddle-agents.test.ts
