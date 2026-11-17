@@ -117,7 +117,12 @@ Install it first with: ckanban install"
     [ -f "$repo/rust/Cargo.toml" ] || fail "The Rust server isn't in $repo yet (no rust folder). Nothing changed."
     [ -x "$CARGO" ] || fail "Rust isn't installed ($CARGO is missing), so the Rust server can't be built. Nothing changed."
     say "Building the Rust server (the first build takes a few minutes)..."
-    (cd "$repo/rust" && "$CARGO" build --release) || fail "The Rust server didn't build (see above). Nothing changed."
+    # scripts/build-rust.sh signs the build on macOS so folder access (Desktop...) sticks across builds.
+    if [ -f "$repo/scripts/build-rust.sh" ]; then
+      CARGO="$CARGO" /bin/bash "$repo/scripts/build-rust.sh"
+    else
+      (cd "$repo/rust" && "$CARGO" build --release)
+    fi || fail "The Rust server didn't build (see above). Nothing changed."
     [ -x "$bin" ] || fail "The build finished but $bin is still missing. Nothing changed."
   fi
 
