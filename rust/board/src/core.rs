@@ -113,9 +113,8 @@ impl Core {
                 });
                 Ok(())
             }),
-            // R2b: a board with an old-style plan (planned tickets from before main tickets) is left to Bun, whose
-            // one-time migration (`retire-plans.ts`) turns it into main tickets: board mode refuses this start
-            // (fallback 2). Waits for the load above, which a board's first page waits for anyway.
+            // R2b: a board with an old-style plan (planned tickets from before main tickets) needs Bun's one-time
+            // migration (`retire-plans.ts`, before P4) to turn it into main tickets: the start is refused with how. Waits for the load above, which a board's first page waits for anyway.
             Step::new("old plans", |c| async move {
                 let index = c.index.clone();
                 let root = c.root.clone();

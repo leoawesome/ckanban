@@ -31,7 +31,7 @@ pub fn refusal(boards: &[(String, std::sync::Arc<BoardList>)], file: &dyn Fn(&st
         let planners = old_planners(list);
         if let Some(first) = planners.first() {
             return Some(format!(
-                "board {slug} has {} old-style plan{} (planned tickets, e.g. {first} in {}) that only Bun's one-time migration turns into main tickets; Bun keeps the board this time",
+                "board {slug} has {} old-style plan{} (planned tickets, e.g. {first} in {}) that only Bun's one-time migration turns into main tickets, and Bun's server is gone: start Bun's daemon once from the last commit that has it (fca356b2, `bun src/cli.ts dev`) to turn them into main tickets, then start this one again",
                 planners.len(),
                 if planners.len() == 1 { "" } else { "s" },
                 file(slug, first).display()

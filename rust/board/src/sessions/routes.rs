@@ -185,21 +185,24 @@ impl Sessions {
         let parsed = sid.as_deref().and_then(|s| self.cache.get(s));
         let (all, current) = self.chat_entries(t);
         let len = all.len() as f64;
+        // `Number(limit) || 100`: NaN counts as 0.
         let limit_raw = match query_get(q, "limit") {
-            Some(v) => js_number(&v)?,
+            Some(v) => js_number(&v).unwrap_or(0.0),
             None => 0.0,
         };
         let limit = 500f64.min(1f64.max(if limit_raw == 0.0 { 100.0 } else { limit_raw }));
         let before = match query_get(q, "before") {
-            Some(v) => js_number(&v)?,
+            Some(v) => js_number(&v).unwrap_or(f64::NAN),
             None => len,
         };
-        let end = 0f64.max(len.min(before));
-        let start = 0f64.max(end - limit);
+        // JS: a NaN `before` stays NaN through Math.min/max, `slice(NaN, NaN)` is empty and `start` is null.
+        let end = if before.is_nan() { f64::NAN } else { 0f64.max(len.min(before)) };
+        let start = if end.is_nan() { f64::NAN } else { 0f64.max(end - limit) };
         let active = self.runs().is_running(slug, id);
         let earlier = all.len() - current;
         let now = ckanban_core::time::now_ms();
-        let (a, b) = (start.trunc() as usize, end.trunc() as usize);
+        let idx = |x: f64| if x.is_nan() { 0 } else { x.trunc() as usize };
+        let (a, b) = (idx(start), idx(end));
         let entries: Vec<Value> = all[a.min(b)..b]
             .iter()
             .enumerate()
@@ -364,7 +367,8 @@ impl Sessions {
         let num = |k: &str| -> Option<Option<f64>> {
             match query_get(q, k) {
                 None => Some(None),
-                Some(v) => js_number(&v).map(Some),
+                // NaN reads as the default (`read_chat`).
+                Some(v) => Some(Some(js_number(&v).unwrap_or(f64::NAN))),
             }
         };
         let (before, after) = (num("before")?, num("after")?);

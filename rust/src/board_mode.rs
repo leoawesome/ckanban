@@ -1263,6 +1263,12 @@ impl BoardMode {
         if req.uri().path() == "/api/telegram/front-desk/file" && self.tg().is_some() {
             return self.error(StatusCode::FORBIDDEN, "send_file only works in the Telegram front desk's chat");
         }
+        // Bun's `api()` decodes every path part first (`decodeURIComponent`): a bad escape is its URIError, 400.
+        if let Some(rest) = req.uri().path().strip_prefix("/api/")
+            && !rest.split('/').all(js_decodable)
+        {
+            return self.error(StatusCode::BAD_REQUEST, "malformed URL");
+        }
         // 3. Own routes.
         if !wants_upgrade(req.headers())
             && let Some(own) = own_route(req.method(), req.uri().path())
@@ -1684,6 +1690,26 @@ fn is_read_route(path: &str) -> bool {
     }
 }
 
+/// Whether JS `decodeURIComponent` takes this path part: every `%` starts two hex digits and the bytes are UTF-8.
+fn js_decodable(seg: &str) -> bool {
+    let b = seg.as_bytes();
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'%' {
+            if i + 2 >= b.len() {
+                return false;
+            }
+            if !(b[i + 1].is_ascii_hexdigit() && b[i + 2].is_ascii_hexdigit()) {
+                return false;
+            }
+            i += 3;
+        } else {
+            i += 1;
+        }
+    }
+    percent_encoding::percent_decode_str(seg).decode_utf8().is_ok()
+}
+
 fn json_text(status: u16, text: String) -> Response<Body> {
     use http_body_util::{BodyExt, Full};
     let mut r = Response::new(Full::new(bytes::Bytes::from(text)).map_err(|never| match never {}).boxed());
@@ -1743,6 +1769,17 @@ mod tests {
         assert_eq!(api_parts("profiles/%zz"), None);
         assert_eq!(api_parts("profiles/%E2%82"), None);
         assert_eq!(api_parts("profiles/a+b"), Some(vec!["profiles".into(), "a+b".into()]));
+    }
+
+    #[test]
+    fn bad_escapes_are_malformed() {
+        assert!(js_decodable("a%20b"));
+        assert!(js_decodable("plain"));
+        assert!(!js_decodable("%zz"));
+        assert!(!js_decodable("x%2"));
+        assert!(!js_decodable("%"));
+        assert!(!js_decodable("%ff"));
+        assert!(js_decodable("%C3%A9"));
     }
 
     #[test]
