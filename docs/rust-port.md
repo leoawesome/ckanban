@@ -144,7 +144,7 @@ before the switch on Leo's Mac (F2).
 
 | Check | Result |
 |---|---|
-| Every contract test file in board mode (`bun run test:contract:rust-board`, all 44 files in `rust/board/contract-files.txt`, none filtered) | see the F1 report for the final run |
+| Every contract test file in board mode (`bun run test:contract:rust-board`: all 44 files listed in `rust/board/contract-files.txt`, none filtered) | all 44 pass |
 | Board parity (`test/contract/board-parity.test.ts`: one script on Bun's full mode and on the Rust board, answers and files compared with ids, times and session ids masked) | the same, after the masks |
 | Dry run on a copy of Leo's data folder (`scripts/rust-board-dryrun.ts`: 8 boards, 1,916 tickets, 14,309 page reads per server) | the same pages and start-up writes, except the differences below; two real differences found and fixed |
 | Report-only deletes against Bun's own deletes on the same copy | the same 8 copy-of-the-folder decisions (6 removed, 2 kept with changes); with deleting on, the same 135 files removed |
