@@ -215,6 +215,7 @@ async function startServer(d: ReturnType<typeof dirs>, bin: string): Promise<Ser
     CLAUDE_CONFIG_DIR: d.claude,
     CKANBAN_CLAUDE_BIN: join(bin, "claude"),
     CKANBAN_OSASCRIPT_BIN: join(bin, "osascript"),
+    CKANBAN_TAILSCALE: "/usr/bin/false",
     CKANBAN_OPEN_BIN: join(bin, "open"),
     CKANBAN_PORT: String(port),
     CKANBAN_REMOTE_PORT: String(remotePort),

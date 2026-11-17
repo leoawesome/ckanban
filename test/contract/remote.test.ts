@@ -2,11 +2,11 @@
 // port, CKANBAN_REMOTE_PORT): off unless remote.json says on, the tailnet Host, the owner's Tailscale login, the Origin
 // on changes, the x-ckanban-listener header. See contracts/api.md ("Basics", "Remote") and data-files.md (remote.json).
 //
-// Turning phone access on or off runs Tailscale. The daemon prefers /Applications/Tailscale.app's own binary over
-// PATH, so on a Mac with Tailscale installed a stub on PATH would not stop it: these tests never reach that code (no
-// `POST /api/remote` that gets past its checks, no `GET /api/remote` while it is on). remote.json is written here.
-import { afterAll, beforeAll, expect, test } from "bun:test";
-import { existsSync, readFileSync, rmSync } from "node:fs";
+// Turning phone access on or off runs Tailscale: the daemon gets CKANBAN_TAILSCALE pointing at a stub (daemon.ts), so the
+// Mac's real Tailscale is never changed. The last tests use a stub that keeps a serve config, to check that the board
+// puts its link back when it went missing and that turning off a link that is already gone is plain off.
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { type Daemon, startDaemon } from "./daemon";
 import { PHONE_HOST, PHONE_LOGIN, phone, writeRemoteJson } from "./phone";
@@ -128,4 +128,78 @@ test("off again: the phone listener refuses at once (remote.json re-read on chan
   expect((await phone(d, "GET", "/api/profiles")).status).toBe(403);
   rmSync(remoteFile());
   expect((await d.api("GET", "/api/remote")).data.url).toBeNull();
+});
+
+/**
+ * A `tailscale` that keeps the HTTPS 443 link in a file next to it and logs every call; another app's Funnel on 8443 is
+ * always there. `serve --https=443 off` with no link fails the way Tailscale does ("handler does not exist").
+ */
+const SERVING_TAILSCALE = `#!/bin/sh
+dir=$(dirname "$0")
+echo "$*" >> "$dir/tailscale-calls.log"
+case "$*" in
+  "status --json") echo '{"BackendState":"Running","Self":{"DNSName":"${PHONE_HOST}.","UserID":1},"User":{"1":{"LoginName":"${PHONE_LOGIN}"}}}' ;;
+  "serve status --json")
+    other='"${PHONE_HOST}:8443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8787"}}}'
+    if [ -f "$dir/ts-443" ]; then
+      printf '{"TCP":{"443":{"HTTPS":true},"8443":{"HTTPS":true}},"Web":{"${PHONE_HOST}:443":{"Handlers":{"/":{"Proxy":"%s"}}},%s},"AllowFunnel":{"${PHONE_HOST}:8443":true}}' "$(cat "$dir/ts-443")" "$other"
+    else
+      printf '{"TCP":{"8443":{"HTTPS":true}},"Web":{%s},"AllowFunnel":{"${PHONE_HOST}:8443":true}}' "$other"
+    fi ;;
+  "serve --bg --https=443 "*) echo "$4" > "$dir/ts-443" ;;
+  "serve --https=443 off")
+    if [ -f "$dir/ts-443" ]; then rm "$dir/ts-443"; else echo "error: handler does not exist" >&2; exit 1; fi ;;
+  *) echo "unexpected: $*" >&2; exit 1 ;;
+esac
+`;
+
+describe("Tailscale's link to the board", () => {
+  let s: Daemon;
+  let tsDir: string;
+  beforeAll(async () => {
+    s = await startDaemon({ stubs: { tailscale: SERVING_TAILSCALE } });
+    tsDir = s.env.CKANBAN_TAILSCALE.replace(/\/tailscale$/, "");
+  }, 60_000);
+  afterAll(async () => {
+    await s?.stop();
+  }, 30_000);
+  const calls = () => (existsSync(join(tsDir, "tailscale-calls.log")) ? readFileSync(join(tsDir, "tailscale-calls.log"), "utf8").trim().split("\n") : []);
+  const link = () => (existsSync(join(tsDir, "ts-443")) ? readFileSync(join(tsDir, "ts-443"), "utf8").trim() : null);
+
+  test("on, link missing: GET /api/remote puts it back at the phone listener (tailnet only) and says ok", async () => {
+    writeRemoteJson(s.home, true);
+    const r = await s.api("GET", "/api/remote");
+    expect(r.status).toBe(200);
+    expect(r.data).toMatchObject({ enabled: true, tailscale: "running", serve: "ok" });
+    expect(r.data.serveProblem).toBeUndefined();
+    expect(link()).toBe(`http://127.0.0.1:${s.remotePort}`);
+    expect(calls()).toContain(`serve --bg --https=443 http://127.0.0.1:${s.remotePort}`);
+    // Never Funnel, never the other app's port, never a reset.
+    expect(calls().some((c) => /funnel|8443|reset/.test(c))).toBe(false);
+    expect(s.log()).toContain(`phone access: Tailscale's link to the board was missing; put it back (https 443 -> 127.0.0.1:${s.remotePort})`);
+  });
+
+  test("port 443 taken by another program: left alone, and GET /api/remote says the phone can't reach the board", async () => {
+    writeFileSync(join(tsDir, "ts-443"), "http://127.0.0.1:9\n");
+    const r = await s.api("GET", "/api/remote");
+    expect(r.data).toMatchObject({ enabled: true, serve: "other" });
+    expect(r.data.serveProblem).toContain("another program");
+    expect(link()).toBe("http://127.0.0.1:9");
+    rmSync(join(tsDir, "ts-443"));
+  });
+
+  test("off: removes the board's link; off when it is already gone is plain off, no warning", async () => {
+    writeFileSync(join(tsDir, "ts-443"), `http://127.0.0.1:${s.remotePort}\n`);
+    let r = await s.api("POST", "/api/remote", { enabled: false });
+    expect(r.status).toBe(200);
+    expect(r.data.enabled).toBe(false);
+    expect(r.data.warning).toBeUndefined();
+    expect(link()).toBeNull();
+
+    writeRemoteJson(s.home, true);
+    r = await s.api("POST", "/api/remote", { enabled: false });
+    expect(r.status).toBe(200);
+    expect(r.data).toMatchObject({ enabled: false });
+    expect(r.data.warning).toBeUndefined();
+  });
 });

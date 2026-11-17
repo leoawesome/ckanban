@@ -268,7 +268,7 @@ async function run(name: string): Promise<void> {
     PATH: `${BIN}:${dirname(BUN)}:/usr/bin:/bin:/usr/sbin:/sbin`,
     HOME, CKANBAN_HOME: DATA, CLAUDE_CONFIG_DIR: CLAUDE, CKANBAN_PORT: String(port), CKANBAN_REMOTE_PORT: String(remotePort),
     CKANBAN_CLAUDE_BIN: join(BIN, "claude"), CKANBAN_CHROME_BIN: join(BIN, "google-chrome"), CKANBAN_OSASCRIPT_BIN: join(BIN, "osascript"),
-    CKANBAN_OPEN_BIN: join(BIN, "open"), CKANBAN_USAGE_URL: `${DEAD}/api/oauth/usage`, CKANBAN_NO_KEYCHAIN: "1",
+    CKANBAN_OPEN_BIN: join(BIN, "open"), CKANBAN_TAILSCALE: "/usr/bin/false", CKANBAN_USAGE_URL: `${DEAD}/api/oauth/usage`, CKANBAN_NO_KEYCHAIN: "1",
     CKANBAN_TELEGRAM_URL: DEAD, CKANBAN_RELEASES_URL: `${DEAD}/releases`, FAKE_MODE: "ok", FAKE_ARGS_FILE: join(out, "claude-args.jsonl"),
     TMPDIR: process.env.TMPDIR ?? "/tmp", LANG: "en_US.UTF-8", TZ: Intl.DateTimeFormat().resolvedOptions().timeZone,
     CKANBAN_RUST_BOARD: rust ? "1" : "0",

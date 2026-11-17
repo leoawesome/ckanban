@@ -248,13 +248,23 @@ found"}`, also for `/info`.
 
 - Checks run in the order listed, before any Tailscale command. `on` runs `tailscale status --json` and
   `tailscale serve --bg --https=443 http://127.0.0.1:<remote port>`, then writes `remote.json`; `off` writes
-  `enabled: false` first (or deletes the file when it held nothing usable), then runs `tailscale serve --https=443 off`
-  and reports a failure there as `warning` (still 200). `RemoteError` statuses: 424 Tailscale missing, stopped, not
-  signed in or Serve not enabled; 409 the phone access listener isn't answering; 502 Tailscale failed.
+  `enabled: false` first (or deletes the file when it held nothing usable), then reads `tailscale serve status --json`:
+  nothing on HTTPS 443, or 443 sent to another address than the phone listener, is left as it is (plain off). Otherwise
+  it runs `tailscale serve --https=443 off`; Tailscale's "handler does not exist" is plain off too, any other failure
+  is `warning` (still 200). `RemoteError` statuses: 424 Tailscale missing, stopped, not signed in or Serve not enabled;
+  409 the phone access listener isn't answering; 502 Tailscale failed.
 - `GET /api/remote` while phone access is on also runs `tailscale status --json` (at most 3 s) and adds `tailscale`
-  (`running`, `stopped` or `unavailable`) and `backendState`. While off it runs nothing.
-- The `tailscale` command is `/Applications/Tailscale.app/Contents/MacOS/Tailscale` when that exists, else `tailscale`
-  on PATH (run with `TAILSCALE_BE_CLI=1`).
+  (`running`, `stopped` or `unavailable`) and `backendState`. While off it runs nothing. When running, it also checks
+  the link (below) and adds `serve`: `ok`, or `missing` / `other` / `public` with `serveProblem`, a plain-words sentence
+  for the user. No `serve` when `tailscale serve status --json` can't be read.
+- The link check (also 10 s after start and every 3 minutes while on, `daemon.log` lines start `phone access:`): HTTPS
+  443 sent to `http://127.0.0.1:<remote port>` is `ok`. Nothing on 443: when the phone listener answers, it runs
+  `tailscale serve --bg --https=443 http://127.0.0.1:<remote port>` (tailnet only, never Funnel) and logs one line;
+  else `missing`. 443 sent elsewhere is `other` and Funnel on 443 is `public`; both are left as they are. Other ports
+  (another app's Funnel on 8443) are never touched.
+- The `tailscale` command is `CKANBAN_TAILSCALE` when set (tests point it at a stub), else
+  `/Applications/Tailscale.app/Contents/MacOS/Tailscale` when that exists, else `tailscale` on PATH (run with
+  `TAILSCALE_BE_CLI=1`).
 - Refusal texts on the phone access listener (403 `text/plain`): `forbidden: phone access is off (run \`ckanban remote
   on\` on the Mac)`; `forbidden` for another Host or a mutation's foreign Origin; `forbidden: open this board signed in
   to Tailscale as its owner` for a missing or other login. `remote.json` is re-read when its mtime changes.

@@ -18,7 +18,7 @@ async function round(kind: "bun" | "rust", i: number) {
   for (const s of ["home", "user", "claude", "project"]) mkdirSync(join(d, s), { recursive: true });
   const port = freePort(); let rp = freePort(); while (rp === port) rp = freePort();
   const env = { PATH: `/tmp/ckanban-rust-trial/bin:${BUN.replace(/\/bun$/, "")}:/usr/bin:/bin`, HOME: join(d, "user"), CKANBAN_HOME: join(d, "home"), CLAUDE_CONFIG_DIR: join(d, "claude"),
-    CKANBAN_CLAUDE_BIN: "/usr/bin/false", CKANBAN_OSASCRIPT_BIN: "/usr/bin/true", CKANBAN_OPEN_BIN: "/usr/bin/true", CKANBAN_PORT: String(port), CKANBAN_REMOTE_PORT: String(rp),
+    CKANBAN_CLAUDE_BIN: "/usr/bin/false", CKANBAN_OSASCRIPT_BIN: "/usr/bin/true", CKANBAN_OPEN_BIN: "/usr/bin/true", CKANBAN_TAILSCALE: "/usr/bin/false", CKANBAN_PORT: String(port), CKANBAN_REMOTE_PORT: String(rp),
     CKANBAN_USAGE_URL: "http://127.0.0.1:9/none", CKANBAN_NO_KEYCHAIN: "1", CKANBAN_REPO: CODE, TMPDIR: "/tmp", LANG: "en_US.UTF-8" };
   const cmd = kind === "bun" ? [BUN, `${CODE}/src/cli.ts`, "dev"] : [RS, "dev"];
   const fd = openSync(join(d, "log"), "a");

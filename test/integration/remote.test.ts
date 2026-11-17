@@ -5,7 +5,7 @@ import { Board } from "../../src/board/board";
 import { Bus } from "../../src/core/events";
 import { createServer, isAllowedRequest, isAllowedSocket } from "../../src/api/server";
 import { chmodSync } from "node:fs";
-import { isPhoneListener, qrSvg, qrTerminal, RemoteAccess, RemoteError, tailscaleRunner, type RemoteConfig, type TailscaleRunner } from "../../src/integrations/remote";
+import { isPhoneListener, parseServe, qrSvg, qrTerminal, RemoteAccess, RemoteError, tailscaleRunner, type RemoteConfig, type TailscaleRunner } from "../../src/integrations/remote";
 import { RUN_HEADER } from "../../src/schedules/scheduler";
 import { Store } from "../../src/core/store";
 import { tempDir } from "../support/helpers";
@@ -291,4 +291,154 @@ describe("/api/remote and the phone access listener", () => {
     r = await fetch(`${tailnet}/api/profiles`, { headers: owner });
     expect(r.status).toBe(403);
   });
+});
+
+/** `tailscale serve status --json` with port 443 sent to `target` (none: nothing on 443), and another app's Funnel on 8443. */
+function serveJson(target: string | null, funnel443 = false) {
+  const web: Record<string, unknown> = { [`${HOST}:8443`]: { Handlers: { "/": { Proxy: "http://127.0.0.1:8787" } } } };
+  const tcp: Record<string, unknown> = { "8443": { HTTPS: true } };
+  if (target) {
+    web[`${HOST}:443`] = { Handlers: { "/": { Proxy: target } } };
+    tcp["443"] = { HTTPS: true };
+  }
+  return JSON.stringify({ TCP: tcp, Web: web, AllowFunnel: { [`${HOST}:8443`]: true, ...(funnel443 ? { [`${HOST}:443`]: true } : {}) } });
+}
+
+/** Fake `tailscale` that keeps a serve config: `serve --bg --https=443 <url>` sets 443, `serve --https=443 off` clears it. */
+function servingTailscale(target: string | null, opts: { funnel443?: boolean; addFails?: boolean } = {}) {
+  const calls: string[][] = [];
+  const state = { target };
+  const run: TailscaleRunner = async (args) => {
+    calls.push(args);
+    if (args[0] === "status") return { code: 0, stdout: STATUS, stderr: "" };
+    if (args.join(" ") === "serve status --json") return { code: 0, stdout: serveJson(state.target, opts.funnel443), stderr: "" };
+    if (args[0] === "serve" && args.at(-1) === "off") {
+      if (!state.target) return { code: 1, stdout: "", stderr: "error: handler does not exist\n" };
+      state.target = null;
+      return { code: 0, stdout: "", stderr: "" };
+    }
+    if (args[0] === "serve" && args[1] === "--bg") {
+      if (opts.addFails) return { code: 1, stdout: "", stderr: "serve: permission denied" };
+      state.target = args.at(-1)!;
+      return { code: 0, stdout: "", stderr: "" };
+    }
+    return { code: 1, stdout: "", stderr: `unexpected ${args.join(" ")}` };
+  };
+  return { calls, state, run };
+}
+
+const writes = (calls: string[][]) => calls.filter((c) => c[0] === "serve" && c[1] !== "status");
+
+describe("Tailscale's link to the board", () => {
+  const onRoot = () => {
+    const root = tempDir("ck-remote-");
+    writeFileSync(join(root, "remote.json"), JSON.stringify(REMOTE));
+    return root;
+  };
+
+  test("missing: put back (tailnet only, the board's port), one log line; the other app's Funnel untouched", async () => {
+    const ts = servingTailscale(null);
+    const lines: string[] = [];
+    const access = new RemoteAccess(onRoot(), () => 7778, ts.run, yes);
+    expect(await access.checkServe((l) => lines.push(l))).toEqual({ serve: "ok" });
+    expect(writes(ts.calls)).toEqual([["serve", "--bg", "--https=443", "http://127.0.0.1:7778"]]);
+    expect(ts.calls.flat().some((a) => /funnel|8443|reset/.test(a))).toBe(false);
+    expect(lines).toEqual(["phone access: Tailscale's link to the board was missing; put it back (https 443 -> 127.0.0.1:7778)"]);
+    // Now there: nothing more to do or log.
+    expect(await access.checkServe((l) => lines.push(l))).toEqual({ serve: "ok" });
+    expect(writes(ts.calls)).toHaveLength(1);
+    expect(lines).toHaveLength(1);
+  });
+
+  test("never while off, never at a listener that isn't the board's, never over another link or a Funnel", async () => {
+    const offRoot = tempDir("ck-remote-");
+    const ts = servingTailscale(null);
+    expect(await new RemoteAccess(offRoot, () => 7778, ts.run, yes).checkServe(() => {})).toEqual({});
+    expect(ts.calls).toEqual([]);
+
+    const noListener = servingTailscale(null);
+    const lines: string[] = [];
+    const access = new RemoteAccess(onRoot(), () => 7778, noListener.run, async () => false);
+    const r1 = await access.checkServe((l) => lines.push(l));
+    expect(r1.serve).toBe("missing");
+    expect(r1.serveProblem).toContain("Turn off, then Turn on");
+    await access.checkServe((l) => lines.push(l));
+    expect(writes(noListener.calls)).toEqual([]);
+    expect(lines).toHaveLength(1); // the same problem is logged once
+
+    const other = servingTailscale("http://127.0.0.1:9999");
+    expect((await new RemoteAccess(onRoot(), () => 7778, other.run, yes).checkServe(() => {})).serve).toBe("other");
+    expect(writes(other.calls)).toEqual([]);
+
+    const pub = servingTailscale(null, { funnel443: true });
+    expect((await new RemoteAccess(onRoot(), () => 7778, pub.run, yes).checkServe(() => {})).serve).toBe("public");
+    expect(writes(pub.calls)).toEqual([]);
+  });
+
+  test("put back fails: liveStatus says so in plain words; unknown answers change nothing", async () => {
+    const ts = servingTailscale(null, { addFails: true });
+    const st = await new RemoteAccess(onRoot(), () => 7778, ts.run, yes).liveStatus();
+    expect(st).toMatchObject({ enabled: true, tailscale: "running", serve: "missing" });
+    expect(st.serveProblem).toContain("permission denied");
+
+    const ok = await new RemoteAccess(onRoot(), () => 7778, servingTailscale("http://127.0.0.1:7778").run, yes).liveStatus();
+    expect(ok.serve).toBe("ok");
+    expect(ok.serveProblem).toBeUndefined();
+
+    // A `tailscale` that prints nothing for serve status (or isn't JSON): no claim either way, nothing changed.
+    const quiet = fakeTailscale();
+    const q = await new RemoteAccess(onRoot(), () => 7778, quiet.run, yes).liveStatus();
+    expect(q.serve).toBeUndefined();
+    expect(writes(quiet.calls)).toEqual([]);
+  });
+
+  test("off: already gone is plain off; another program's link stays", async () => {
+    const gone = servingTailscale(null);
+    const st = await new RemoteAccess(onRoot(), () => 7778, gone.run, yes).off();
+    expect(st.enabled).toBe(false);
+    expect(st.warning).toBeUndefined();
+    expect(writes(gone.calls)).toEqual([]);
+
+    // Serve status unreadable, then "handler does not exist": still plain off.
+    const odd: TailscaleRunner = async (args) =>
+      args.at(-1) === "off" ? { code: 1, stdout: "", stderr: "error: handler does not exist" } : { code: 0, stdout: "", stderr: "" };
+    expect((await new RemoteAccess(onRoot(), () => 7778, odd, yes).off()).warning).toBeUndefined();
+
+    const other = servingTailscale("http://127.0.0.1:55123");
+    expect((await new RemoteAccess(onRoot(), () => 7778, other.run, yes).off()).warning).toBeUndefined();
+    expect(other.state.target).toBe("http://127.0.0.1:55123");
+
+    const mine = servingTailscale("http://127.0.0.1:7778");
+    await new RemoteAccess(onRoot(), () => 7778, mine.run, yes).off();
+    expect(mine.state.target).toBeNull();
+  });
+});
+
+test("parseServe: the board's host, TCP forwards and foreground serve/funnel on 443 are another program's", () => {
+  const web = (host: string, target: string) => ({ [`${host}:443`]: { Handlers: { "/": { Proxy: target } } } });
+  expect(parseServe(JSON.stringify({ Web: web(HOST, "http://127.0.0.1:7778") }), HOST)).toEqual({ kind: "proxy", target: "http://127.0.0.1:7778", funnel: false });
+  // An old host's entry isn't the board's link.
+  expect(parseServe(JSON.stringify({ Web: web("old.ts.net", "http://127.0.0.1:7778") }), HOST)?.kind).toBe("other");
+  expect(parseServe(JSON.stringify({ TCP: { "443": { TCPForward: "127.0.0.1:22" } } }), HOST)?.kind).toBe("other");
+  const fg = { Foreground: { abc: { TCP: { "443": { HTTPS: true } }, Web: web(HOST, "http://127.0.0.1:3000"), AllowFunnel: { [`${HOST}:443`]: true } } } };
+  expect(parseServe(JSON.stringify(fg), HOST)).toEqual({ kind: "other", funnel: true });
+  expect(parseServe("{}", HOST)).toEqual({ kind: "none" });
+  expect(parseServe("null\n", HOST)).toEqual({ kind: "none" });
+  expect(parseServe("nope", HOST)).toBeNull();
+});
+
+test("off: never removes a TCP forward on 443, nor anything when the board's port is unknown", async () => {
+  const root = tempDir("ck-remote-");
+  const calls: string[][] = [];
+  const tcp: TailscaleRunner = async (args) => {
+    calls.push(args);
+    return { code: 0, stdout: args[1] === "status" ? JSON.stringify({ TCP: { "443": { TCPForward: "127.0.0.1:22" } } }) : "", stderr: "" };
+  };
+  writeFileSync(join(root, "remote.json"), JSON.stringify(REMOTE));
+  expect((await new RemoteAccess(root, () => 7778, tcp, yes).off()).enabled).toBe(false);
+  writeFileSync(join(root, "remote.json"), JSON.stringify(REMOTE));
+  const ts = servingTailscale("http://127.0.0.1:7778");
+  await new RemoteAccess(root, () => 0, ts.run, yes).off();
+  expect(ts.state.target).toBe("http://127.0.0.1:7778");
+  expect([...calls, ...ts.calls].some((c) => c.at(-1) === "off")).toBe(false);
 });

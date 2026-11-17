@@ -13,6 +13,8 @@ for (const k of ["CKANBAN_TICKET", "CKANBAN_HUDDLE_AGENT", "CKANBAN_OUTPUT_DIR"]
 // Code that falls back to the real `claude` (side calls such as parent suggestions) gets a stand-in that fails at
 // once: tests never spend money or wait on the user's own Claude. Tests that need a fake claude pass their own.
 process.env.CKANBAN_CLAUDE_BIN = "/bin/false";
+// The same for Tailscale: code under test never changes the Mac's real phone link (tests with a fake pass their own).
+process.env.CKANBAN_TAILSCALE = "/usr/bin/false";
 // Saving a copy of the folder before a message gives up after 2s in the app; a machine running several test suites
 // can be that slow, so tests allow it more time (tests of the limit itself pass their own).
 process.env.CKANBAN_SNAPSHOT_LIMIT_MS = "30000";

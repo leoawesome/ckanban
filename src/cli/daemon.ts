@@ -17,7 +17,7 @@ import { siteName } from "../browser/sign-in-signs";
 import { HelperRunner } from "../helper/runner";
 import { ticketAttention, withSnooze } from "../helper/attention";
 import { PushService } from "../helper/push";
-import { RemoteAccess, remoteListenPort, remoteUrl } from "../integrations/remote";
+import { RemoteAccess, remoteListenPort, remoteUrl, watchServe } from "../integrations/remote";
 import { Passes } from "../integrations/passes";
 import { PASSES_FILE } from "../integrations/board-keys";
 import { ckanbanShim } from "../integrations/script";
@@ -201,10 +201,11 @@ export async function startDaemon(): Promise<void> {
   });
   const remotePort = remoteListenPort(port, config.remotePort);
   // Satellite mode: the Rust board has the phone access listener (on remotePort, which it passes in
-  // CKANBAN_REMOTE_PORT); turning phone access on points `tailscale serve` there.
-  if (satellite) phoneRemote = new RemoteAccess(store.root, () => remotePort);
+  // CKANBAN_REMOTE_PORT); turning phone access on points `tailscale serve` there. Otherwise this daemon's own listener.
+  // No listener (not bound): 0, so `on` refuses instead of pointing serve at whatever holds the port.
+  const phone = (phoneRemote = new RemoteAccess(store.root, () => (satellite ? remotePort : (server.remoteServer?.port ?? 0))));
   const server = createServer({ store, bus, board, port: listenPort, remotePort: satellite ? undefined : remotePort, webDir,
-    ...(satellite && front ? { remote: phoneRemote! } : {}),
+    remote: phone,
     ...(edge && front ? { satellite: { replay: rustReplay(front) } } : {}), sessions, terminals, shells, mcp, scheduler, jobs, huddles, learner, quickChats, loops, sideCall, passes, assets: WEB_ASSETS, restart, awake: () => awake.held(), notifier, push, helper });
   console.log(`ckanban v${VERSION} listening on http://localhost:${front ? port : server.port} (data: ${store.root})${front ? ` behind the front server (internal port ${server.port})` : ""}${satellite ? " as the Rust board's satellite" : ""}`);
   // Running from source (developing ckanban): a freeze of seconds raises a Mac banner naming what ran. Installed
@@ -269,6 +270,8 @@ export async function startDaemon(): Promise<void> {
   const stopNotifier = notifier.start();
   const stopHelper = helper.start();
   const stopAwake = awake.start();
+  // Phone access on: Tailscale's link to the board is checked and put back when something removed it.
+  const stopServeWatch = watchServe(phone);
 
   const shutdown = async () => {
     console.log("ckanban shutting down");
@@ -293,6 +296,7 @@ export async function startDaemon(): Promise<void> {
     stopNotifier();
     stopHelper();
     stopAwake();
+    stopServeWatch();
     // Board browsers stay running (detached from the daemon, so nothing can cut a close short and lose logins); the
     // next daemon adopts them again.
     if (full) board.boardBrowsers.shutdown();

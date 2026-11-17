@@ -3,6 +3,7 @@
 import { existsSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import qrcode from "qrcode-generator";
+import { track, trackedInterval } from "../core/lag";
 
 export interface RemoteConfig {
   enabled: boolean;
@@ -26,9 +27,47 @@ export interface RemoteStatus {
   tailscale?: TailscaleState;
   /** Tailscale's own BackendState (e.g. Stopped, NeedsLogin), when it answered. */
   backendState?: string;
+  /**
+   * Tailscale's HTTPS link to the board (`tailscale serve`, port 443), checked only while on and running: ok, or a
+   * problem the board couldn't fix by itself (`serveProblem` says it in plain words). Missing: not checked or unknown.
+   */
+  serve?: ServeState;
+  serveProblem?: string;
 }
 
 export type TailscaleState = "running" | "stopped" | "unavailable";
+/** missing: no link and it couldn't be put back; other: port 443 goes to another program; public: Funnel is on for 443. */
+export type ServeState = "ok" | "missing" | "other" | "public";
+
+/** What `tailscale serve status --json` says about HTTPS port 443. */
+export type ServeLink = { kind: "none" } | { kind: "proxy"; target: string; funnel: boolean } | { kind: "other"; funnel: boolean };
+
+/**
+ * Reads port 443 out of `tailscale serve status --json`; null when that isn't the JSON Tailscale prints. `host` (the
+ * board's MagicDNS name) picks the board's own entry; another app's `tailscale serve|funnel 443` run in the foreground
+ * (under `Foreground`) counts too, as another program's link.
+ */
+export function parseServe(out: string, host?: string): ServeLink | null {
+  let s: any;
+  try {
+    s = JSON.parse(out);
+  } catch {
+    return null;
+  }
+  // Nothing served at all: Tailscale prints `null` (an empty config).
+  if (s === null) return { kind: "none" };
+  if (typeof s !== "object" || Array.isArray(s)) return null;
+  const is443 = (k: string) => (host ? k === `${host}:443` : k.endsWith(":443"));
+  const funnelIn = (c: any) => Object.entries(c?.AllowFunnel ?? {}).some(([k, v]) => k.endsWith(":443") && v === true);
+  const usedIn = (c: any) => !!c?.TCP?.["443"] || Object.keys(c?.Web ?? {}).some((k) => k.endsWith(":443"));
+  const fg = Object.values(s.Foreground ?? {});
+  const funnel = funnelIn(s) || fg.some(funnelIn);
+  const web = Object.entries(s.Web ?? {}).find(([k]) => is443(k))?.[1] as any;
+  const target = web?.Handlers?.["/"]?.Proxy;
+  if (typeof target === "string" && !fg.some(usedIn)) return { kind: "proxy", target, funnel };
+  if (usedIn(s) || fg.some(usedIn) || funnel) return { kind: "other", funnel };
+  return { kind: "none" };
+}
 
 /** Header on every answer of the daemon's phone access listener, so `on` never points serve at some other program. */
 export const LISTENER_HEADER = "x-ckanban-listener";
@@ -56,8 +95,13 @@ export const LOGIN_HEADER = "tailscale-user-login";
 const APP_CLI = "/Applications/Tailscale.app/Contents/MacOS/Tailscale";
 const HINT = "Install Tailscale (https://tailscale.com/download) and sign in, then try again.";
 
-/** The `tailscale` CLI: the app's own binary (the Homebrew/PATH `tailscale` is often a shell wrapper around it), else PATH. */
+/**
+ * The `tailscale` CLI: CKANBAN_TAILSCALE (tests point it at a fake, so they never change the Mac's real Tailscale),
+ * else the app's own binary (the Homebrew/PATH `tailscale` is often a shell wrapper around it), else PATH.
+ */
 export function tailscaleBin(): string | null {
+  const own = process.env.CKANBAN_TAILSCALE;
+  if (own) return own;
   return existsSync(APP_CLI) ? APP_CLI : Bun.which("tailscale");
 }
 
@@ -115,6 +159,11 @@ export function tailscaleRunner(findBin: () => string | null = tailscaleBin): Ta
 }
 
 export const defaultRunner: TailscaleRunner = tailscaleRunner();
+
+/** `serve --https=443 off` when port 443 has nothing: the link is already gone, which is what off wants. */
+const ALREADY_OFF = /handler does not exist/i;
+/** How often the daemon checks that Tailscale still sends the phone to the board (watchServe). */
+export const SERVE_CHECK_MS = 3 * 60_000;
 
 /** The daemon's phone access listener: CKANBAN_REMOTE_PORT, config.json remotePort, else the board port + 1. */
 export function remoteListenPort(boardPort: number, configured?: number): number {
@@ -217,9 +266,85 @@ export class RemoteAccess {
       const r = await Promise.race([this.run(["status", "--json"]), timeout]);
       const backendState = r.code === 0 ? JSON.parse(r.stdout)?.BackendState : undefined;
       if (typeof backendState !== "string") return { ...st, tailscale: "unavailable" };
-      return { ...st, tailscale: backendState === "Running" ? "running" : "stopped", backendState };
+      if (backendState !== "Running") return { ...st, tailscale: "stopped", backendState };
     } catch {
       return { ...st, tailscale: "unavailable" };
+    } finally {
+      clearTimeout(timer);
+    }
+    const serve = await this.checkServe();
+    return { ...st, tailscale: "running", backendState: "Running", ...serve };
+  }
+
+  private checking: Promise<{ serve?: ServeState; serveProblem?: string }> | null = null;
+  /** What the last check logged, so a problem that stays is logged once, not every few minutes. */
+  private lastLogged = "";
+
+  /**
+   * While phone access is on: checks that Tailscale's HTTPS port 443 still goes to the board's phone listener and, when
+   * port 443 has nothing at all, puts the tailnet-only link back (never Funnel, never over another program's link).
+   * One check at a time; never throws. Logs one line when it puts the link back or when the problem changes.
+   */
+  checkServe(log: (line: string) => void = console.log): Promise<{ serve?: ServeState; serveProblem?: string }> {
+    this.checking ??= this.serveCheck(log).catch(() => ({})).finally(() => (this.checking = null));
+    return this.checking;
+  }
+
+  private async serveCheck(log: (line: string) => void): Promise<{ serve?: ServeState; serveProblem?: string }> {
+    const c = this.active();
+    if (!c) return {};
+    const note = (key: string, line: string) => {
+      if (key !== this.lastLogged) log(`phone access: ${line}`);
+      this.lastLogged = key;
+    };
+    const port = this.port();
+    const mine = (target: string) => !!port && (target === `http://127.0.0.1:${port}` || target === `http://localhost:${port}`);
+    const link = await this.readServe();
+    if (!link) return {};
+    if (link.kind !== "none" && link.funnel) {
+      note("public", "Tailscale has a public link (Funnel) on port 443; the board doesn't put itself there");
+      return { serve: "public", serveProblem: "Tailscale has a public link (Funnel) on this Mac's https address, so the board stays off it. " +
+        "Turn off Funnel for port 443 in Tailscale, then press Turn off and Turn on here." };
+    }
+    if (link.kind === "proxy" && mine(link.target)) {
+      if (this.lastLogged) note("", "Tailscale's link to the board is back");
+      return { serve: "ok" };
+    }
+    if (link.kind !== "none") {
+      note(`other ${link.kind === "proxy" ? link.target : ""}`, `Tailscale's https port 443 goes to ${link.kind === "proxy" ? link.target : "another program"}, not the board; left as it is`);
+      return { serve: "other", serveProblem: `Tailscale's address for this Mac (${remoteUrl(c.host)}) goes to another program, so your phone ` +
+        "can't reach the board. Press Turn off, then Turn on, to point it back at the board." };
+    }
+    // Nothing on 443: the board's link is gone. Put it back, but only at the board's own listener.
+    const missing = (why: string) => {
+      note(`missing ${why}`, `Tailscale's link to the board is missing and couldn't be put back: ${why}`);
+      return { serve: "missing" as const, serveProblem: `Tailscale lost the link to the board and the board couldn't put it back (${why}). ` +
+        "Press Turn off, then Turn on." };
+    };
+    if (!port || !(await this.probe(port))) return missing(`the board's phone listener isn't answering on 127.0.0.1:${port || "?"}`);
+    // Turned off while this check ran: leave it off.
+    if (!this.active()) return {};
+    try {
+      await this.tailscale(["serve", "--bg", "--https=443", `http://127.0.0.1:${port}`]);
+    } catch (e) {
+      return missing(excerpt(e instanceof Error ? e.message : String(e)).split("\n")[0]);
+    }
+    this.lastLogged = "";
+    log(`phone access: Tailscale's link to the board was missing; put it back (https 443 -> 127.0.0.1:${port})`);
+    return { serve: "ok" };
+  }
+
+  /** Port 443 as `tailscale serve status --json` reports it; null when Tailscale can't be asked or answers oddly. */
+  private async readServe(): Promise<ServeLink | null> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const timeout = new Promise<never>((_, reject) => (timer = setTimeout(() => reject(new Error("timeout")), CHECK_TIMEOUT_MS)));
+      const r = await Promise.race([this.run(["serve", "status", "--json"]), timeout]);
+      if (r.code !== 0 || GUI_FAILED.test(r.stdout + r.stderr)) return null;
+      // No output can't be told apart from a stand-in command that prints nothing: unknown. An empty config is `null`.
+      return r.stdout.trim() === "" ? null : parseServe(r.stdout, this.config()?.host);
+    } catch {
+      return null;
     } finally {
       clearTimeout(timer);
     }
@@ -287,12 +412,37 @@ export class RemoteAccess {
     // Disable first: even if tailscale fails below, the daemon stops letting the tailnet in.
     if (c) this.write({ ...c, enabled: false, updatedAt: new Date().toISOString() });
     else rmSync(this.file, { force: true });
+    this.lastLogged = "";
+    // A link check that started before off ends first, so it can't put the link back after it.
+    await this.checking;
+    // Remove port 443 only when it is the board's link: nothing there is already off, and another program's link
+    // (another board's daemon on another port, a TCP forward, a test daemon) isn't the board's to remove. Unknown
+    // (Tailscale's answer can't be read): try anyway, as before.
+    const link = await this.readServe();
+    const port = this.port();
+    const mine = link?.kind === "proxy" && !!port && (link.target === `http://127.0.0.1:${port}` || link.target === `http://localhost:${port}`);
+    if (link && !mine) return this.status();
     try {
       await this.tailscale(["serve", "--https=443", "off"]);
     } catch (e) {
       if (!(e instanceof RemoteError)) throw e;
+      if (ALREADY_OFF.test(e.message)) return this.status();
       return { ...this.status(), warning: e.message };
     }
     return this.status();
   }
+}
+
+/**
+ * While phone access is on, checks Tailscale's link to the board soon after start and every SERVE_CHECK_MS, and puts it
+ * back when it went missing (RemoteAccess.checkServe). Returns the stop function.
+ */
+export function watchServe(remote: RemoteAccess, everyMs = SERVE_CHECK_MS, firstMs = 10_000): () => void {
+  const check = () => (remote.active() ? remote.checkServe() : undefined);
+  const first = setTimeout(() => void track("phone access: serve check", check), firstMs);
+  const timer = trackedInterval("phone access: serve check", check, everyMs);
+  return () => {
+    clearTimeout(first);
+    clearInterval(timer);
+  };
 }

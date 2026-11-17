@@ -41,7 +41,10 @@ export function PhoneAccessDialog({ onClose }: { onClose: () => void }) {
 
   const on = !!state?.enabled && !!state.url;
   // Phone access is on, but Tailscale on this Mac isn't running (or can't be asked), so the phone can't connect.
-  const down = on && (state!.tailscale === "stopped" || state!.tailscale === "unavailable");
+  const tsDown = on && (state!.tailscale === "stopped" || state!.tailscale === "unavailable");
+  // Tailscale runs, but its link to the board is gone or taken and the board couldn't put it back.
+  const linkDown = on && !tsDown && !!state!.serveProblem;
+  const down = tsDown || linkDown;
   return (
     <Modal title="Phone access" onClose={onClose} focusDialog>
       <div className="phone-access">
@@ -50,12 +53,18 @@ export function PhoneAccessDialog({ onClose }: { onClose: () => void }) {
         {state && (
           <div className={`pa-state ${down ? "down" : on ? "on" : ""}`} role="status">
             <span className="pa-dot" aria-hidden />
-            {down
+            {tsDown
               ? state!.tailscale === "stopped" ? "Tailscale is off on this Mac · phone can't connect" : "Can't check Tailscale on this Mac"
-              : on ? "On · Tailscale connected" : "Off"}
+              : linkDown ? "On, but Tailscale isn't sending your phone to the board" : on ? "On · Tailscale connected" : "Off"}
           </div>
         )}
-        {down && (
+        {linkDown && (
+          <div className="pa-fix">
+            <b>To fix it</b>
+            <p>{state!.serveProblem}</p>
+          </div>
+        )}
+        {tsDown && (
           <div className="pa-fix">
             <b>To fix it</b>
             <ol>

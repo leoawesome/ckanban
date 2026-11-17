@@ -61,6 +61,9 @@ export interface RemoteState {
   /** Live Tailscale state on the Mac while phone access is on; missing means not checked. */
   tailscale?: "running" | "stopped" | "unavailable";
   backendState?: string;
+  /** Tailscale's link to the board while on and running: ok, or a problem the board couldn't fix (serveProblem says it). */
+  serve?: "ok" | "missing" | "other" | "public";
+  serveProblem?: string;
   qrSvg: string | null;
   local: boolean;
 }

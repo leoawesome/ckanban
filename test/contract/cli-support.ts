@@ -89,6 +89,8 @@ exit 0`);
     // A closed port unless a test starts a fake board.
     CKANBAN_PORT: "9",
     CKANBAN_CLAUDE_BIN: join(bin, "claude"),
+    // Never the Mac's real Tailscale (/Applications/Tailscale.app wins over PATH without it).
+    CKANBAN_TAILSCALE: join(bin, "tailscale"),
     CLAUDE_CONFIG_DIR: claudeDir,
     CODEX_HOME: codexDir,
     STUB_LOG: log,

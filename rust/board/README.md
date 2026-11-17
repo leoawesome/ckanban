@@ -133,6 +133,9 @@ checks); their user-only checks look at the caller (`tailscale serve`) and refus
   `x-ckanban-front-via: remote`; Bun then treats it as a phone request (`listener: "remote"`, user-only routes pass
   for the owner's phone). Every answer there carries `x-ckanban-listener: remote`. Rust tells the satellite of
   phone visits to its own routes (`remote-visit <time>` on stdin) for `lastVisit`.
+- Tailscale itself stays with the satellite until P2: `/api/remote` (on, off, status) and the link check that puts
+  Tailscale's HTTPS 443 link back at this listener when it goes missing (`watchServe` in `src/integrations/remote.ts`,
+  every 3 minutes while phone access is on). The port it uses is CKANBAN_REMOTE_PORT, so it checks Rust's listener.
 - The satellite's edge (`gate/edge.rs`, `src/core/satellite-edge.ts`), `POST /api/internal/<name>` with
   `x-ckanban-satellite: <the front's secret>` (the proxy drops callers' copies of it and of the two marks above):
   Rust asks Bun `frontdesk-gate`, `pass-call` (R10's automation calls), `publish` (share to claude.ai),

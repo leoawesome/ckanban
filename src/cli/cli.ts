@@ -262,6 +262,10 @@ async function remoteCommand(action: string | undefined) {
       console.log("");
       console.log(`${what}: phone can't connect. Open the Tailscale app; turn on "Launch Tailscale at login" in its Settings.`);
     }
+    if (st.serveProblem) {
+      console.log("");
+      console.log(`The phone can't reach the board: ${st.serveProblem}`);
+    }
     console.log("");
     console.log(qrTerminal(st.url!));
   };

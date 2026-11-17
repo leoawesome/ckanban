@@ -138,6 +138,9 @@ export async function startDaemon(opts: StartOptions = {}): Promise<Daemon> {
     CKANBAN_CLAUDE_BIN: join(bin, "claude"),
     // Never the user's real Chrome (the daemon falls back to /Applications/Google Chrome.app without it).
     CKANBAN_CHROME_BIN: join(bin, "google-chrome"),
+    // Never the Mac's real Tailscale (the daemon prefers /Applications/Tailscale.app over PATH): turning phone access off
+    // in a test once removed the user's own phone link.
+    CKANBAN_TAILSCALE: join(bin, "tailscale"),
     CLAUDE_CONFIG_DIR: claudeDir,
     FAKE_MODE: opts.fakeMode ?? "ok",
     FAKE_ARGS_FILE: join(root, "claude-args.jsonl"),

@@ -3414,6 +3414,7 @@ button.hd-mode:disabled { cursor: default; }
 .pa-state.down { background: var(--err-soft); color: var(--err); }
 .pa-fix { border: 1px solid var(--border); border-radius: var(--r-md); padding: var(--sp-3h) var(--sp-5); font-size: var(--fs-sm); }
 .pa-fix ol { margin: var(--sp-2h) 0 0; padding-left: var(--sp-5); line-height: 1.6; }
+.pa-fix p { margin: var(--sp-2h) 0 0; line-height: 1.6; }
 .pa-dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
 .pa-grid { display: flex; gap: var(--sp-5); align-items: center; }
 .pa-qr { width: 148px; height: 148px; flex: none; background: var(--paper); border: 1px solid var(--border); border-radius: var(--r-sm); padding: var(--sp-2); }

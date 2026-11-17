@@ -162,6 +162,7 @@ function fakeBins(): Record<string, string> {
     CLAUDE_CONFIG_DIR: CLAUDE,
     CKANBAN_CLAUDE_BIN: claude,
     CKANBAN_OSASCRIPT_BIN: join(BIN, "osascript"),
+    CKANBAN_TAILSCALE: "/usr/bin/false",
     CKANBAN_OPEN_BIN: join(BIN, "open"),
   };
 }
