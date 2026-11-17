@@ -105,6 +105,12 @@ impl SessionInfo for Sessions {
         w.known.lock().get(session_id).map(|(v, _)| v.clone())
     }
 
+    fn refresh(&self, slug: &str, id: &str, session_id: &str) {
+        if let Some(w) = self.watcher.lock().clone() {
+            w.poll_one(slug, id, session_id, true);
+        }
+    }
+
     /// The parsed entries. Reads and parses the transcript: call it from a blocking thread.
     fn entries(&self, session_id: &str) -> Vec<Value> {
         self.cache.get(session_id).map(|p| (*p.entries).clone()).unwrap_or_default()

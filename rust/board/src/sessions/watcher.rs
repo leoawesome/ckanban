@@ -125,7 +125,7 @@ impl Watcher {
     }
 
     /// `pollOne`: the ticket's session changed since it was last looked at: note the version and announce it.
-    fn poll_one(&self, slug: &str, id: &str, sid: &str, emit: bool) {
+    pub fn poll_one(&self, slug: &str, id: &str, sid: &str, emit: bool) {
         let key = format!("{slug}/{id}");
         let Some(v) = self.cache.version(sid) else { return };
         let mark = format!("{sid}:{v}");

@@ -673,7 +673,7 @@ impl BoardMode {
             return Ok(self.browsers.answer(req, peer.port(), ctx).await);
         }
         if write_routes::wanted(req.method().as_str(), req.uri().path()) {
-            return self.answer_write(req, peer).await;
+            return self.answer_write(req, peer, via).await;
         }
         Err(req)
     }
@@ -681,7 +681,7 @@ impl BoardMode {
     /// The ticket and board writes (R2a). Bun's gate first (Host, the Origin of a change, a JSON body for POST, PATCH
     /// and PUT except uploads), then the route on the blocking pool; the answer masked like every JSON answer.
     #[allow(clippy::result_large_err)]
-    async fn answer_write(&self, req: Request<Incoming>, peer: std::net::SocketAddr) -> Result<Response<Body>, Request<Incoming>> {
+    async fn answer_write(&self, req: Request<Incoming>, peer: std::net::SocketAddr, via: Listener) -> Result<Response<Body>, Request<Incoming>> {
         use http_body_util::{BodyExt, Limited};
         use hyper::header::{CONTENT_TYPE, ORIGIN};
         let h = req.headers();
@@ -712,7 +712,12 @@ impl BoardMode {
             Err(_) => return Ok(passes::json_answer(StatusCode::PAYLOAD_TOO_LARGE, &serde_json::json!({ "error": "request body too large" }), &passes::current_secrets(&self.root))),
         };
         let port = peer.port();
-        let user: Arc<dyn Fn() -> bool + Send + Sync> = Arc::new(move || ckanban_board::tickets::writer::block(crate::guard::user_only(&headers, port)));
+        // The owner's phone (its gate passed on the phone listener) is the user after the header checks, as Bun's
+        // `userOnly` lets `listener === "remote"` in.
+        let user: Arc<dyn Fn() -> bool + Send + Sync> = match via {
+            Listener::Remote => Arc::new(move || crate::guard::headers_allow(&headers)),
+            Listener::Local => Arc::new(move || ckanban_board::tickets::writer::block(crate::guard::user_only(&headers, port))),
+        };
         let r = write_routes::Req { method, path, query, run, huddle, source, content_type, file_name, body, user };
         let writes = self.writes.clone();
         let reply = match tokio::task::spawn_blocking(move || writes.answer(&r)).await {
@@ -967,6 +972,30 @@ impl BoardMode {
         let path = req.uri().path().to_string();
         let path = path.as_str();
         let peer = SocketAddr::from(([127, 0, 0, 1], 0));
+        // The board's ticket writes (R2a, and R7a's run routes inside them) run here, as the user who confirmed.
+        if own_route(&m, path).is_none() && write_routes::wanted(m.as_str(), path) {
+            let body = body.map(|v| serde_json::to_vec(v).unwrap_or_default()).unwrap_or_default();
+            let r = write_routes::Req {
+                method: m.as_str().to_string(),
+                path: path.to_string(),
+                query: req.uri().query().unwrap_or("").to_string(),
+                run: None,
+                huddle: false,
+                source: None,
+                content_type: "application/json".into(),
+                file_name: None,
+                body,
+                user: Arc::new(|| true),
+            };
+            let writes = self.writes.clone();
+            let (status, data) = match tokio::task::spawn_blocking(move || writes.answer(&r)).await {
+                Ok(Some(Reply::Json(status, v))) => (status, v),
+                Ok(Some(Reply::Empty(status))) => (status, Value::Null),
+                Ok(Some(Reply::File(..))) | Ok(None) => (404, json!({ "error": "not found" })),
+                Err(e) => (500, json!({ "error": e.to_string() })),
+            };
+            return self.json_at(StatusCode::OK, &json!({ "status": status, "body": data }));
+        }
         let res = match own_route(&m, path) {
             Some(own) => self.own(own, req, Listener::Local).await,
             None => {
@@ -999,7 +1028,30 @@ impl BoardMode {
         });
         let _ = self.passes.set(Arc::new(passes::Passes::new(self.root.clone(), notify)));
         let views = s.views.clone();
+        // The live state the helper reads goes first, so it applies before the event that tells of the change: the
+        // tickets running now (when that changed) and a ticket's new session summary.
+        let runs = s.runs.clone();
+        let tickets = self.core.tickets.clone();
+        let last_running = std::sync::Mutex::new(Vec::<(String, String)>::new());
         self.core.bus.on(move |e| {
+            if e.origin == ckanban_board::bus::Origin::Board && e.ty == "ticket.updated" {
+                let now = runs.running_tickets();
+                let mut last = last_running.lock().unwrap_or_else(|p| p.into_inner());
+                if *last != now {
+                    let list: Vec<String> = now.iter().map(|(s, i)| format!("{s}/{i}")).collect();
+                    let _ = tell.send(satellite::runtime_line(&json!({ "running": list })));
+                    *last = now;
+                }
+            }
+            if e.origin == ckanban_board::bus::Origin::Board
+                && e.ty == "session.updated"
+                && let (Some(p), Some(i), Some(sum)) = (e.body.get("profile").and_then(Value::as_str), e.body.get("id").and_then(Value::as_str), e.body.get("session"))
+                && let Some(sid) = tickets.get(p, i).and_then(|t| t.s("sessionId").filter(|x| !x.is_empty()).map(str::to_string))
+            {
+                let mut m = serde_json::Map::new();
+                m.insert(sid, sum.clone());
+                let _ = tell.send(satellite::runtime_line(&json!({ "sessions": m })));
+            }
             if let Some(line) = satellite::event_line(e, &*views) {
                 let _ = tell.send(line);
             }

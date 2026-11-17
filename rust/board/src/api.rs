@@ -59,6 +59,9 @@ pub trait SessionInfo: Send + Sync {
     fn version(&self, session_id: &str) -> Option<String>;
     /// The parsed transcript entries (`get(id).entries`); empty when unknown.
     fn entries(&self, session_id: &str) -> Vec<Value>;
+    /// A ticket's run just ended: read its session now (blocking), so the summary the card and the Inbox show is the
+    /// run's last word, not the one from before it (R7a).
+    fn refresh(&self, _slug: &str, _id: &str, _session_id: &str) {}
 }
 
 /// Huddles' live state (`Huddles` in `src/huddle/huddle.ts`).

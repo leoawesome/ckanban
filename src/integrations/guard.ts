@@ -94,7 +94,7 @@ export async function fromUserBrowser(peerPort: number, daemonPid = process.pid)
     out(["ps", "-A", "-o", "pid=,ppid="]).then(parentMap), out(["ps", "-A", "-o", "pid=,comm="]).then(commandMap),
     out(["ps", "-A", "-o", "pid=,args="]).then(commandMap),
   ]);
-  return pids.every((p) => !descendsFrom(p, daemonPid, parents) && isBrowser(commands.get(p) ?? "") && !drivenBrowser(p, parents, args));
+  return pids.every((p) => !ownedBy(p, daemonPid, parents) && isBrowser(commands.get(p) ?? "") && !drivenBrowser(p, parents, args));
 }
 
 /**
@@ -107,5 +107,14 @@ export async function outsideBoard(peerPort: number, daemonPid = process.pid): P
   const pids = (await callerPids(peerPort)).filter((p) => p !== daemonPid && p !== frontPid());
   if (!pids.length) return false;
   const parents = parentMap(await out(["ps", "-A", "-o", "pid=,ppid="]));
-  return pids.every((p) => !descendsFrom(p, daemonPid, parents));
+  return pids.every((p) => !ownedBy(p, daemonPid, parents));
+}
+
+/**
+ * The process was started by the board: this daemon, or the Rust front in front of it (with the Rust board on, the
+ * front runs the board's runs, so they descend from it and not from this daemon).
+ */
+function ownedBy(pid: number, daemonPid: number, parents: Map<number, number>): boolean {
+  const front = frontPid();
+  return descendsFrom(pid, daemonPid, parents) || (front > 0 && descendsFrom(pid, front, parents));
 }

@@ -641,6 +641,9 @@ impl RunLoop {
         if self.shutting_down() {
             return Next::Done;
         }
+        // The run's transcript is complete: its summary (open questions, proposals) is read now, before the card says
+        // how the run ended.
+        self.sessions.refresh(slug, id, &session.session_id);
         let final_text = extract_final_text(&out.events);
         let (stop_requested, restart_requested, cap_hit, chat, target) = {
             let st = run.st.lock();
