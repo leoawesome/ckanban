@@ -464,7 +464,11 @@ Comments (the last 50; 3 earlier not shown: ckanban ticket show t_20261115_cot1 
 ### `ckanban ticket setup [<board>/]<id>`
 
 - Allowed inside runs. Board: the part before `/`, else `--profile`, else the run's profile, else the cwd lookup.
-- Route: `POST /api/profiles/<slug>/tickets/<id>/setup` body `{}`, header `x-ckanban-run` when `CKANBAN_TICKET` is set; long wait.
+- Routes: first `GET /api/profiles/<slug>/tickets/<id>/setup` (gives up after 2 s) for `{ running, runningMs, needed }`, then `POST /api/profiles/<slug>/tickets/<id>/setup` body `{}`, header `x-ckanban-run` when `CKANBAN_TICKET` is set; long wait.
+- Text mode only (`--json` prints the answer alone), before the answer's text:
+  - first line, at once: `running`: `Joining the setup already running for this ticket (started <wait> ago)…`; `needed`: `Starting the project setup (installing its dependencies)…`; neither: no line (the answer comes at once); the GET failed (an older daemon, or one too busy to answer in 2 s): `Running the project setup…`.
+  - while the POST waits, every 30 s (`CKANBAN_SETUP_TICK_MS` overrides, for tests): `Still running the setup (<wait> so far)…`, counted from the setup's start when it joined one.
+  - `<wait>`: `45s`, `2m 5s`, `1h 3m`.
 - Answer `SetupOutcome`: `{ status: "ran", result: SetupResult }` or `{ status: "already-done" | "no-command" | "no-worktree" }`. `SetupResult` = `{ copied: string[], missing: string[], command, ok: boolean|null, exitCode: number|null, timedOut, output, durationMs }`.
 - Text (`setupText`):
   - `already-done`: `Already done: this ticket's dependencies are installed.`
@@ -472,6 +476,7 @@ Comments (the last 50; 3 earlier not shown: ckanban ticket show t_20261115_cot1 
   - `no-worktree`: `Nothing to install: this ticket works in the project folder itself, not a separate copy.`
   - ran ok: ``Installed the project's dependencies in <secs>s (`<command>`).`` then a line `<ckanban-setup>{SetupResult JSON with every "<" written as the six characters \u003c}</ckanban-setup>` (the `result` object re-serialized compactly, keys in the order the daemon sent them).
   - ran and failed: ``\`<command>\` failed (exit <code or "signal">) after <secs>s. Last lines of its output:`` (or `timed out after <secs>s.`), then the output, then the `<ckanban-setup>` line.
+- The board stops the setup command after 15 minutes with no new output (SIGTERM to its process group, SIGKILL 5 s later): the result has `timedOut: true` and its output ends with `(stopped: no output for 15 minutes)`.
 - Exit: after printing, a failed run raises `Setup timed out.` or `Setup failed (exit <code|signal>).` on stderr, exit 1.
 
 ### `ckanban ticket take-device <name> [<name>...]` / `ckanban ticket release-device [<name>...]`

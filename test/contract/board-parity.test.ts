@@ -122,6 +122,8 @@ function masker(): (text: string) => string {
     .replace(/t_\d{8}_[a-z0-9]{4}/g, name("ticket"))
     .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g, name("uuid"))
     .replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z/g, (m) => (m.startsWith("2099") ? m : "<time>"))
+    // A day on its own ("(backlog, 2026-11-17)" in a prompt): the day the script ran.
+    .replace(/\b\d{4}-\d{2}-\d{2}\b(?!T)/g, (m) => (m.startsWith("2099") ? m : "<date>"))
     .replace(/(?<="(?:id|jobId|scheduleId)": ?")[0-9a-z]{8}(?=")/g, name("id"))
     .replace(/(?<=\/(?:schedules|jobs)\/)[0-9a-z]{8}(?=[./"])/g, name("id"))
     .replace(/^id: [0-9a-z]{8}$/gm, name("id"))

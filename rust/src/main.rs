@@ -58,6 +58,9 @@ fn fail(msg: impl std::fmt::Display) -> u8 {
     1
 }
 
+/// The longest the shutdown may take before the process exits anyway (the runs' own limits add up to 16 s).
+const SHUTDOWN_LIMIT: Duration = Duration::from_secs(25);
+
 async fn dev() -> u8 {
     let root = settings::data_root();
     let config = std::fs::read_to_string(root.join("config.json")).ok();
@@ -128,8 +131,17 @@ async fn dev() -> u8 {
         _ = sigint.recv() => {}
         _ = exit.notified() => eprintln!("ckanban-rs: restarting"),
     }
-    // Runs stop first (marked so the next start resumes them).
-    board.shutdown().await;
+    // Runs stop first (marked so the next start resumes them). Never waits forever: past the limit the process ends
+    // anyway (the runtime is dropped with a short timeout), and launchd starts a fresh one.
+    // A last guard for whatever comes after (a stop step stuck on a lock): the process ends regardless.
+    std::thread::spawn(|| {
+        std::thread::sleep(SHUTDOWN_LIMIT + Duration::from_secs(10));
+        eprintln!("ckanban-rs: still not stopped {}s after the shutdown began; exiting now", SHUTDOWN_LIMIT.as_secs() + 10);
+        std::process::exit(0);
+    });
+    if tokio::time::timeout(SHUTDOWN_LIMIT, board.shutdown()).await.is_err() {
+        eprintln!("ckanban-rs: shutdown took over {}s; exiting anyway", SHUTDOWN_LIMIT.as_secs());
+    }
     accept.abort();
     if let Some(p) = phone_accept {
         p.abort();

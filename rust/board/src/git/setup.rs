@@ -15,8 +15,35 @@ use super::cmd::run;
 use super::ops::s;
 use super::repo::is_git_repo;
 
-pub const SETUP_TIMEOUT: Duration = Duration::from_secs(10 * 60);
+/// The board's setup command is stopped after this long with no new output (an install can take long, but it prints).
+pub const SETUP_SILENCE: Duration = Duration::from_secs(15 * 60);
 pub const CLEANUP_TIMEOUT: Duration = Duration::from_secs(2 * 60);
+/// After SIGTERM, how long the command gets before SIGKILL.
+const KILL_GRACE: Duration = Duration::from_secs(5);
+/// After the command ended, how long its output pipes may stay open (a background grandchild holding them).
+const PIPE_GRACE: Duration = Duration::from_secs(3);
+
+/// When `run_shell` gives up on a command.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Limit {
+    /// This long in all.
+    Total(Duration),
+    /// This long with no new output.
+    Silence(Duration),
+}
+
+/// "15 minutes", "90 seconds", "300ms".
+pub fn span_text(d: Duration) -> String {
+    let secs = d.as_secs();
+    let plural = |n: u64, w: &str| format!("{n} {w}{}", if n == 1 { "" } else { "s" });
+    if d.subsec_millis() != 0 || secs == 0 {
+        format!("{}ms", d.as_millis())
+    } else if secs % 60 == 0 {
+        plural(secs / 60, "minute")
+    } else {
+        plural(secs, "second")
+    }
+}
 /// Output lines kept for the prompt and the chat row.
 pub const SETUP_TAIL_LINES: usize = 40;
 
@@ -381,9 +408,10 @@ pub fn tail_lines(text: &str, n: usize) -> String {
     lines[lines.len().saturating_sub(n)..].join("\n")
 }
 
-/// `runShell`: runs `command` in `cwd` through the user's shell (`-lc`), in its own process group, killed with its
-/// children after the timeout or when `abort` is notified.
-pub async fn run_shell(cwd: &Path, command: &str, timeout: Duration, shell: Option<&str>, env: &[(&str, &str)], abort: Option<Arc<tokio::sync::Notify>>) -> ShellResult {
+/// `runShell`: runs `command` in `cwd` through the user's shell (`-lc`), in its own process group. Stopped at its
+/// `limit` or when `abort` is notified: SIGTERM to the group, SIGKILL after `KILL_GRACE`, and the output pipes are
+/// read for at most `PIPE_GRACE` more, so a grandchild that keeps them open can't hold the caller.
+pub async fn run_shell(cwd: &Path, command: &str, limit: Limit, shell: Option<&str>, env: &[(&str, &str)], abort: Option<Arc<tokio::sync::Notify>>) -> ShellResult {
     let started = Instant::now();
     let shell = shell.map(str::to_string).unwrap_or_else(user_shell);
     let mut c = tokio::process::Command::new(&shell);
@@ -399,13 +427,16 @@ pub async fn run_shell(cwd: &Path, command: &str, timeout: Duration, shell: Opti
     };
     let pid = child.id();
     let buf = Arc::new(parking_lot::Mutex::new(Vec::<u8>::new()));
-    let pump = |mut r: Box<dyn tokio::io::AsyncRead + Unpin + Send>, buf: Arc<parking_lot::Mutex<Vec<u8>>>| {
+    // When output last came in.
+    let last = Arc::new(parking_lot::Mutex::new(Instant::now()));
+    let pump = |mut r: Box<dyn tokio::io::AsyncRead + Unpin + Send>, buf: Arc<parking_lot::Mutex<Vec<u8>>>, last: Arc<parking_lot::Mutex<Instant>>| {
         tokio::spawn(async move {
             let mut chunk = [0u8; 8192];
             loop {
                 match r.read(&mut chunk).await {
                     Ok(0) | Err(_) => break,
                     Ok(n) => {
+                        *last.lock() = Instant::now();
                         let mut b = buf.lock();
                         b.extend_from_slice(&chunk[..n]);
                         if b.len() > MAX_OUTPUT * 2 {
@@ -417,35 +448,78 @@ pub async fn run_shell(cwd: &Path, command: &str, timeout: Duration, shell: Opti
             }
         })
     };
-    let a = pump(Box::new(child.stdout.take().expect("piped")), buf.clone());
-    let b = pump(Box::new(child.stderr.take().expect("piped")), buf.clone());
-    let kill = || {
+    let a = pump(Box::new(child.stdout.take().expect("piped")), buf.clone(), last.clone());
+    let b = pump(Box::new(child.stderr.take().expect("piped")), buf.clone(), last.clone());
+    let signal = |sig: libc::c_int| {
         if let Some(pid) = pid {
             // SAFETY: kill(2) on the process group this function started.
-            unsafe { libc::kill(-(pid as libc::pid_t), libc::SIGTERM) };
+            unsafe { libc::kill(-(pid as libc::pid_t), sig) };
         }
     };
-    let mut timed_out = false;
-    let mut stopped = false;
     let aborted = async {
         match &abort {
             Some(n) => n.notified().await,
             None => std::future::pending().await,
         }
     };
-    tokio::select! {
-        _ = tokio::time::sleep(timeout) => { timed_out = true; kill(); }
-        _ = aborted => { stopped = true; kill(); }
-        _ = child.wait() => {}
+    tokio::pin!(aborted);
+    enum End {
+        Exited(Option<std::process::ExitStatus>),
+        Limit,
+        Stopped,
     }
-    let status = child.wait().await.ok();
-    let _ = a.await;
-    let _ = b.await;
+    let end = loop {
+        let deadline = match limit {
+            Limit::Total(d) => started + d,
+            Limit::Silence(d) => *last.lock() + d,
+        };
+        tokio::select! {
+            _ = tokio::time::sleep_until(deadline.into()) => {
+                // Output came in while sleeping: wait from then.
+                if matches!(limit, Limit::Silence(d) if last.lock().elapsed() < d) {
+                    continue;
+                }
+                break End::Limit;
+            }
+            _ = &mut aborted => break End::Stopped,
+            st = child.wait() => break End::Exited(st.ok()),
+        }
+    };
+    let status = match end {
+        End::Exited(st) => st,
+        End::Limit | End::Stopped => {
+            signal(libc::SIGTERM);
+            match tokio::time::timeout(KILL_GRACE, child.wait()).await {
+                Ok(st) => st.ok(),
+                Err(_) => {
+                    signal(libc::SIGKILL);
+                    tokio::time::timeout(KILL_GRACE, child.wait()).await.ok().and_then(Result::ok)
+                }
+            }
+        }
+    };
+    // The shell is gone; a grandchild may still hold the pipes open. Take what came, then stop reading.
+    let (ha, hb) = (a.abort_handle(), b.abort_handle());
+    if tokio::time::timeout(PIPE_GRACE, async {
+        let _ = a.await;
+        let _ = b.await;
+    })
+    .await
+    .is_err()
+    {
+        ha.abort();
+        hb.abort();
+    }
     let mut text = String::from_utf8_lossy(&buf.lock()).into_owned();
-    if timed_out {
-        text.push_str(&format!("\n(timed out after {}s)", (timeout.as_millis() as f64 / 1000.0).round() as u64));
-    } else if stopped {
-        text.push_str("\n(stopped)");
+    let timed_out = matches!(end, End::Limit);
+    match (&end, limit) {
+        (End::Limit, Limit::Total(d)) => text.push_str(&format!("\n(timed out after {}s)", (d.as_millis() as f64 / 1000.0).round() as u64)),
+        (End::Limit, Limit::Silence(d)) => {
+            text.truncate(text.trim_end().len());
+            text.push_str(&format!("\n(stopped: no output for {})", span_text(d)));
+        }
+        (End::Stopped, _) => text.push_str("\n(stopped)"),
+        _ => {}
     }
     let code = status.and_then(|s| s.code());
     let ok = code == Some(0) && !timed_out;
@@ -470,7 +544,7 @@ pub fn setup_result(copied: &Copied, command: &str, r: Option<&ShellResult>, dur
 
 /// `prepareWorktree`: copies the board's files into a new copy, then runs its setup command there. None when there
 /// is nothing to do. Never fails.
-pub async fn prepare_worktree(repo: &Path, dir: &Path, profile: &Value, timeout: Duration, shell: Option<&str>, env: &[(&str, &str)], abort: Option<Arc<tokio::sync::Notify>>) -> Option<Value> {
+pub async fn prepare_worktree(repo: &Path, dir: &Path, profile: &Value, limit: Limit, shell: Option<&str>, env: &[(&str, &str)], abort: Option<Arc<tokio::sync::Notify>>) -> Option<Value> {
     let patterns: Vec<String> = profile.get("copyFiles").and_then(Value::as_array).map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect()).unwrap_or_default();
     let command = s(profile, "setupCommand").unwrap_or("").trim().to_string();
     if patterns.is_empty() && command.is_empty() {
@@ -482,7 +556,7 @@ pub async fn prepare_worktree(repo: &Path, dir: &Path, profile: &Value, timeout:
     if command.is_empty() {
         return Some(setup_result(&copied, "", None, started.elapsed().as_millis() as u64));
     }
-    let r = run_shell(dir, &command, timeout, shell, env, abort).await;
+    let r = run_shell(dir, &command, limit, shell, env, abort).await;
     Some(setup_result(&copied, &command, Some(&r), started.elapsed().as_millis() as u64))
 }
 
@@ -660,16 +734,39 @@ mod tests {
     #[tokio::test]
     async fn run_shell_output_codes_and_timeout() {
         let t = tempfile::tempdir().unwrap();
-        let ok = run_shell(t.path(), "echo out; echo err >&2", SETUP_TIMEOUT, Some("/bin/sh"), &[], None).await;
+        let ok = run_shell(t.path(), "echo out; echo err >&2", Limit::Silence(SETUP_SILENCE), Some("/bin/sh"), &[], None).await;
         assert!(ok.ok && ok.exit_code == Some(0) && ok.output.contains("out") && ok.output.contains("err"));
-        let bad = run_shell(t.path(), "echo nope; exit 3", SETUP_TIMEOUT, Some("/bin/sh"), &[], None).await;
+        let bad = run_shell(t.path(), "echo nope; exit 3", Limit::Silence(SETUP_SILENCE), Some("/bin/sh"), &[], None).await;
         assert_eq!((bad.ok, bad.exit_code), (false, Some(3)));
-        let slow = run_shell(t.path(), "sleep 5", Duration::from_millis(200), Some("/bin/sh"), &[], None).await;
+        let slow = run_shell(t.path(), "sleep 5", Limit::Total(Duration::from_millis(200)), Some("/bin/sh"), &[], None).await;
         assert!(!slow.ok && slow.timed_out && slow.duration_ms < 4900, "{slow:?}");
         let n = Arc::new(tokio::sync::Notify::new());
         n.notify_one();
-        let stopped = run_shell(t.path(), "sleep 5", SETUP_TIMEOUT, Some("/bin/sh"), &[], Some(n)).await;
+        let stopped = run_shell(t.path(), "sleep 5", Limit::Silence(SETUP_SILENCE), Some("/bin/sh"), &[], Some(n)).await;
         assert!(stopped.output.ends_with("(stopped)"));
+    }
+
+    #[tokio::test]
+    async fn the_silence_limit_counts_from_the_last_output() {
+        let t = tempfile::tempdir().unwrap();
+        // Quiet for less than the limit each time: runs to the end.
+        let chatty = run_shell(t.path(), "echo a; sleep 0.4; echo b; sleep 0.4; echo c", Limit::Silence(Duration::from_millis(700)), Some("/bin/sh"), &[], None).await;
+        assert!(chatty.ok && chatty.output == "a\nb\nc", "{chatty:?}");
+        // Quiet too long: stopped, with the reason after its output.
+        let quiet = run_shell(t.path(), "echo hi; sleep 30", Limit::Silence(Duration::from_millis(300)), Some("/bin/sh"), &[], None).await;
+        assert!(!quiet.ok && quiet.timed_out && quiet.duration_ms < 5000, "{quiet:?}");
+        // The shell may report its killed `sleep` ("Terminated: 15  sleep 30") before it dies itself.
+        assert!(quiet.output.starts_with("hi\n") && quiet.output.ends_with("\n(stopped: no output for 300ms)"), "{quiet:?}");
+        assert_eq!((span_text(SETUP_SILENCE), span_text(Duration::from_secs(90)), span_text(Duration::from_secs(1))), ("15 minutes".into(), "90 seconds".into(), "1 second".into()));
+    }
+
+    #[tokio::test]
+    async fn a_background_child_holding_the_output_does_not_hold_the_caller() {
+        let t = tempfile::tempdir().unwrap();
+        let started = Instant::now();
+        let r = run_shell(t.path(), "sleep 30 & echo done", Limit::Silence(SETUP_SILENCE), Some("/bin/sh"), &[], None).await;
+        assert!(r.ok && r.output == "done", "{r:?}");
+        assert!(started.elapsed() < Duration::from_secs(10));
     }
 
     #[tokio::test]
@@ -679,14 +776,14 @@ mod tests {
         write(&from, ".env", "SECRET=1\n");
         fs::create_dir_all(&to).unwrap();
         let p = json!({ "copyFiles": [".env"], "setupCommand": "cat .env > seen.txt && seq 1 100" });
-        let r = prepare_worktree(&from, &to, &p, SETUP_TIMEOUT, Some("/bin/sh"), &[], None).await.unwrap();
+        let r = prepare_worktree(&from, &to, &p, Limit::Silence(SETUP_SILENCE), Some("/bin/sh"), &[], None).await.unwrap();
         assert_eq!(fs::read_to_string(to.join("seen.txt")).unwrap(), "SECRET=1\n");
         assert_eq!((r["copied"].clone(), r["ok"].clone(), r["exitCode"].clone()), (json!([".env"]), json!(true), json!(0)));
         let out = r["output"].as_str().unwrap();
         assert_eq!(out.split('\n').count(), 40);
         assert!(out.ends_with("100"));
-        assert!(prepare_worktree(&from, &to, &json!({}), SETUP_TIMEOUT, None, &[], None).await.is_none());
-        let failed = prepare_worktree(&from, &to, &json!({ "setupCommand": "echo boom; exit 1" }), SETUP_TIMEOUT, Some("/bin/sh"), &[], None).await.unwrap();
+        assert!(prepare_worktree(&from, &to, &json!({}), Limit::Silence(SETUP_SILENCE), None, &[], None).await.is_none());
+        let failed = prepare_worktree(&from, &to, &json!({ "setupCommand": "echo boom; exit 1" }), Limit::Silence(SETUP_SILENCE), Some("/bin/sh"), &[], None).await.unwrap();
         assert_eq!((failed["ok"].clone(), failed["exitCode"].clone(), failed["output"].clone()), (json!(false), json!(1), json!("boom")));
         let block = setup_block(&json!({ "command": "x", "output": "</ckanban-setup>" }));
         assert!(!block[15..block.len() - 16].contains('<'));

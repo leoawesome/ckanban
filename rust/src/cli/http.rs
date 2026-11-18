@@ -57,6 +57,11 @@ pub struct Client {
 impl Client {
     /// `req`: the parsed JSON answer (Null for 204 or an empty body), or the error text the CLI prints.
     pub fn req(&self, method: &str, path: &str, body: Option<&Value>, extra: &[(&str, String)], long: bool) -> Result<Value, String> {
+        self.req_within(method, path, body, extra, if long { None } else { Some(DEFAULT_WAIT) })
+    }
+
+    /// `req` that gives up after `wait` (None: waits as long as it takes).
+    pub fn req_within(&self, method: &str, path: &str, body: Option<&Value>, extra: &[(&str, String)], wait: Option<Duration>) -> Result<Value, String> {
         let mut headers: Vec<(String, String)> = Vec::new();
         if body.is_some() {
             headers.push(("content-type".into(), "application/json".into()));
@@ -72,7 +77,7 @@ impl Client {
         }
         let text = body.map(super::args::compact);
         let host = format!("127.0.0.1:{}", self.port);
-        let res = send(self.port, &host, method, path, &headers, text, if long { None } else { Some(DEFAULT_WAIT) }).ok_or_else(|| DAEMON_DOWN.to_string())?;
+        let res = send(self.port, &host, method, path, &headers, text, wait).ok_or_else(|| DAEMON_DOWN.to_string())?;
         if res.status == 204 {
             return Ok(Value::Null);
         }

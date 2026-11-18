@@ -265,17 +265,30 @@ describe("ticket setup", () => {
   const result = (over: Record<string, unknown> = {}) => ({
     copied: [], missing: [], command: "bun install", ok: true, exitCode: 0, timedOut: false, output: "<done>", durationMs: 2400, ...over,
   });
+  const STARTING = "Starting the project setup (installing its dependencies)…\n";
+  /** GET .../setup says whether one runs or would start; POST runs it. */
+  const setupServe = (answer: () => unknown, status: unknown = { running: false, runningMs: 0, needed: true }, delayMs = 0) =>
+    serve(async (r) => {
+      if (!r.path.endsWith("/setup")) return undefined;
+      if (r.method === "GET") return { json: status };
+      if (delayMs) await Bun.sleep(delayMs);
+      return { json: answer() };
+    });
 
   test("route, board from <board>/<id>, run header, and each answer's text", async () => {
     let answer: unknown = { status: "ran", result: result() };
-    serve((r) => (r.method === "POST" && r.path.endsWith("/setup") ? { json: answer } : undefined));
+    setupServe(() => answer);
     const ok = await run(["ticket", "setup", `beta/${ID}`], { env: { CKANBAN_TICKET: `alpha/${ID}` } });
     expect(ok.code).toBe(0);
-    expect(ok.stdout).toBe("Installed the project's dependencies in 2s (`bun install`).\n" +
+    expect(ok.stdout).toBe(STARTING + "Installed the project's dependencies in 2s (`bun install`).\n" +
       `<ckanban-setup>${JSON.stringify(result()).replace(/</g, "\\u003c")}</ckanban-setup>\n`);
-    expect(calls()[0]).toMatchObject({ method: "POST", path: `/api/profiles/beta/tickets/${ID}/setup`, body: {} });
-    expect(calls()[0].headers["x-ckanban-run"]).toBe(`alpha/${ID}`);
+    // The status first (no run header needed), then the setup itself.
+    expect(calls().map((c) => `${c.method} ${c.path}`)).toEqual([`GET /api/profiles/beta/tickets/${ID}/setup`, `POST /api/profiles/beta/tickets/${ID}/setup`]);
+    expect(calls()[1]).toMatchObject({ method: "POST", path: `/api/profiles/beta/tickets/${ID}/setup`, body: {} });
+    expect(calls()[1].headers["x-ckanban-run"]).toBe(`alpha/${ID}`);
 
+    // Nothing to run: no first line, the answer only.
+    setupServe(() => answer, { running: false, runningMs: 0, needed: false });
     for (const [status, text] of [
       ["already-done", "Already done: this ticket's dependencies are installed."],
       ["no-command", "Nothing to install: this board has no setup command."],
@@ -291,25 +304,47 @@ describe("ticket setup", () => {
   test("a failed or timed-out setup prints its output, then fails with exit 1", async () => {
     const failed = result({ ok: false, exitCode: 2, output: "err line" });
     let answer: unknown = { status: "ran", result: failed };
-    serve((r) => (r.path.endsWith("/setup") ? { json: answer } : undefined));
+    setupServe(() => answer);
     expect(await run(["ticket", "setup", ID])).toEqual({
       code: 1,
-      stdout: `\`bun install\` failed (exit 2) after 2s. Last lines of its output:\nerr line\n<ckanban-setup>${JSON.stringify(failed)}</ckanban-setup>\n`,
+      stdout: STARTING + `\`bun install\` failed (exit 2) after 2s. Last lines of its output:\nerr line\n<ckanban-setup>${JSON.stringify(failed)}</ckanban-setup>\n`,
       stderr: "Setup failed (exit 2).\n",
     });
-    const timed = result({ ok: false, exitCode: null, timedOut: true, output: "slow" });
+    const timed = result({ ok: false, exitCode: null, timedOut: true, output: "slow\n(stopped: no output for 15 minutes)" });
     answer = { status: "ran", result: timed };
     expect(await run(["ticket", "setup", ID])).toEqual({
       code: 1,
-      stdout: `\`bun install\` timed out after 2s. Last lines of its output:\nslow\n<ckanban-setup>${JSON.stringify(timed)}</ckanban-setup>\n`,
+      stdout: STARTING + `\`bun install\` timed out after 2s. Last lines of its output:\nslow\n(stopped: no output for 15 minutes)\n<ckanban-setup>${JSON.stringify(timed)}</ckanban-setup>\n`,
       stderr: "Setup timed out.\n",
     });
     const killed = result({ ok: false, exitCode: null, output: "" });
     answer = { status: "ran", result: killed };
     const k = await run(["ticket", "setup", ID]);
-    expect(k.stdout).toBe(`\`bun install\` failed (exit signal) after 2s. Last lines of its output:\n<ckanban-setup>${JSON.stringify(killed)}</ckanban-setup>\n`);
+    expect(k.stdout).toBe(STARTING + `\`bun install\` failed (exit signal) after 2s. Last lines of its output:\n<ckanban-setup>${JSON.stringify(killed)}</ckanban-setup>\n`);
     expect(k.stderr).toBe("Setup failed (exit signal).\n");
     expect((await run(["ticket", "setup"])).stderr).toBe("usage: ckanban ticket setup [<board>/]<id>\n");
+  });
+
+  test("joining a running setup says since when, then a line while it waits", async () => {
+    // Already running for 2m 5s; the answer takes 1.2 s; a progress line every 300 ms.
+    setupServe(() => ({ status: "ran", result: result() }), { running: true, runningMs: 125_000, needed: true }, 1200);
+    const r = await run(["ticket", "setup", ID], { env: { CKANBAN_SETUP_TICK_MS: "300" } });
+    expect(r.code).toBe(0);
+    const lines = r.stdout.trimEnd().split("\n");
+    expect(lines[0]).toBe("Joining the setup already running for this ticket (started 2m 5s ago)…");
+    const ticks = lines.filter((l) => l.startsWith("Still running the setup ("));
+    expect(ticks.length).toBeGreaterThanOrEqual(2);
+    expect(ticks[0]).toMatch(/^Still running the setup \(2m 5s so far\)…$/);
+    expect(lines.indexOf(ticks[0])).toBe(1);
+    expect(lines.at(-2)).toBe("Installed the project's dependencies in 2s (`bun install`).");
+    expect(lines.at(-1)).toStartWith("<ckanban-setup>");
+  });
+
+  test("a board without the status route: a plain first line, then the answer", async () => {
+    serve((r) => (r.method === "POST" && r.path.endsWith("/setup") ? { json: { status: "ran", result: result() } } : undefined));
+    const r = await run(["ticket", "setup", ID]);
+    expect(r.stdout.split("\n")[0]).toBe("Running the project setup…");
+    expect(r.code).toBe(0);
   });
 });
 

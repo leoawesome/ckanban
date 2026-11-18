@@ -21,6 +21,7 @@ pub fn wanted(method: &str, rest: &[&str]) -> bool {
             | ("POST", ["link-session" | "branch" | "check-pr" | "follow-up-work"])
             | ("POST", ["pr", "refresh" | "send-failures" | "resolve-conflicts" | "merge"])
             | ("POST", ["ask" | "stop" | "cap-continue" | "stall" | "limit" | "fresh-session" | "take-over" | "fresh-chat" | "setup"])
+            | ("GET", ["setup"])
             | ("POST" | "DELETE", ["follow-up"])
             | ("POST", ["follow-up", "now"])
             | ("POST", ["workflow", _, "stop"])
@@ -216,6 +217,10 @@ pub fn answer(runs: &Arc<RunLoop>, w: &Writes, req: &Req, slug: &str, id: &str, 
             Ok(Reply::Json(200, w.view_pub(slug, &t)))
         }
         ["setup"] => {
+            if m == "GET" {
+                // Whether one runs now (and for how long) and whether a POST would start one: `ticket setup`'s first line.
+                return Ok(Reply::Json(200, runs.git.setup_status(slug, id)));
+            }
             if req.run.is_some() && run_ticket(req, slug).as_deref() != Some(id) {
                 return Err((403, "a board run may only run the setup of its own ticket".into()));
             }

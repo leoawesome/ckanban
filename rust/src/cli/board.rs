@@ -471,6 +471,54 @@ fn devices(action: &str, p: &Parsed, names: Vec<String>, c: &Client) -> R<()> {
     Ok(())
 }
 
+/// How often `ticket setup` says it is still waiting (`CKANBAN_SETUP_TICK_MS` in tests).
+fn setup_tick() -> std::time::Duration {
+    let ms = std::env::var("CKANBAN_SETUP_TICK_MS").ok().and_then(|v| v.parse::<u64>().ok()).filter(|&ms| ms > 0).unwrap_or(30_000);
+    std::time::Duration::from_millis(ms)
+}
+
+/// The setup request, with a first line at once (starting, or joining one already running and since when) and a
+/// line every `setup_tick` while it runs, so a long install never looks stuck.
+fn setup_with_progress(c: &Client, path: &str) -> R<Value> {
+    use std::time::{Duration, Instant};
+    let status = c.req_within("GET", path, None, &[], Some(Duration::from_secs(2)));
+    let began = Instant::now();
+    let before = match &status {
+        Ok(s) if args::truthy(s.get("running")) => {
+            let ms = s.get("runningMs").and_then(Value::as_u64).unwrap_or(0);
+            out(&format!("Joining the setup already running for this ticket (started {} ago)…", text::elapsed_text(ms)));
+            ms
+        }
+        Ok(s) if args::truthy(s.get("needed")) => {
+            out("Starting the project setup (installing its dependencies)…");
+            0
+        }
+        // Nothing to run: the answer comes at once.
+        Ok(_) => 0,
+        // An older board without the status route, or one too busy to answer quickly.
+        Err(_) => {
+            out("Running the project setup…");
+            0
+        }
+    };
+    let (tx, rx) = std::sync::mpsc::channel();
+    let (port, path2, hdr) = (c.port, path.to_string(), run_header());
+    std::thread::spawn(move || {
+        let _ = tx.send(Client { port }.req("POST", &path2, Some(&json!({})), &hdr, true));
+    });
+    let tick = setup_tick();
+    loop {
+        match rx.recv_timeout(tick) {
+            Ok(r) => return r,
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                let ms = before + began.elapsed().as_millis() as u64;
+                out(&format!("Still running the setup ({} so far)…", text::elapsed_text(ms)));
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return Err(super::http::DAEMON_DOWN.into()),
+        }
+    }
+}
+
 fn setup(p: &Parsed, target: Option<&str>, c: &Client) -> R<()> {
     let target = need(target, "ticket setup [<board>/]<id>")?;
     let (explicit, tid) = match target.find('/') {
@@ -479,7 +527,8 @@ fn setup(p: &Parsed, target: Option<&str>, c: &Client) -> R<()> {
     };
     let slug = board(c, p, explicit)?;
     let tid = need(Some(tid), "ticket setup [<board>/]<id>")?;
-    let r = c.req("POST", &format!("{}/setup", t(&slug, Some(tid))), Some(&json!({})), &run_header(), true)?;
+    let path = format!("{}/setup", t(&slug, Some(tid)));
+    let r = if p.on("json") { c.req("POST", &path, Some(&json!({})), &run_header(), true)? } else { setup_with_progress(c, &path)? };
     out(&if p.on("json") { pretty(&r) } else { text::setup_text(&r) });
     if r.get("status").and_then(Value::as_str) == Some("ran") {
         let x = r.get("result").cloned().unwrap_or(Value::Null);

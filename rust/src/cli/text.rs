@@ -248,6 +248,16 @@ pub fn setup_text(r: &Value) -> String {
     [head, output, block].into_iter().filter(|l| !l.is_empty()).collect::<Vec<_>>().join("\n")
 }
 
+/// A wait in words: "45s", "2m 5s", "1h 3m".
+pub fn elapsed_text(ms: u64) -> String {
+    let secs = ms / 1000;
+    match secs {
+        0..60 => format!("{secs}s"),
+        60..3600 => format!("{}m {}s", secs / 60, secs % 60),
+        _ => format!("{}h {}m", secs / 3600, secs % 3600 / 60),
+    }
+}
+
 /// `exitCode ?? "signal"`.
 pub fn exit_of(x: &Value) -> String {
     match x.get("exitCode") {

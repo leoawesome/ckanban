@@ -160,10 +160,11 @@ impl RunLoop {
         self.patch_quiet(&r.slug, &r.id, obj(json!({ "interrupted": i, "lastActivity": null, "runStartedAt": null })));
     }
 
-    /// `shutdown`: every run killed without an outcome; tickets stay as they are for `recover`. Waits at most 6 s.
+    /// `shutdown`: every run killed without an outcome; tickets stay as they are for `recover`. Waits at most 10 s for
+    /// the stops (a wedged lock must not keep the process alive) and 6 s for the runs to end.
     pub async fn shutdown(self: &Arc<Self>) {
         let me = self.clone();
-        let _ = tokio::task::spawn_blocking(move || {
+        let stops = tokio::task::spawn_blocking(move || {
             me.state.lock().shutting_down = true;
             me.families.shutdown();
             let runs: Vec<Arc<ActiveRun>> = me.state.lock().runs.values().cloned().collect();
@@ -186,8 +187,10 @@ impl RunLoop {
                 cut_off();
                 h.stop();
             }
-        })
-        .await;
+        });
+        if tokio::time::timeout(std::time::Duration::from_secs(10), stops).await.is_err() {
+            eprintln!("ckanban-rs: stopping the runs took over 10s; going on with the shutdown");
+        }
         let _ = tokio::time::timeout(std::time::Duration::from_secs(6), self.when_idle()).await;
     }
 
@@ -551,5 +554,63 @@ impl RunLoop {
         let me = self.clone();
         let (s, i) = (slug.to_string(), id.to_string());
         tokio::task::spawn_blocking(move || me.patch(&s, &i, p)).await.map_err(|e| RunError::other(e.to_string()))?
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::{Duration, Instant};
+
+    use parking_lot::Mutex;
+    use tokio::sync::watch;
+
+    use super::super::board::{RunLoopDeps, RunLoopOptions, RunSt};
+    use super::*;
+    use crate::api::StandIn;
+    use crate::core::{Core, Services};
+    use crate::families::Families;
+    use crate::git::landing::Git;
+    use crate::git::ops::mem::MemBoard;
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn stopping_a_run_and_the_shutdown_never_wait_on_a_wedged_setups_lock() {
+        let d = tempfile::tempdir().unwrap();
+        let core = Core::new(d.path(), Services::stand_ins());
+        let git = Git::new(d.path(), Arc::new(MemBoard::default()));
+        let runs = RunLoop::new(RunLoopDeps {
+            root: d.path().to_path_buf(),
+            tickets: core.tickets.clone(),
+            bus: core.bus.clone(),
+            families: Families::new(core.tickets.clone(), core.reads.clone()),
+            git: git.clone(),
+            sessions: Arc::new(StandIn),
+            huddles: Arc::new(StandIn),
+            browsers: None,
+            devices: Arc::new(StandIn),
+            satellite: Arc::new(StandIn),
+            opts: RunLoopOptions::new("claude"),
+        });
+        let run = Arc::new(ActiveRun { slug: "b".into(), id: "t1".into(), no_edit: false, st: Mutex::new(RunSt::default()), done: watch::channel(false).0 });
+        runs.state.lock().runs.insert(RunLoop::key("b", "t1"), run);
+        // Another caller holds the setups lock and doesn't let go (what the old run_setup did).
+        let (tx, rx) = std::sync::mpsc::channel();
+        let g2 = git.clone();
+        std::thread::spawn(move || {
+            let _held = g2.hold_setups();
+            tx.send(()).unwrap();
+            std::thread::sleep(Duration::from_secs(40));
+        });
+        rx.recv().unwrap();
+
+        let t0 = Instant::now();
+        let r2 = runs.clone();
+        let stopped = tokio::time::timeout(Duration::from_secs(10), tokio::task::spawn_blocking(move || r2.stop("b", "t1"))).await;
+        assert!(stopped.expect("stopping the run hung on the setups lock").unwrap());
+        assert!(t0.elapsed() < Duration::from_secs(3), "stop took {:?}", t0.elapsed());
+
+        // The run never ends (its task is gone): the shutdown still returns, after its 6 s wait for runs.
+        let t0 = Instant::now();
+        tokio::time::timeout(Duration::from_secs(20), runs.shutdown()).await.expect("the shutdown hung on the setups lock");
+        assert!(t0.elapsed() < Duration::from_secs(10), "shutdown took {:?}", t0.elapsed());
     }
 }

@@ -21,7 +21,7 @@ use super::cmd::run;
 use super::ops::{BoardOps, s, set, truthy};
 use super::pr::{add_prs, open_pr_with_gh, pr_final, ticket_prs};
 use super::repo::{self, RepoKind, Removed};
-use super::setup::{self, CLEANUP_TIMEOUT, SETUP_TIMEOUT};
+use super::setup::{self, CLEANUP_TIMEOUT, Limit, SETUP_SILENCE};
 use crate::api::{Failure, Landing};
 use crate::dryrun;
 
@@ -59,6 +59,32 @@ pub type OpenPr = Arc<dyn Fn(PathBuf, String, String, String, String) -> BoxFutu
 
 type SetupRun = Shared<BoxFuture<'static, Result<Value, String>>>;
 
+/// A setup command running for a ticket: callers share `run`; `abort` stops it; `n` tells this run from a later one.
+pub(crate) struct SetupEntry {
+    run: SetupRun,
+    abort: Arc<tokio::sync::Notify>,
+    started: Instant,
+    n: u64,
+    /// The copy it runs in: a call for a ticket whose copy was replaced since must not count this one.
+    dir: String,
+}
+
+/// Removes a finished setup's entry (also when its task panicked), unless a newer one took the key.
+struct SetupDone {
+    git: Arc<Git>,
+    key: String,
+    n: u64,
+}
+
+impl Drop for SetupDone {
+    fn drop(&mut self) {
+        let mut setups = self.git.setups.lock();
+        if setups.get(&self.key).is_some_and(|e| e.n == self.n) {
+            setups.remove(&self.key);
+        }
+    }
+}
+
 pub struct Git {
     /// The data folder (for the report-only log).
     pub root: PathBuf,
@@ -70,7 +96,12 @@ pub struct Git {
     on_repo_change: Mutex<Option<Arc<dyn Fn(&str) + Send + Sync>>>,
     session_locks: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
     merge_locks: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
-    setups: Mutex<HashMap<String, (SetupRun, Arc<tokio::sync::Notify>)>>,
+    /// Never held across an `.await` or while calling something that takes it again: the running setup takes it to
+    /// remove itself, so a guard alive while waiting on that setup wedges every board's setups.
+    setups: Mutex<HashMap<String, SetupEntry>>,
+    setup_n: std::sync::atomic::AtomicU64,
+    /// The setup command stops after this long with no new output.
+    setup_silence: Mutex<Duration>,
     open_pr: OpenPr,
     /// One package trim pass at a time (`trim.rs`).
     pub(super) trim_gate: tokio::sync::Mutex<()>,
@@ -224,6 +255,8 @@ impl Git {
             session_locks: Mutex::new(HashMap::new()),
             merge_locks: Mutex::new(HashMap::new()),
             setups: Mutex::new(HashMap::new()),
+            setup_n: std::sync::atomic::AtomicU64::new(0),
+            setup_silence: Mutex::new(SETUP_SILENCE),
             open_pr,
             trim_gate: tokio::sync::Mutex::new(()),
             free_up: Mutex::new(json!({ "state": "idle", "phase": null, "reportOnly": !dryrun::deletes_on(), "startedAt": null, "finishedAt": null, "bytesFreed": 0, "foldersRemoved": 0, "foldersTrimmed": 0 })),
@@ -294,7 +327,9 @@ impl Git {
     /// A copy is being made or set up for this ticket right now (the sweep leaves it alone).
     pub fn busy(&self, slug: &str, id: &str) -> bool {
         let k = key(slug, id);
-        self.setups.lock().contains_key(&k) || self.session_locks.lock().contains_key(&k)
+        // A setups lock that stays taken counts as busy (stopping a run asks this and must not hang on it).
+        let setup = self.setups.try_lock_for(Duration::from_millis(500)).is_none_or(|s| s.contains_key(&k));
+        setup || self.session_locks.lock().contains_key(&k)
     }
 
     /// `ensureSession`: where the ticket's next run works, making its copy of the folder first when it needs one.
@@ -448,14 +483,32 @@ impl Git {
         }
     }
 
+    /// The setup command stops after this long with no new output (tests use a short one).
+    pub fn set_setup_silence(&self, d: Duration) {
+        *self.setup_silence.lock() = d;
+    }
+
     /// `runSetup`: runs the board's setup command in the ticket's copy when its Claude asks; calls while one runs share
-    /// it; after a success it isn't run again for this copy. A failed command is a result, not an error.
+    /// it; after a success it isn't run again for this copy. A failed command is a result, not an error. The command
+    /// runs in its own task, so it goes on (and frees its entry) even when every caller hung up.
     pub async fn run_setup(self: &Arc<Self>, slug: &str, id: &str) -> Result<Value, Failure> {
-        let (Some(profile), Some(t)) = (self.ops.profile(slug), self.ops.ticket(slug, id)) else { return Err(format!("ticket {id} not found")) };
         let k = key(slug, id);
-        if let Some((running, _)) = self.setups.lock().get(&k).cloned() {
-            return running.await;
-        }
+        // The setups list first, then the ticket: a setup clears `setupPending` before it leaves the list, so with no
+        // entry here the ticket read below is never the stale `setupPending: true` of a setup that just finished.
+        // Its own statement: the guard must be gone before any `.await` (the running setup takes the lock to finish).
+        let mut running = self.setups.lock().get(&k).map(|e| (e.run.clone(), e.dir.clone(), e.abort.clone()));
+        let (profile, t) = loop {
+            let (Some(profile), Some(t)) = (self.ops.profile(slug), self.ops.ticket(slug, id)) else { return Err(format!("ticket {id} not found")) };
+            let Some((run, dir, abort)) = running.take() else { break (profile, t) };
+            if s(&t, "worktree") == Some(dir.as_str()) {
+                return run.await;
+            }
+            // It runs in a copy the ticket no longer uses (replaced since): its result can't count for the new copy.
+            // Stop it, wait for it to leave the list, then look again.
+            abort.notify_one();
+            let _ = run.await;
+            running = self.setups.lock().get(&k).map(|e| (e.run.clone(), e.dir.clone(), e.abort.clone()));
+        };
         let command = s(&profile, "setupCommand").unwrap_or("").trim().to_string();
         if !exists(s(&t, "worktree")) {
             return Ok(json!({ "status": "no-worktree" }));
@@ -467,14 +520,20 @@ impl Git {
             return Ok(json!({ "status": "already-done" }));
         }
         let dir = s(&t, "worktree").unwrap_or("").to_string();
+        let entry_dir = dir.clone();
         let abort = Arc::new(tokio::sync::Notify::new());
+        let n = self.setup_n.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let silence = *self.setup_silence.lock();
         let me = self.clone();
-        let (slug2, id2, ab) = (slug.to_string(), id.to_string(), abort.clone());
-        let fut: SetupRun = async move {
+        let (slug2, id2, ab, k2) = (slug.to_string(), id.to_string(), abort.clone(), k.clone());
+        let work = async move {
+            // Made on the first poll, not before: a task dropped unpolled (the runtime shutting down while `spawn` runs
+            // under the lock below) must not take the lock again in `drop`.
+            let _done = SetupDone { git: me.clone(), key: k2, n };
             let _ = me.ops.patch(&slug2, &id2, super::ops::patch1("lastActivity", json!(INSTALLING)));
             let repo = PathBuf::from(s(&profile, "path").unwrap_or(""));
             let env_ticket = format!("{slug2}/{id2}");
-            let r = setup::prepare_worktree(&repo, Path::new(&dir), &json!({ "setupCommand": command }), SETUP_TIMEOUT, None, &[("CKANBAN_TICKET", &env_ticket)], Some(ab))
+            let r = setup::prepare_worktree(&repo, Path::new(&dir), &json!({ "setupCommand": command }), Limit::Silence(silence), None, &[("CKANBAN_TICKET", &env_ticket)], Some(ab))
                 .await
                 .unwrap_or(Value::Null);
             // The copy may have been removed or replaced meanwhile: only mark the one it ran in.
@@ -497,20 +556,55 @@ impl Git {
                 let lines: Vec<&str> = out.split('\n').collect();
                 eprintln!("ticket {slug2}/{id2}: setup failed ({}): {}", r["command"].as_str().unwrap_or(""), lines[lines.len().saturating_sub(3)..].join(" | "));
             }
-            me.setups.lock().remove(&key(&slug2, &id2));
             Ok(json!({ "status": "ran", "result": r }))
-        }
-        .boxed()
-        .shared();
-        self.setups.lock().insert(k, (fut.clone(), abort));
+        };
+        let fut = {
+            let mut setups = self.setups.lock();
+            match setups.get(&k) {
+                // Another call started one between the check above and now (no await in between, but other threads):
+                // it read the same ticket moments ago, so it runs in the same copy.
+                Some(e) => e.run.clone(),
+                None => {
+                    let task = tokio::spawn(work);
+                    let run: SetupRun = async move { task.await.unwrap_or_else(|e| Err(format!("the setup stopped unexpectedly: {e}"))) }.boxed().shared();
+                    setups.insert(k, SetupEntry { run: run.clone(), abort, started: Instant::now(), n, dir: entry_dir });
+                    run
+                }
+            }
+        };
         fut.await
     }
 
-    /// Stops a running setup command of the ticket (its run was stopped).
-    pub fn stop_setup(&self, slug: &str, id: &str) {
-        if let Some((_, abort)) = self.setups.lock().get(&key(slug, id)) {
-            abort.notify_one();
+    /// Whether a setup runs for this ticket now (and for how long), and whether `run_setup` would start one
+    /// (`GET .../setup`). Cheap: no command runs.
+    pub fn setup_status(&self, slug: &str, id: &str) -> Value {
+        let running = self.setups.lock().get(&key(slug, id)).map(|e| e.started.elapsed());
+        if let Some(d) = running {
+            return json!({ "running": true, "runningMs": d.as_millis() as u64, "needed": true });
         }
+        let needed = match (self.ops.profile(slug), self.ops.ticket(slug, id)) {
+            (Some(p), Some(t)) => exists(s(&t, "worktree")) && !s(&p, "setupCommand").unwrap_or("").trim().is_empty() && truthy(&t, "setupPending"),
+            _ => false,
+        };
+        json!({ "running": false, "runningMs": 0, "needed": needed })
+    }
+
+    /// Stops a running setup command of the ticket (its run was stopped). Never waits long on the lock: stopping a
+    /// run or the board must not hang behind it.
+    pub fn stop_setup(&self, slug: &str, id: &str) {
+        let Some(setups) = self.setups.try_lock_for(Duration::from_millis(500)) else {
+            eprintln!("ticket {slug}/{id}: could not stop its setup (the setup list is busy)");
+            return;
+        };
+        if let Some(e) = setups.get(&key(slug, id)) {
+            e.abort.notify_one();
+        }
+    }
+
+    /// Tests: holds the setups lock, as a wedged caller would.
+    #[cfg(test)]
+    pub(crate) fn hold_setups(&self) -> parking_lot::MutexGuard<'_, HashMap<String, SetupEntry>> {
+        self.setups.lock()
     }
 
     /// `removeTicketWorktree`: removes a copy, running the board's cleanup command in it first (its failure never
@@ -521,7 +615,7 @@ impl Git {
         let before = cleanup.map(|c| {
             let d = dir.to_path_buf();
             async move {
-                let r = setup::run_shell(&d, &c, CLEANUP_TIMEOUT, None, &[], None).await;
+                let r = setup::run_shell(&d, &c, Limit::Total(CLEANUP_TIMEOUT), None, &[], None).await;
                 if !r.ok {
                     let lines: Vec<&str> = r.output.split('\n').collect();
                     eprintln!("worktree cleanup failed in {} ({c}): {}", d.display(), lines[lines.len().saturating_sub(5)..].join(" | "));
@@ -1126,6 +1220,157 @@ mod tests {
         let bf2 = g.branch_folder("p", &json!({ "id": "x", "baseSha": "abc" }), "s3", "B").await.unwrap();
         assert_eq!(bf2.patch, json!({ "baseSha": "abc" }).as_object().unwrap().clone());
         assert!(bf2.warnings[0].starts_with("The original works in the project folder"));
+    }
+
+    /// Runs `f` on its own thread and runtime and fails if it isn't over in `limit`: a wedged lock fails the test
+    /// instead of hanging it (the stuck thread is left behind).
+    fn within<T: Send + 'static>(limit: Duration, f: impl FnOnce() -> std::pin::Pin<Box<dyn std::future::Future<Output = T>>> + Send + 'static) -> T {
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(4).enable_all().build().unwrap();
+            let _ = tx.send(rt.block_on(f()));
+            std::mem::forget(rt);
+        });
+        rx.recv_timeout(limit).expect("did not finish in time: a setup call is stuck")
+    }
+
+    /// A board with a setup command and tickets `a` and `b`, each in a copy of its own waiting for setup.
+    fn setup_board(t: &Path, command: &str) -> (Arc<MemBoard>, Arc<Git>) {
+        let b = board(t);
+        b.profiles.lock()[0]["setupCommand"] = json!(command);
+        for id in ["a", "b"] {
+            let wt = t.join(format!("copy-{id}"));
+            fs::create_dir_all(&wt).unwrap();
+            b.add("p", json!({ "id": id, "title": id, "worktree": wt, "setupPending": true }));
+        }
+        let g = Git::new(t, b.clone());
+        (b, g)
+    }
+
+    #[test]
+    fn overlapping_setups_share_one_install_and_never_wedge_the_lock() {
+        let t = tempfile::tempdir().unwrap();
+        let (b, g) = setup_board(t.path(), "echo run >> count.txt; sleep 1; echo done");
+        let g2 = g.clone();
+        let (first, second, other) = within(Duration::from_secs(30), move || {
+            Box::pin(async move {
+                // One task, no spawn: the old code's future (a guard held across the await) wasn't even Send.
+                let later = async {
+                    tokio::time::sleep(Duration::from_millis(300)).await;
+                    tokio::join!(g2.run_setup("p", "a"), g2.run_setup("p", "b"))
+                };
+                let (first, (second, other)) = tokio::join!(g2.run_setup("p", "a"), later);
+                (first, second, other)
+            })
+        });
+        let (first, second, other) = (first.unwrap(), second.unwrap(), other.unwrap());
+        assert_eq!(first, second);
+        assert_eq!((first["status"].clone(), first["result"]["ok"].clone(), first["result"]["output"].clone()), (json!("ran"), json!(true), json!("done")));
+        assert_eq!(other["result"]["ok"], true);
+        // One install for the two calls of `a`.
+        assert_eq!(fs::read_to_string(t.path().join("copy-a/count.txt")).unwrap(), "run\n");
+        assert_eq!(b.get("p", "a")["setupPending"], false);
+        assert!(!g.busy("p", "a") && !g.busy("p", "b"));
+        assert_eq!(g.setup_status("p", "a"), json!({ "running": false, "runningMs": 0, "needed": false }));
+    }
+
+    #[test]
+    fn a_silent_setup_is_stopped_and_the_next_one_runs() {
+        let t = tempfile::tempdir().unwrap();
+        // Ignores SIGTERM: only the SIGKILL after the grace period ends it.
+        let (b, g) = setup_board(t.path(), "trap '' TERM; echo hi; sleep 600");
+        g.set_setup_silence(Duration::from_millis(400));
+        assert_eq!(g.setup_status("p", "a")["needed"], true);
+        let g2 = g.clone();
+        let (r, status) = within(Duration::from_secs(30), move || {
+            Box::pin(async move {
+                let look = async {
+                    tokio::time::sleep(Duration::from_millis(200)).await;
+                    g2.setup_status("p", "a")
+                };
+                tokio::join!(g2.run_setup("p", "a"), look)
+            })
+        });
+        assert_eq!((status["running"].clone(), status["needed"].clone()), (json!(true), json!(true)));
+        let r = r.unwrap()["result"].clone();
+        assert_eq!((r["ok"].clone(), r["timedOut"].clone(), r["exitCode"].clone()), (json!(false), json!(true), Value::Null));
+        let out = r["output"].as_str().unwrap();
+        assert!(out.contains("hi") && out.ends_with("(stopped: no output for 400ms)"), "{out}");
+        assert_eq!(b.get("p", "a")["setupPending"], true);
+        // The next setup for the ticket runs.
+        b.profiles.lock()[0]["setupCommand"] = json!("echo again");
+        let g2 = g.clone();
+        let again = within(Duration::from_secs(30), move || Box::pin(async move { g2.run_setup("p", "a").await })).unwrap();
+        assert_eq!((again["result"]["ok"].clone(), again["result"]["output"].clone()), (json!(true), json!("again")));
+    }
+
+    #[test]
+    fn a_call_racing_a_finishing_setup_does_not_install_twice() {
+        let t = tempfile::tempdir().unwrap();
+        let (b, g) = setup_board(t.path(), "echo run >> count.txt; sleep 1; echo done");
+        let (g2, b2) = (g.clone(), b.clone());
+        let (first, second) = within(Duration::from_secs(30), move || {
+            Box::pin(async move {
+                let later = async {
+                    tokio::time::sleep(Duration::from_millis(300)).await;
+                    // The second call's ticket read takes until after the first setup has finished and left the list.
+                    *b2.slow_read.lock() = Some(("a".into(), Duration::from_millis(2000)));
+                    let g3 = g2.clone();
+                    tokio::spawn(async move { g3.run_setup("p", "a").await }).await.unwrap()
+                };
+                tokio::join!(g2.run_setup("p", "a"), later)
+            })
+        });
+        assert_eq!(first.unwrap()["result"]["ok"], true);
+        assert_eq!(second.unwrap()["status"], "ran");
+        assert_eq!(fs::read_to_string(t.path().join("copy-a/count.txt")).unwrap(), "run\n");
+        assert_eq!(b.get("p", "a")["setupPending"], false);
+    }
+
+    #[test]
+    fn a_replaced_copy_gets_its_own_setup() {
+        let t = tempfile::tempdir().unwrap();
+        let (b, g) = setup_board(t.path(), "echo run >> count.txt; sleep 600");
+        let new_copy = t.path().join("copy-a2");
+        fs::create_dir_all(&new_copy).unwrap();
+        let (g2, b2, nc) = (g.clone(), b.clone(), new_copy.clone());
+        let (old, new) = within(Duration::from_secs(30), move || {
+            Box::pin(async move {
+                let later = async {
+                    tokio::time::sleep(Duration::from_millis(300)).await;
+                    // The copy is replaced while its setup runs; the new copy's setup must be quick.
+                    b2.tickets.lock().get_mut(&("p".into(), "a".into())).unwrap()["worktree"] = json!(nc);
+                    b2.profiles.lock()[0]["setupCommand"] = json!("echo run >> count.txt; echo fresh");
+                    g2.run_setup("p", "a").await
+                };
+                tokio::join!(g2.run_setup("p", "a"), later)
+            })
+        });
+        // The old copy's setup was stopped, not counted.
+        assert_eq!(old.unwrap()["result"]["ok"], false);
+        let new = new.unwrap();
+        assert_eq!((new["status"].clone(), new["result"]["ok"].clone(), new["result"]["output"].clone()), (json!("ran"), json!(true), json!("fresh")));
+        assert_eq!(fs::read_to_string(new_copy.join("count.txt")).unwrap(), "run\n");
+        assert_eq!(b.get("p", "a")["setupPending"], false);
+        assert!(!g.busy("p", "a"));
+    }
+
+    #[test]
+    fn stopping_a_setup_never_waits_long_on_a_wedged_lock() {
+        let t = tempfile::tempdir().unwrap();
+        let (_b, g) = setup_board(t.path(), "true");
+        let (tx, rx) = std::sync::mpsc::channel();
+        let g2 = g.clone();
+        std::thread::spawn(move || {
+            let _held = g2.hold_setups();
+            tx.send(()).unwrap();
+            std::thread::sleep(Duration::from_secs(20));
+        });
+        rx.recv().unwrap();
+        let t0 = Instant::now();
+        g.stop_setup("p", "a");
+        assert!(g.busy("p", "a"), "a lock it can't get counts as busy");
+        assert!(t0.elapsed() < Duration::from_secs(3), "{:?}", t0.elapsed());
     }
 
     #[tokio::test]

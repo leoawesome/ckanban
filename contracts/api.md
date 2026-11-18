@@ -710,6 +710,7 @@ Prefix `/api/profiles/:slug/tickets/:id`.
 | POST | `/fresh-session` | | 200 `{ticket, external: false}` | 403 run header, 400, 409 |
 | POST | `/take-over` | | 200 `{ticket, external}` | 403 run header, 400, 409 |
 | POST | `/link-session` | `{sessionId}` (falsy unlinks) | 200 `TicketView` | 400 |
+| GET | `/setup` | | 200 `{running, runningMs, needed}`: a setup runs for this ticket now (for `runningMs`), and whether a POST would start one; no command runs | |
 | POST | `/setup` | | 200 `Board.runSetup()` result | 403 run of another ticket |
 | POST | `/planning-command` | | 200 `{command}` | 400 |
 | GET | `/simplified` | | 200 saved simplified replies | |

@@ -94,6 +94,8 @@ pub(crate) mod mem {
         pub running: Mutex<Vec<String>>,
         pub holds: Mutex<Vec<String>>,
         pub sessions: Mutex<Vec<String>>,
+        /// Tests of races: the next read of this ticket id waits this long after reading it (once).
+        pub slow_read: Mutex<Option<(String, std::time::Duration)>>,
     }
 
     impl MemBoard {
@@ -127,7 +129,15 @@ pub(crate) mod mem {
             }
         }
         fn ticket(&self, slug: &str, id: &str) -> Option<Value> {
-            self.tickets.lock().get(&(slug.to_string(), id.to_string())).cloned()
+            let t = self.tickets.lock().get(&(slug.to_string(), id.to_string())).cloned();
+            let slow = {
+                let mut w = self.slow_read.lock();
+                if w.as_ref().is_some_and(|(i, _)| i == id) { w.take() } else { None }
+            };
+            if let Some((_, d)) = slow {
+                std::thread::sleep(d);
+            }
+            t
         }
         fn tickets(&self, slug: &str) -> Vec<Value> {
             let order = self.order.lock().clone();

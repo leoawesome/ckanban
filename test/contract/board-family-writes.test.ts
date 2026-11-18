@@ -154,6 +154,8 @@ function normalize(text: string): string {
   return text
     .replace(/t_\d{8}_[a-z0-9]{4}/g, name("ticket"))
     .replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z/g, (m) => (m.startsWith("9999") ? m : "<time>"))
+    // A day on its own ("- 2026-11-17: First milestone" in the status file): the day the script ran.
+    .replace(/\b\d{4}-\d{2}-\d{2}\b(?!T)/g, (m) => (m.startsWith("9999") ? m : "<date>"))
     .replace(/"id": ?"[0-9a-z]{8}"/g, name("id"))
     .replace(/^id: [0-9a-z]{8}$/gm, name("id"))
     .replace(/\/tmp\/[^"\n]*|\/private\/var\/[^"\n]*|\/var\/folders\/[^"\n]*/g, "<path>")

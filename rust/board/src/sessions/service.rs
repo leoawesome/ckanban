@@ -113,7 +113,9 @@ impl SessionInfo for Sessions {
     }
 
     fn refresh(&self, slug: &str, id: &str, session_id: &str) {
-        if let Some(w) = self.watcher.lock().clone() {
+        // Its own statement: the guard must not live through the transcript read below (every ticket write waits on it).
+        let w = self.watcher.lock().clone();
+        if let Some(w) = w {
             w.poll_one(slug, id, session_id, true);
         }
     }
