@@ -213,7 +213,7 @@ pub async fn prepare(root: &Path, public_port: u16, remote_port: u16) -> Result<
     let phone_routes = browsers::routes::RouteCtx {
         public_port,
         mask: mask.clone(),
-        user_only: Arc::new(|h, _peer| Box::pin(async move { crate::guard::headers_allow(&h) })),
+        user_only: Arc::new(move |h, peer| Box::pin(async move { crate::guard::phone_user(&h, peer, remote_port).await })),
     };
     // P2: the Share menu's Publish; the helper command is known once the server has its Bun (`connect_outside`).
     let publish_run: Arc<OnceLock<ckanban_board::git::publish::PublishRun>> = Arc::new(OnceLock::new());
@@ -790,9 +790,10 @@ impl BoardMode {
             return Ok(passes::json_answer(StatusCode::UNSUPPORTED_MEDIA_TYPE, &serde_json::json!({ "error": "content-type must be application/json" }), &secrets));
         }
         let headers = h.clone();
-        // The owner's phone (its gate passed) is the user after the header checks, as in Bun's `userOnly`.
+        // The owner's phone (its gate passed) is the user when it really came through Tailscale from another device.
+        let remote_port = self.remote_port;
         let user: UserCheck = match via {
-            Listener::Remote => Box::new(move || Box::pin(async move { guard::headers_allow(&headers) })),
+            Listener::Remote => Box::new(move || Box::pin(async move { guard::phone_user(&headers, peer_port, remote_port).await })),
             Listener::Local => Box::new(move || Box::pin(async move { guard::user_only(&headers, peer_port).await })),
         };
         let query = req.uri().query().map(str::to_string);
@@ -882,7 +883,7 @@ impl BoardMode {
     /// The huddle routes (R11a, `ckanban_board::huddles::routes`), after the same gate as the team routes: the Host
     /// (403), the Origin of a change (403), a JSON body type for POST, PATCH and PUT (415).
     #[allow(clippy::result_large_err)]
-    pub async fn answer_huddles(&self, req: Request<Incoming>) -> Result<Response<Body>, Request<Incoming>> {
+    pub async fn answer_huddles(&self, req: Request<Incoming>, peer: SocketAddr, via: Listener) -> Result<Response<Body>, Request<Incoming>> {
         let h = req.headers();
         if h.contains_key(FRONT_DESK_HEADER) || wants_upgrade(h) {
             return Err(req);
@@ -908,6 +909,7 @@ impl BoardMode {
         }
         let text = |n: &str| request::header_text(h, n).filter(|v| !v.is_empty());
         let (run, agent, source) = (text(RUN_HEADER), text(HUDDLE_HEADER), text(write_routes::SOURCE_HEADER));
+        let headers = h.clone();
         let method = req.method().as_str().to_string();
         let query = req.uri().query().unwrap_or("").to_string();
         let body: Bytes = if wants_body {
@@ -922,8 +924,15 @@ impl BoardMode {
             Bytes::new()
         };
         let hs = self.huddles.clone();
+        // On the phone port a user-only huddle route also needs the request to come through Tailscale from another device.
+        // Changes run under the huddles lock (`Huddles::op`), so for them the check (netstat, ps, tailscale) runs here,
+        // before it; reads take no lock and ask only when a route needs it.
+        let (port, remote_port, phone) = (peer.port(), self.remote_port, via == Listener::Remote);
+        let checked = if phone && method != "GET" { Some(crate::guard::phone_user(&headers, port, remote_port).await) } else { None };
         let answer = tokio::task::spawn_blocking(move || {
-            let r = huddle_mod::routes::Req { method: &method, parts: &parts, query: &query, run, agent, source, body: &body };
+            let phone_user = move || checked.unwrap_or_else(|| ckanban_board::tickets::writer::block(crate::guard::phone_user(&headers, port, remote_port)));
+            let user: Option<&(dyn Fn() -> bool + Sync)> = if phone { Some(&phone_user) } else { None };
+            let r = huddle_mod::routes::Req { method: &method, parts: &parts, query: &query, run, agent, source, body: &body, user };
             huddle_mod::routes::answer(&hs, &r)
         })
         .await;
@@ -968,10 +977,11 @@ impl BoardMode {
         let from_run = has(RUN_HEADER) || has(HUDDLE_HEADER);
         let count_only = query_param(req.uri().query().unwrap_or(""), "count").as_deref() == Some("1");
         let headers = h.clone();
+        let remote_port = self.remote_port;
         let user = move || -> std::pin::Pin<Box<dyn std::future::Future<Output = bool> + Send>> {
             let headers = headers.clone();
             Box::pin(async move {
-                if via == Listener::Remote { crate::guard::headers_allow(&headers) } else { crate::guard::user_only(&headers, peer.port()).await }
+                if via == Listener::Remote { crate::guard::phone_user(&headers, peer.port(), remote_port).await } else { crate::guard::user_only(&headers, peer.port()).await }
             })
         };
         // Only a ticket's Usage tab reads the plan's numbers (cached; the first ask may go out to Anthropic).
@@ -1050,10 +1060,10 @@ impl BoardMode {
             }
         }
         // `userOnly` and `isOutsideBoard` look at the caller (the phone that passed its gate is the user).
-        let (port, phone) = (peer.port(), via == Listener::Remote);
+        let (port, phone, remote_port) = (peer.port(), via == Listener::Remote, self.remote_port);
         let (uh, oh) = (headers.clone(), headers);
         let user = move |what: &str| -> Result<(), (u16, String)> {
-            let allowed = if phone { crate::guard::headers_allow(&uh) } else { ckanban_board::tickets::writer::block(crate::guard::user_only(&uh, port)) };
+            let allowed = if phone { ckanban_board::tickets::writer::block(crate::guard::phone_user(&uh, port, remote_port)) } else { ckanban_board::tickets::writer::block(crate::guard::user_only(&uh, port)) };
             if allowed { Ok(()) } else { Err((403, crate::guard::refusal(what))) }
         };
         let outside = move || !phone && !request::has(&oh, "origin") && ckanban_board::tickets::writer::block(crate::guard::outside_board(port, std::process::id()));
@@ -1133,11 +1143,11 @@ impl BoardMode {
                 Err(e) => return Ok(self.error(StatusCode::INTERNAL_SERVER_ERROR, &e)),
             }
         }
-        let (port, phone) = (peer.port(), via == Listener::Remote);
+        let (port, phone, remote_port) = (peer.port(), via == Listener::Remote, self.remote_port);
         let user: hr::UserCheck = Arc::new(move |what: String| {
             let headers = headers.clone();
             Box::pin(async move {
-                let allowed = if phone { crate::guard::headers_allow(&headers) } else { crate::guard::user_only(&headers, port).await };
+                let allowed = if phone { crate::guard::phone_user(&headers, port, remote_port).await } else { crate::guard::user_only(&headers, port).await };
                 if allowed { Ok(()) } else { Err((403, crate::guard::refusal(&what))) }
             })
         });
@@ -1207,11 +1217,11 @@ impl BoardMode {
             Err(_) if upload => vec![0; limit],
             Err(_) => return Ok(passes::json_answer(StatusCode::PAYLOAD_TOO_LARGE, &serde_json::json!({ "error": "request body too large" }), &passes::current_secrets(&self.root))),
         };
-        let port = peer.port();
-        // The owner's phone (its gate passed on the phone listener) is the user after the header checks, as Bun's
-        // `userOnly` lets `listener === "remote"` in.
+        let (port, remote_port) = (peer.port(), self.remote_port);
+        // The owner's phone (its gate passed on the phone listener) is the user when it really came through Tailscale
+        // from another device (`guard::phone_user`).
         let user: Arc<dyn Fn() -> bool + Send + Sync> = match via {
-            Listener::Remote => Arc::new(move || crate::guard::headers_allow(&headers)),
+            Listener::Remote => Arc::new(move || ckanban_board::tickets::writer::block(crate::guard::phone_user(&headers, port, remote_port))),
             Listener::Local => Arc::new(move || ckanban_board::tickets::writer::block(crate::guard::user_only(&headers, port))),
         };
         let r = write_routes::Req { method, path, query, run, huddle, source, content_type, file_name, body, user };
@@ -1348,7 +1358,7 @@ impl BoardMode {
             Ok(res) => return res,
             Err(r) => r,
         };
-        let req = match self.answer_huddles(req).await {
+        let req = match self.answer_huddles(req, peer, via).await {
             Ok(res) => return res,
             Err(r) => r,
         };
@@ -1471,11 +1481,11 @@ impl BoardMode {
         if request::needs_json(&method) && !request::json_type(ctype.as_deref()) {
             return Ok(self.error(StatusCode::UNSUPPORTED_MEDIA_TYPE, "content-type must be application/json"));
         }
-        // `userOnly`: the phone that passed its gate is the user after the header checks; on this Mac, the user's own
-        // browser. Asked only where a route may need it (the check runs lsof).
+        // `userOnly`: the phone that passed its gate and came through Tailscale from another device; on this Mac, the
+        // user's own browser. Asked only where a route may need it (the check runs lsof or netstat).
         let is_user = if routes::may_ask_user(&method, &parts) {
             match via {
-                Listener::Remote => crate::guard::headers_allow(h),
+                Listener::Remote => crate::guard::phone_user(h, peer.port(), self.remote_port).await,
                 Listener::Local => crate::guard::user_only(h, peer.port()).await,
             }
         } else {

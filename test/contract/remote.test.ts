@@ -115,12 +115,15 @@ test("on: a user-only action from the phone passes the user check", async () => 
   expect(bare.data.error).toMatch(/for the user only/);
 });
 
-test("quirk (t_20261115_v0ip): any local program that sends the tailnet Host and the owner's login is the user", async () => {
-  // Both values are in remote.json, readable by every program of this macOS user. Nothing checks that the caller is
-  // `tailscale serve`: this test process passes the user-only check above the same way a board run's shell could.
-  const cfg = JSON.parse(readFileSync(remoteFile(), "utf8"));
-  const r = await phone(d, "POST", `/api/profiles/${SLUG}/find-links`, {}, { host: cfg.host, "tailscale-user-login": cfg.allowedLogin });
-  expect(r.status).not.toBe(403);
+test("on: the phone port's user checks refuse a request from this Mac's own address (a run calling the tailnet name)", async () => {
+  // A request from this Mac to its own tailnet name also goes through Tailscale with the owner's login; Tailscale puts
+  // this Mac's address in X-Forwarded-For. Loopback, a missing address or a list of them are refused the same way.
+  for (const xff of ["127.0.0.1", "::1", "", "100.64.0.2, 100.64.0.3", "not an address"]) {
+    const r = await phone(d, "POST", `/api/profiles/${SLUG}/find-links`, {}, { "x-forwarded-for": xff });
+    expect({ xff, status: r.status }).toEqual({ xff, status: 403 });
+  }
+  // Reads don't ask who the caller is.
+  expect((await phone(d, "GET", "/api/profiles", undefined, { "x-forwarded-for": "127.0.0.1" })).status).toBe(200);
 });
 
 test("off again: the phone listener refuses at once (remote.json re-read on change)", async () => {

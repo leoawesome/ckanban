@@ -23,6 +23,9 @@ pub struct Req<'a> {
     pub agent: Option<String>,
     pub source: Option<String>,
     pub body: &'a [u8],
+    /// The extra caller check of a user-only route: on the phone access port, whether the request really came through
+    /// Tailscale from another device (`guard::phone_user`); None on the board's own port (the headers only, as before).
+    pub user: Option<&'a (dyn Fn() -> bool + Sync)>,
 }
 
 /// Whether the huddle routes take this request.
@@ -104,7 +107,7 @@ fn route(hs: &Huddles, r: &Req) -> Out {
     let m = r.method;
     let who = Caller { run: r.run.clone(), agent: r.agent.clone() };
     let user_only = |what: &str| -> Result<(), Fail> {
-        if who.run.is_some() || who.agent.is_some() {
+        if who.run.is_some() || who.agent.is_some() || r.user.is_some_and(|user| !user()) {
             return Err(Fail::new(403, format!("only the user can {what}; ask them in the huddle (tag @you)")));
         }
         Ok(())

@@ -144,6 +144,17 @@ pub fn remote_url(host: &str) -> String {
     format!("https://{host}")
 }
 
+/// `tailscale serve status --json` for the phone port's caller check (`guard::from_phone`); None when Tailscale can't
+/// be asked, fails or answers nothing within the link check's time limit.
+pub async fn tailscale_serve_status() -> Option<String> {
+    let bin = tailscale_bin()?;
+    let r = tokio::time::timeout(CHECK_TIMEOUT, run_tailscale(bin, vec!["serve".into(), "status".into(), "--json".into()])).await.ok()?.ok()?;
+    if r.code != 0 || GUI_FAILED.is_match(&format!("{}{}", r.stdout, r.stderr)) || crate::js::trim(&r.stdout).is_empty() {
+        return None;
+    }
+    Some(r.stdout)
+}
+
 /// `tailscaleBin()`: CKANBAN_TAILSCALE, else the Mac app's own binary, else `tailscale` on PATH.
 fn tailscale_bin() -> Option<PathBuf> {
     if let Some(own) = std::env::var_os("CKANBAN_TAILSCALE").filter(|v| !v.is_empty()) {

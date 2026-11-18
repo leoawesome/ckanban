@@ -10,6 +10,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { type Daemon, startDaemon, until } from "./daemon";
+import { PHONE_ADDRESS } from "./phone";
 import { documentedPaths, filesUnder, parseTicketFile, pathRegex, readJsonl } from "./files";
 import { schemaProblems } from "./schema";
 
@@ -40,7 +41,7 @@ const p = (path: string) => `/api/profiles/${SLUG}${path}`;
 async function asUser(method: string, path: string, body: unknown = {}): Promise<{ status: number; data: any; text: string }> {
   const res = await fetch(`http://127.0.0.1:${d.env.CKANBAN_REMOTE_PORT}${path}`, {
     method,
-    headers: { host: HOST, "tailscale-user-login": LOGIN, origin: `https://${HOST}`, "content-type": "application/json" },
+    headers: { host: HOST, "tailscale-user-login": LOGIN, "x-forwarded-for": PHONE_ADDRESS, origin: `https://${HOST}`, "content-type": "application/json" },
     body: method === "GET" ? undefined : JSON.stringify(body),
   });
   const text = await res.text();

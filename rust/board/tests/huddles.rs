@@ -55,7 +55,7 @@ fn call(b: &Board, method: &str, path: &str, body: Value, run: Option<&str>, age
     };
     let path_only: Vec<String> = path_only.into_iter().map(|p| p.split('?').next().unwrap().to_string()).collect();
     let body = if body.is_null() { Vec::new() } else { body.to_string().into_bytes() };
-    let r = Req { method, parts: &path_only, query: &query, run: run.map(str::to_string), agent: agent.map(str::to_string), source: None, body: &body };
+    let r = Req { method, parts: &path_only, query: &query, run: run.map(str::to_string), agent: agent.map(str::to_string), source: None, body: &body, user: None };
     answer(&b.hs, &r)
 }
 

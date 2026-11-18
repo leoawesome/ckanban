@@ -77,7 +77,15 @@ key saved on this Mac (board keys, passes) is replaced before it leaves the daem
 - Without the header, `/api/telegram/front-desk/file` answers `403`.
 
 **User-only check (`userOnly`).** Actions marked "user only" are refused with 403 when the request has
-`x-ckanban-run` or `x-ckanban-huddle-agent`, or has no `Origin` header. On the remote listener it then passes. On the
+`x-ckanban-run` or `x-ckanban-huddle-agent`, or has no `Origin` header. On the remote listener the caller's end of the
+TCP connection must belong to Tailscale's own forwarder, a root process that is the standalone app's system extension
+or `tailscaled` (found with `/usr/sbin/netstat -anv` and `/bin/ps`); `tailscale serve status --json` must show no raw
+TCP forward (`TCPForward`) at all, since one can reach the phone port under any spelling (unreadable settings refuse); and `X-Forwarded-For` (which Tailscale's HTTPS
+proxy sets) must be exactly one address that is not one of this Mac's own. So a program on this Mac can't pass by calling
+the port directly, the tailnet name, or a raw forward that stays in place; otherwise 403. The huddle routes' user-only
+actions take the same check on the remote listener. The Mac App Store Tailscale runs as the user, so with it the phone can
+read but not do user-only actions. `CKANBAN_PHONE_FORWARDER_UID` (contract tests only) names the one user id that counts
+as the forwarder, and skips the Tailscale settings check. On the
 local listener the peer TCP port must belong to a web browser the daemon did not start (process lookup in
 `integrations/guard.ts`); otherwise 403. The 403 text explains it is for the user only.
 

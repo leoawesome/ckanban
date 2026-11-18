@@ -600,6 +600,7 @@ From a full grep of `process.env` and env-object reads under `src/`:
 | `CKANBAN_CLAUDE_BIN` | Claude Code binary for runs, chats, huddles, quick chats, side calls, MCP checks (default `claude`) |
 | `CKANBAN_CHROME_BIN` | Chrome binary for board browsers, tried before `/Applications/Google Chrome.app/...` and `~/Applications/...` |
 | `CKANBAN_TAILSCALE` | The `tailscale` command for phone access, tried before `/Applications/Tailscale.app/...` and PATH (tests point it at a stub) |
+| `CKANBAN_PHONE_FORWARDER_UID` | test hook: the macOS user id whose programs count as Tailscale's forwarder on the phone access listener's user-only checks; unset (every real Mac): any user but the daemon's. See "User-only check" in `api.md` |
 | `CKANBAN_OPEN_BIN` | replaces `open` when revealing or opening files |
 | `CKANBAN_OSASCRIPT_BIN` | replaces `osascript` when copying a file to the clipboard; when set the UI reports file copy as available |
 | `CKANBAN_TICK_MS` | test hook: how often (ms, 50 to 60000) the schedule, one-time job, automation and follow-up timers look for due work; unset or out of range: their own periods (30 s, 30 s, 60 s, 30 s). See "Work the board starts by itself" in `api.md` |

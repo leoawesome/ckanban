@@ -13,11 +13,19 @@ export function writeRemoteJson(home: string, enabled: boolean, extra: Record<st
   writeFileSync(join(home, "remote.json"), JSON.stringify({ enabled, host: PHONE_HOST, allowedLogin: PHONE_LOGIN, updatedAt: new Date().toISOString(), ...extra }, null, 2) + "\n");
 }
 
-/** The headers `tailscale serve` passes on for the owner's phone; a mutation from the board page adds its Origin. */
+/** The phone's tailnet address, which `tailscale serve` puts in X-Forwarded-For (not one of this Mac's addresses). */
+export const PHONE_ADDRESS = "100.64.0.2";
+
+/**
+ * The headers `tailscale serve` passes on for the owner's phone; a mutation from the board page adds its Origin. The
+ * test daemon counts this test process as Tailscale's forwarder (CKANBAN_PHONE_FORWARDER_UID in daemon.ts); on a real
+ * Mac only the root-owned forwarder is, see phone-caller.test.ts.
+ */
 export function phoneHeaders(method: string): Record<string, string> {
   return {
     host: PHONE_HOST,
     "tailscale-user-login": PHONE_LOGIN,
+    "x-forwarded-for": PHONE_ADDRESS,
     ...(method === "GET" || method === "HEAD" ? {} : { origin: `https://${PHONE_HOST}` }),
   };
 }

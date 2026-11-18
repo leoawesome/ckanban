@@ -141,6 +141,9 @@ export async function startDaemon(opts: StartOptions = {}): Promise<Daemon> {
     // Never the Mac's real Tailscale (the daemon prefers /Applications/Tailscale.app over PATH): turning phone access off
     // in a test once removed the user's own phone link.
     CKANBAN_TAILSCALE: join(bin, "tailscale"),
+    // On the phone port only Tailscale's forwarder (root on a real Mac) is the user; here this test process stands in
+    // for it (phone.ts). phone-caller.test.ts clears it to check that a program of this user is refused.
+    CKANBAN_PHONE_FORWARDER_UID: String(process.getuid?.() ?? ""),
     CLAUDE_CONFIG_DIR: claudeDir,
     FAKE_MODE: opts.fakeMode ?? "ok",
     FAKE_ARGS_FILE: join(root, "claude-args.jsonl"),
