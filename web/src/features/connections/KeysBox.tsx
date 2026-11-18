@@ -14,7 +14,7 @@ export function KeysBox({ slug, ticketId, uuid, ask, answered, old, onError }: {
   ask: KeysAsk;
   /** The ticket's keyCards entry for this box, once answered. */
   answered?: { saved: string[]; self?: boolean };
-  /** An older box the conversation moved past without an answer: shown closed. */
+  /** An unanswered box a newer key box replaced: shown closed (later chat messages alone keep it open). */
   old?: boolean;
   onError: (m: string) => void;
 }) {
@@ -36,7 +36,7 @@ export function KeysBox({ slug, ticketId, uuid, ask, answered, old, onError }: {
     );
   }
   if (old) {
-    return <div className="keys-box done"><span className="muted small">🔒 Claude asked for {names.join(", ")} here; the chat moved on.</span></div>;
+    return <div className="keys-box done"><span className="muted small">🔒 Claude asked for {names.join(", ")} here; the newer key box below replaces this one.</span></div>;
   }
 
   const send = async (kind: "save" | "self") => {

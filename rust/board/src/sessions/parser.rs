@@ -664,7 +664,10 @@ fn pending_since(entries: &[Value]) -> Obj {
     o.insert("pendingTeammates".into(), uuids(&after, "teammate"));
     o.insert("pendingSquads".into(), uuids(&after, "squad"));
     o.insert("pendingAutomations".into(), uuids(&after, "automation"));
-    o.insert("pendingKeys".into(), uuids(&after, "keys"));
+    // A key box stays open across the user's later messages (a question about how to get the key); only a newer
+    // key box replaces it. Answered ones are filtered out by callers through `keyCards`.
+    let newest_keys: Vec<&Value> = all.iter().rev().find(|e| truthy(e.get("keys"))).into_iter().copied().collect();
+    o.insert("pendingKeys".into(), uuids(&newest_keys, "keys"));
     let deletes: Vec<Value> = all
         .iter()
         .filter_map(|e| {
@@ -677,3 +680,37 @@ fn pending_since(entries: &[Value]) -> Obj {
     o
 }
 
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn entry(uuid: &str, role: &str, extra: Value) -> Value {
+        let mut e = json!({"uuid": uuid, "role": role, "kind": "text", "text": uuid, "at": ""});
+        if let (Some(o), Value::Object(x)) = (e.as_object_mut(), extra) {
+            o.extend(x);
+        }
+        e
+    }
+
+    fn keys(uuid: &str) -> Value {
+        entry(uuid, "assistant", json!({"keys": {"keys": [{"name": "API_KEY"}], "reason": "r"}}))
+    }
+
+    #[test]
+    fn key_box_stays_pending_after_a_user_message_until_a_newer_box() {
+        let q = |uuid: &str| entry(uuid, "assistant", json!({"questions": [{"question": "?"}]}));
+        // A user message after the key box (asking how to get the key) keeps the box open, while a form closes.
+        let list = vec![q("f1"), keys("k1"), entry("u1", "user", json!({})), entry("a1", "assistant", json!({}))];
+        let p = pending_since(&list);
+        assert_eq!(p["pendingKeys"], json!(["k1"]));
+        assert_eq!(p["openQuestions"], json!(0));
+        // A newer key box replaces the older one.
+        let mut list = list;
+        list.push(keys("k2"));
+        list.push(entry("u2", "user", json!({})));
+        assert_eq!(pending_since(&list)["pendingKeys"], json!(["k2"]));
+        // No key box: nothing pending.
+        assert_eq!(pending_since(&[entry("u", "user", json!({}))])["pendingKeys"], json!([]));
+    }
+}

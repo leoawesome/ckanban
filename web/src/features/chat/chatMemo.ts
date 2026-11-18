@@ -63,26 +63,29 @@ export function keepSame<E extends { uuid: string }>(old: readonly E[], fresh: E
   return same ? (old as E[]) : out;
 }
 
-type CountEntry = { role: string; kind: string; text?: string; commandOutput?: boolean; huddleId?: string; peer?: { automation?: string } | null };
+type CountEntry = { role: string; kind: string; text?: string; commandOutput?: boolean; huddleId?: string; peer?: { automation?: string } | null; keys?: unknown };
 
 /** A message of the user's that answers what came before it (a form, a Resend offer, a key box). */
 export const answers = (e: CountEntry): boolean => e.role === "user" && e.kind === "text" && !e.huddleId && !e.peer?.automation;
 
 /**
  * In one pass from the end: for each index, how many messages come after it (Rewind's "N later messages"), and the
- * index of the last message that answers (answered after i: lastAnswer > i).
+ * index of the last message that answers (answered after i: lastAnswer > i), and of the newest key box (a key box
+ * stays open across later messages until a newer one replaces it: lastKeys > i).
  */
-export function laterCounts(entries: readonly CountEntry[]): { textAfter: Int32Array; lastAnswer: number } {
+export function laterCounts(entries: readonly CountEntry[]): { textAfter: Int32Array; lastAnswer: number; lastKeys: number } {
   const textAfter = new Int32Array(entries.length);
   let n = 0;
   let lastAnswer = -1;
+  let lastKeys = -1;
   for (let i = entries.length - 1; i >= 0; i--) {
     textAfter[i] = n;
     const e = entries[i];
     if (e.kind === "text" && !!e.text && !e.commandOutput) n++;
     if (lastAnswer < 0 && answers(e)) lastAnswer = i;
+    if (lastKeys < 0 && e.keys) lastKeys = i;
   }
-  return { textAfter, lastAnswer };
+  return { textAfter, lastAnswer, lastKeys };
 }
 
 /** Keeps at most `max` entries in a Map used as a cache, dropping the oldest added (Maps keep insertion order). */

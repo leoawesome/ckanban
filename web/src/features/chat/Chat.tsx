@@ -602,7 +602,7 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
               )}
               {e.keys && (
                 <KeysBox slug={slug} ticketId={ticket.id} uuid={e.uuid} ask={e.keys} answered={ticket.keyCards?.[e.uuid]}
-                  old={counts.lastAnswer > b.index} onError={onError} />
+                  old={counts.lastKeys > b.index} onError={onError} />
               )}
               {e.huddle && (
                 <HuddleCard slug={slug} ticket={ticket} tickets={tickets} uuid={e.uuid} at={e.at} roster={e.huddle.roster} reason={e.huddle.reason} template={e.huddle.template} maxCostUsd={e.huddle.maxCostUsd} topic={e.huddle.topic}

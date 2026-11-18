@@ -55,6 +55,18 @@ test("laterCounts: text messages after each index and the last answering message
   expect(laterCounts([]).lastAnswer).toBe(-1);
 });
 
+test("laterCounts: a key box isn't old after a later user message, only once a newer key box exists", () => {
+  const box = (uuid: string) => e(uuid, "assistant", "text", "", { keys: { keys: [{ envName: "API_KEY" }] } });
+  const list = [box("k1"), e("u1", "user", "text", "how do I get it?"), e("r1")];
+  // KeysBox gets old = lastKeys > its index.
+  expect(laterCounts(list).lastKeys > 0).toBe(false);
+  expect(laterCounts(list).lastAnswer > 0).toBe(true);
+  const { lastKeys } = laterCounts([...list, box("k2"), e("u2", "user")]);
+  expect(lastKeys > 0).toBe(true);
+  expect(lastKeys > 3).toBe(false);
+  expect(laterCounts([]).lastKeys).toBe(-1);
+});
+
 test("capMap drops the oldest entries", () => {
   const m = new Map([[1, "a"], [2, "b"], [3, "c"]]);
   capMap(m, 2);
