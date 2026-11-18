@@ -10,7 +10,7 @@
 //! | `activity` | `activity.ts` | one plain line per event, the final text |
 //! | `activity_digest` | `activity-digest.ts` | per-log digest read incrementally |
 //! | `run_log` | `run-log.ts` | plain or compressed logs, restore, settle, `append_line` under the log's lock |
-//! | `run_log_compress` | `run-log-compress.ts` | compressing old Done logs, report-only until `CKANBAN_RUST_DELETE=1` |
+//! | `run_log_compress` | `run-log-compress.ts` | compressing old Done logs, report-only with `CKANBAN_RUST_DELETE=0` |
 //! | `connectors` | `connectors.ts` | unused tools, claude.ai connectors |
 //! | `model_versions` | `model-versions.ts` | versions learned from init events |
 //! | `awake` | `awake.ts` | `caffeinate` while there is work |

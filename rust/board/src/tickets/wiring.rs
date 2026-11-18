@@ -3,8 +3,8 @@
 //! piece here.
 //!
 //! Deleting copies of the folder follows plan 5.3: a ticket moved to Done has its copy cleaned up by R6's
-//! `cleanup_worktree`, which only reports until `CKANBAN_RUST_DELETE=1`; a deleted ticket's copy is removed the same
-//! way (reported only until then; the start-up sweep finds it later).
+//! `cleanup_worktree`; a deleted ticket's copy is removed the same way. Both only report with `CKANBAN_RUST_DELETE=0`
+//! (then the start-up sweep finds the copy later).
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -256,6 +256,11 @@ impl BoardHooks for Wired {
         })
     }
 
+    fn huddle_open(&self, slug: &str, id: &str) -> bool {
+        use crate::huddles::model::s;
+        self.huddles.as_ref().is_some_and(|h| h.files.open(slug).iter().any(|x| s(x, "hostTicket") == id && s(x, "status") != "closed"))
+    }
+
     fn kill_shells(&self, slug: &str) {
         if let Some(b) = &self.browsers {
             b.shells.kill(slug);
@@ -294,6 +299,10 @@ impl crate::git::ops::BoardOps for TicketOps {
     fn tickets(&self, slug: &str) -> Vec<Value> {
         self.tickets.list(slug).tickets.iter().map(|t| Value::Object(t.json.clone())).collect()
     }
+    fn trim_candidates(&self, slug: &str) -> Vec<crate::git::trim::Candidate> {
+        // The index's shared listing; only Done tickets are looked at further, nothing is cloned for the rest.
+        self.tickets.list(slug).tickets.iter().filter(|t| t.status == "done").filter_map(|t| crate::git::trim::candidate(&t.json)).collect()
+    }
     fn patch(&self, slug: &str, id: &str, patch: Map<String, Value>) -> Result<Value, String> {
         self.tickets.patch(slug, id, patch).map(|t| Value::Object(t.json.clone())).map_err(|(_, e)| e)
     }
@@ -329,7 +338,8 @@ impl crate::git::ops::BoardOps for TicketOps {
         self.tickets.main_of(slug, &t).map(|m| Value::Object(m.json.clone()))
     }
     fn busy(&self, slug: &str, id: &str) -> bool {
-        self.tickets.runs.is_running(slug, id)
+        // A run, or an open huddle whose helpers may work in the ticket's copy (the sweep and the trim leave it).
+        self.tickets.runs.is_running(slug, id) || self.tickets.hooks().huddle_open(slug, id)
     }
     fn is_running(&self, slug: &str, id: &str) -> bool {
         self.tickets.runs.is_running(slug, id)

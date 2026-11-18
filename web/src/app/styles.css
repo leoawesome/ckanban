@@ -333,6 +333,20 @@ body.show-hints .sortable-card:not(:focus) .key-hint.card-keys { display: none; 
 .banner.inline.recovery { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2h) var(--sp-3h); }
 .banner.inline.recovery > span:first-child { flex: 0 1 auto; }
 .banner.inline pre { margin: 0; white-space: pre-wrap; max-height: 140px; overflow: auto; }
+/* Low disk (features/disk): amber like the "needs you" count; Free up space, then its progress and result in the line. */
+.banner.disk-banner { background: var(--warn-soft); color: var(--text); }
+.banner.disk-banner b { color: var(--warn); }
+.disk-banner > .btn { flex: none; }
+/* Working keeps the button's place, so the line doesn't change height. */
+.btn.disk-banner-busy { display: inline-flex; align-items: center; gap: var(--sp-2); }
+@media (max-width: 720px) {
+  /* Text on its own line, Free up space and × under it (the mockup's phone layout); both big enough to tap. */
+  .banner.disk-banner { flex-wrap: wrap; row-gap: var(--sp-2); }
+  /* The result has no button: its words share the line with ×. */
+  .banner.disk-banner.has-action > span:first-child { flex-basis: 100%; }
+  .disk-banner > .btn { min-height: var(--tap); }
+  .banner.disk-banner .icon-btn { width: var(--tap); height: var(--tap); }
+}
 
 .empty { margin: auto; text-align: center; color: var(--muted); padding: calc(var(--sp-7) + var(--sp-3)); }
 .empty h2 { color: var(--text); margin-bottom: var(--sp-2h); }

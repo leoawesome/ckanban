@@ -159,7 +159,7 @@ async function runOn(cmd: string[], env: Record<string, string>): Promise<{ step
 
 describe("the board answers and writes as Bun's did", () => {
   test("one script, compared with Bun's recorded answers and files", async () => {
-    const golden = new Golden("board-parity");
+    const golden = new Golden("board-parity", "2026-11-17");
     const side = await runOn(DAEMON_CMD, {});
     const m = masker();
     const steps = side.steps.map((x) => ({ what: x.what, status: x.status, data: m(JSON.stringify(sorted(x.data), null, 1)) }));

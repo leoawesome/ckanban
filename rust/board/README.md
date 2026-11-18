@@ -63,8 +63,8 @@ A library for the run loop (R7a); nothing calls it at run time yet except `LiveC
   the caller's job, as in `store.appendActivity`), `restore_log` before a run starts, `log_stat`, `open_log`,
   `read_log`; `activity_digest::ActivityDigests::get` for edited files, run entries and session totals.
 - `run_log_compress::RunLogCompressor::new(root, board, options).start()` with a `CompressBoard` (ticket lists, running,
-  `activity_compressed`). Report-only unless `CKANBAN_RUST_DELETE=1`: it writes what it would do to
-  `<data>/rust-board-dryrun.log` and keeps its handled list in memory (`run-logs-compressed.jsonl` stays Bun's).
+  `activity_compressed`). Report-only with `CKANBAN_RUST_DELETE=0`: it then writes what it would do to
+  `<data>/rust-board-dryrun.log` and keeps its handled list in memory.
 - `side_call::SideCaller::call(SideCallInput)` and `add_side_spend` / `read_side_spend`; `connectors::board_connector_options`
   (and `set_known_connectors` from the Connections list); `awake::StayAwake::new(..).start()`; `claude::find_claude`,
   `list_sessions`, `list_claude_projects`, `claude_defaults`, `pick_folder`, `is_session_live`.
@@ -128,8 +128,8 @@ checks); their user-only checks look at the caller (`tailscale serve`) and refus
 - The satellite's edge (`POST /api/internal/<name>`, `gate/edge.rs`'s client) went with P4; `gate/edge.rs` keeps only
   the secret check the front desk header uses. A confirmed front desk request runs as the user through the server's
   own routes.
-- Housekeeping (`gate/housekeeping.rs`): the temp file sweep and the daemon.log trim run at start, report-only
-  (`rust-board-dryrun.log`) unless `CKANBAN_RUST_DELETE=1`.
+- Housekeeping (`gate/housekeeping.rs`): the temp file sweep and the daemon.log trim run at start, and delete
+  (report-only to `rust-board-dryrun.log` with `CKANBAN_RUST_DELETE=0`).
 - `cron/preview` uses `schedules::cron` (brought in here; R10 builds the scheduler on it).
 - `tests/fixtures/gate.json`: Bun's answers for `requestRefusal`, `isAllowedSocket`, `cronError`, `describeCron`,
   `nextRuns` (in America/Los_Angeles, DST days included) and `isNewer`, written by
@@ -234,8 +234,9 @@ In `src/huddles/` too (they need the room's internals). `Agents` (`agents.rs`) i
 - The session viewer (`session.rs`): `GET .../participants/:handle/session`, `.../tool/:id`, `POST .../reveal`, and
   `huddle.session` events every 2 s (`rust/src/board_mode.rs`).
 - After a close: helpers' copies, snapshots (`removeWorktrees`) and project copies left in their outputs
-  (`output_copies.rs`) are only reported to `<data>/rust-board-dryrun.log` (jobs `huddle-copies`,
-  `huddle-output-copies`) until `CKANBAN_RUST_DELETE=1` (plan 5.3). A fresh copy after a conflict is made at once
+  (`output_copies.rs`) are removed (only reported to `<data>/rust-board-dryrun.log`, jobs `huddle-copies`,
+  `huddle-output-copies`, with `CKANBAN_RUST_DELETE=0`, plan 5.3). A snapshot is removed only from the folder the board
+  made for that helper (`agent_dir`). A fresh copy after a conflict is made at once
   (unsent changes saved first), as in Bun.
 - Shutdown marks helpers mid-turn `interrupted`; `recover()` carries them on.
 - `test/contract/huddle-agents.test.ts` checks the session viewer against Bun and the Rust board; huddle.test.ts and
@@ -275,7 +276,7 @@ The only code that writes `ticket.md` in board mode (plan 2.2). Ported from `src
 - `hooks::BoardHooks`: what later steps plug in (R2b families and plans, R7a runs and run rights, R10 schedules,
   R11a huddles, R12 the linker, R13 the helper). Stand-ins refuse family links (`partOf`, gather, rounds) rather
   than write them unchecked; in board mode `Wired` answers them with R2b's `Families`. `wiring::Wired` plugs in what is already in Rust: R6's Done cleanup and the copy of a
-  deleted ticket (both report-only until `CKANBAN_RUST_DELETE=1`), R9's browser picks and terminal shells.
+  deleted ticket (both report-only with `CKANBAN_RUST_DELETE=0`), R9's browser picks and terminal shells.
   `wiring::TicketOps` is R6's `BoardOps` over these writes. A step that lands adds its piece to `Wired`.
 - `rights`: `runRights`, `runStart`, `inFamily`. `routes::Writes`: the routes (`wanted` lists them); `profiles`:
   boards; `files`: attachments, avatars, snippets; `norm`: tags, needs, ⭐ titles, slugs (accents as NFKD for Latin
@@ -339,9 +340,11 @@ Ported from `src/board/board-families.ts`, `board-plans.ts`, `board-main.ts` (wi
   `diff`; the board's `files`, `file`, `open-file`, `detect-setup`; `/api/version-history`. Anything unusual goes to
   the satellite. `merge-into-main` and `land` are answered by R2b's family routes over `landing::Git`; the other
   write routes (`branch`, `setup`, `pr/*`, `check-pr`) come with R7a.
-- At start (`start_jobs`): setup detection, and the worktree sweep in report-only mode.
-- Background deletes are report-only (`src/dryrun.rs`): the sweep and the Done cleanup append their decisions to
-  `<data>/rust-board-dryrun.log` and delete nothing until `CKANBAN_RUST_DELETE=1` (plan 5.3).
+- At start (`start_jobs`): setup detection; after `recover()` the worktree sweep (only folders named like a ticket id
+  count as left behind), then the package trim (`trim.rs`): once, then hourly, kept Done copies lose their dependency
+  folders 3 days after Done (`setupPending` brings them back); `free_up` (`/api/disk/free-up`) runs both at once.
+- Background deletes delete (`src/dryrun.rs`); with `CKANBAN_RUST_DELETE=0` the sweep, the Done cleanup and the trim
+  only append their decisions to `<data>/rust-board-dryrun.log` (plan 5.3).
 - Pure logic is checked against Bun: `tests/fixtures/git.json` (written by `test/rust-git-fixtures.test.ts`,
   `UPDATE_RUST_FIXTURES=1`).
 
@@ -474,7 +477,7 @@ and `chats.ts`. Drafts, fresh chat and session, take-over and link-session came 
   (CKANBAN_SNAPSHOT_LIMIT_MS), the cut with a `.before-rewind` copy, Undo with `refs/ckanban/rewind-undo/`.
   `board`: `rewind_dir`, `rewind_blocked`, `begin_rewind` (one at a time, under the choice lock), `rewound`, Undo,
   Fork (`copy_ticket_before` in `runloop/branch.rs`, shared with Branch), `planning_command`; a ticket's rewind copies
-  are dropped at Done and on delete, report-only unless `CKANBAN_RUST_DELETE=1` (plan 5.3). `quick`: the same for a
+  are dropped at Done and on delete, report-only with `CKANBAN_RUST_DELETE=0` (plan 5.3). `quick`: the same for a
   quick chat (the chat only) and Make ticket (board mode plugs in `make_ticket_hook`: create, link-session, back to
   Backlog, note, parent suggestion). `routes`: `commands`, `rewind`, `rewind-undo`, `fork`, `planning-command` and the
   board's `GET commands`.

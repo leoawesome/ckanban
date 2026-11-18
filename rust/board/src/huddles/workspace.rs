@@ -327,6 +327,19 @@ pub async fn force_remove_worktree(repo: &Path, dir: &Path) -> Result<(), String
     if r.ok() { Ok(()) } else { Err(Some(r.stderr.trim().to_string()).filter(|s| !s.is_empty()).unwrap_or_else(|| "couldn't remove it".into())) }
 }
 
+/// Removes a helper's read-only snapshot, forced (nothing in it is anyone's work), but only when the stored path is
+/// the folder the board made for that helper (`expected`, its `agent_dir`). Any other stored path (an old or broken
+/// record pointing at the host's copy or the project) is left alone: Ok(false). Ok(true) when it is gone.
+pub async fn remove_snapshot(repo: &Path, stored: &Path, expected: &Path) -> Result<bool, String> {
+    if stored != expected {
+        return Ok(false);
+    }
+    if stored.exists() {
+        force_remove_worktree(repo, stored).await?;
+    }
+    Ok(true)
+}
+
 /// `git worktree prune` in `repo`.
 pub async fn prune(repo: &Path) {
     git(&["worktree", "prune"], repo).await;
@@ -401,6 +414,30 @@ mod tests {
         assert!(!dest.join("work.txt").exists());
         assert_eq!(fs::read_to_string(aside.join("work.txt")).unwrap(), "unsent");
         assert_eq!(move_aside(&repo, &d.path().join("none"), "x").await.unwrap(), None);
+    }
+
+    #[tokio::test]
+    async fn snapshot_removal_only_touches_the_helpers_own_folder() {
+        let d = tempfile::tempdir().unwrap();
+        let repo = d.path().join("proj");
+        fs::create_dir_all(&repo).unwrap();
+        sh(&repo, &["init", "-q", "-b", "main"]);
+        sh(&repo, &["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "first"]);
+        // The host ticket's copy, with work not saved yet, and the reviewer's snapshot next to it.
+        let host = d.path().join(".ckanban-worktrees/b/t1");
+        sh(&repo, &["worktree", "add", "-q", "-b", "ck/t1", &host.to_string_lossy()]);
+        fs::write(host.join("wip.txt"), "unsaved").unwrap();
+        let mine = agent_dir(&repo, "b", "t1", "qa");
+        sh(&repo, &["worktree", "add", "-q", "--detach", &mine.to_string_lossy()]);
+        // A record pointing at the host's copy (or the project) is refused, and nothing is touched.
+        assert_eq!(remove_snapshot(&repo, &host, &mine).await, Ok(false));
+        assert_eq!(remove_snapshot(&repo, &repo, &mine).await, Ok(false));
+        assert_eq!(fs::read_to_string(host.join("wip.txt")).unwrap(), "unsaved");
+        assert!(mine.exists());
+        // Its own folder goes; gone already is fine.
+        assert_eq!(remove_snapshot(&repo, &mine, &mine).await, Ok(true));
+        assert!(!mine.exists());
+        assert_eq!(remove_snapshot(&repo, &mine, &mine).await, Ok(true));
     }
 
     #[test]

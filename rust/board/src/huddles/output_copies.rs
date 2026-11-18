@@ -9,8 +9,8 @@
 //! Anything else stays. A helper's folder itself is never removed, symlinks are never followed, and every pick is
 //! checked to be inside the ticket's outputs folder by real path.
 //!
-//! In board mode this is a background delete, so it starts report-only (plan 5.3): each pick goes to
-//! `<data>/rust-board-dryrun.log` (job `huddle-output-copies`) and nothing is removed, unless `CKANBAN_RUST_DELETE=1`.
+//! In board mode this is a background delete, so `CKANBAN_RUST_DELETE=0` makes it report-only (plan 5.3): each pick then
+//! goes to `<data>/rust-board-dryrun.log` (job `huddle-output-copies`) and nothing is removed.
 //! Blocking (a folder walk and git calls): run it on the blocking pool.
 
 use std::collections::HashSet;

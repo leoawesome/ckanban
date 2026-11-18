@@ -194,7 +194,7 @@ describe("family writes without a run", () => {
 
 describe("writes as Bun's did", () => {
   test("the same answers and the same bytes in the data folder as Bun (golden/board-family-writes.json)", async () => {
-    const golden = new Golden("board-family-writes");
+    const golden = new Golden("board-family-writes", "2026-11-17");
     {
       const theirs = steps;
       const sorted = (v: unknown): unknown => Array.isArray(v) ? v.map(sorted)

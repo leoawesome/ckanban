@@ -16,6 +16,8 @@ pub mod landing;
 pub mod routes;
 pub mod fileops;
 pub mod publish;
+pub mod trim;
+pub mod disk;
 
 use std::sync::Arc;
 
@@ -50,9 +52,12 @@ pub fn start_jobs(core: &Arc<Core>) {
 
 /// Bun's `startup: sweepWorktrees`, on the board's own `Git` (its ticket writes clear a swept ticket's `worktree`,
 /// and a copy being set up right now is seen): started once the board index is loaded and `recover()` ran, so every
-/// ticket is known when its copy is looked at. Report-only until deletes are on (`dryrun.rs`).
-pub fn sweep_after_recover(git: Arc<landing::Git>) {
-    tokio::spawn(async move {
+/// ticket is known when its copy is looked at. Report-only when deletes are off (`dryrun.rs`). Then the package
+/// trim of kept Done copies (`trim.rs`): once after the sweep, then hourly, stopped with the core.
+pub fn sweep_after_recover(core: &Arc<Core>, git: Arc<landing::Git>) {
+    let task = tokio::spawn(async move {
         git.sweep_worktrees().await;
+        trim::run_forever(git).await;
     });
+    core.on_stop("package-trim", move || task.abort());
 }

@@ -251,7 +251,8 @@ A bug in a background job that deletes could lose work no restart can bring back
 deleters (worktree sweep, run log compression, temp file sweep, dropping rewind copies of Done tickets, huddle helper
 copies, a removed board browser's folder) start in report-only mode: they log what they would delete to
 `<data>/rust-board-dryrun.log` and delete nothing. F1 compares that list with Bun's own decisions on a copy of the
-real data folder; only then are they switched on (`CKANBAN_RUST_DELETE=1`, then the default). User-started deletes
+real data folder; only then are they switched on. Since 2026-11-18 (the dry-run log checked, ticket t_20261118_awxv)
+they delete by default; `CKANBAN_RUST_DELETE=0` keeps report-only mode. User-started deletes
 (a ticket, a schedule, a board) work from the start, covered by contract tests.
 
 ### 5.4 Other risks

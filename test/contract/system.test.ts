@@ -26,7 +26,7 @@ beforeAll(async () => {
     },
   });
   d = await startDaemon({
-    env: { CKANBAN_RELEASES_URL: `http://127.0.0.1:${github.port}/repos/latest` },
+    env: { CKANBAN_RELEASES_URL: `http://127.0.0.1:${github.port}/repos/latest`, CKANBAN_FAKE_FREE_GB: "6.2" },
     before: ({ claudeDir, home }) => {
       writeFileSync(join(claudeDir, "settings.json"), JSON.stringify({ model: "opus", effortLevel: "high" }));
       projectA = join(home, "..", "proj-a");
@@ -41,6 +41,19 @@ afterAll(async () => {
   await d?.stop();
   github?.stop(true);
 }, 30_000);
+
+test("GET /api/disk gives the free space for the low-disk banner (faked to 6.2 GB here)", async () => {
+  const r = await d.api("GET", "/api/disk");
+  expect(r.status).toBe(200);
+  expect(Object.keys(r.data).sort()).toEqual(["checkedAt", "freeBytes", "low", "lowBelowBytes"]);
+  expect(r.data.freeBytes).toBe(6_200_000_000);
+  expect(r.data.low).toBe(true);
+  expect(r.data.lowBelowBytes).toBe(10_000_000_000);
+  expect((await d.api("POST", "/api/disk", {})).status).toBe(404);
+  const f = await d.api("GET", "/api/disk/free-up");
+  expect(f.status).toBe(200);
+  expect(f.data.state).toBe("idle");
+});
 
 test("GET /api/health says what can be found", async () => {
   const r = await d.api("GET", "/api/health");

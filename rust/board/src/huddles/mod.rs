@@ -8,7 +8,7 @@
 //! - R11c: `agents` (`Agents`, the board's `HuddleRunner`: helpers' runs, ticket sessions' replies, costs, close
 //!   cleanup, shutdown and recovery), `auto` (auto huddles and the board's slot), `session` (a participant's session
 //!   viewer, `huddle.session` events), `workspace` (helpers' copies and snapshots), `output_copies` (project copies
-//!   left in outputs; report-only until `CKANBAN_RUST_DELETE=1`).
+//!   left in outputs; report-only with `CKANBAN_RUST_DELETE=0`).
 //! - `routes`: `/api/profiles/:p/huddles...`.
 
 pub mod agents;

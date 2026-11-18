@@ -26,6 +26,7 @@ import { MoreSheet, PhoneNav, type PhoneTab } from "./PhoneNav";
 import { QuickChatPane } from "../features/quickchat/QuickChat";
 import { usePhone } from "../hooks/usePhone";
 import { StatusPill, UsageBox } from "../features/usage/UsagePill";
+import { LowDiskBanner } from "../features/disk/LowDiskBanner";
 import { useUsage } from "../hooks/useUsage";
 import { Board, useCollapsedColumns } from "../features/board/Board";
 import { doneNotDrawn, joinsBoard } from "../features/board/donePaging";
@@ -948,6 +949,7 @@ export function App() {
       <div className="app-row">
       <div className="app-col">
 
+      <LowDiskBanner />
       {version?.updateAvailable && !dismissed.has(updateKey) && (
         <div className="banner info" role="status">
           <span>ckanban v{version.latest} is available (you have v{version.version}). Run <code>ckanban update</code> in a terminal.</span>

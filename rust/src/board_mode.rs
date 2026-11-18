@@ -109,6 +109,10 @@ pub struct BoardMode {
     chats: Arc<QuickChats>,
     hooks: Arc<EventHooks>,
     git: Arc<GitRoutes>,
+    /// R6: ticket copies; Free up space (`/api/disk/free-up`).
+    landing: Arc<git::landing::Git>,
+    /// Free space on the disk of the ticket folders (`GET /api/disk`, the low-disk banner).
+    disk: Arc<git::disk::DiskSpace>,
     /// R2a: the ticket and board writes.
     writes: Arc<Writes>,
     /// R7a: the run loop.
@@ -231,6 +235,32 @@ pub async fn prepare(root: &Path, public_port: u16, remote_port: u16) -> Result<
     let _ = sessions.board.set(core.tickets.clone());
     let ops = Arc::new(TicketOps { tickets: core.tickets.clone(), families: Default::default(), runs: Default::default() });
     let landing = git::landing::Git::new(root, ops.clone());
+    // Free space for the low-disk banner: read again every minute (sent only when it moves) and when Free up space ends.
+    let disk = Arc::new(git::disk::DiskSpace::new(root));
+    let (bus, d) = (core.bus.clone(), disk.clone());
+    landing.on_free_up(move |st| {
+        bus.emit_json(json!({ "type": "disk.freeup", "status": st }));
+        if st["state"] == "done" {
+            let (bus, d) = (bus.clone(), d.clone());
+            tokio::task::spawn_blocking(move || {
+                if let Some(space) = d.refresh_changed() {
+                    bus.emit_json(json!({ "type": "disk.space", "space": space }));
+                }
+            });
+        }
+    });
+    let (bus, d) = (core.bus.clone(), disk.clone());
+    let disk_timer = tokio::spawn(async move {
+        let mut tick = tokio::time::interval(git::disk::KEEP);
+        loop {
+            tick.tick().await;
+            let d = d.clone();
+            if let Ok(Some(space)) = tokio::task::spawn_blocking(move || d.refresh_changed()).await {
+                bus.emit_json(json!({ "type": "disk.space", "space": space }));
+            }
+        }
+    });
+    core.on_stop("disk-space", move || disk_timer.abort());
     // R2b: families, plans and the feature status; what needs a run waits for the run loop (R7a).
     let families = ckanban_board::families::Families::new(core.tickets.clone(), core.reads.clone());
     let _ = ops.families.set(families.clone());
@@ -372,7 +402,7 @@ pub async fn prepare(root: &Path, public_port: u16, remote_port: u16) -> Result<
     let _ = tokio::task::spawn_blocking(move || h.op(|h| h.recover())).await;
     let awake = start_run_timers(&core, &runs, ops.clone(), root, helper_runner.clone());
     // The worktree sweep, after recover() like Bun's (which starts it once recover has begun).
-    git::sweep_after_recover(landing.clone());
+    git::sweep_after_recover(&core, landing.clone());
     // After recover(): a missed run's ticket must not be mistaken for an interrupted one. Only this owner of the
     // board fires schedules, jobs and automations (the satellite starts none of its timers).
     let stop = schedules.start();
@@ -491,6 +521,8 @@ pub async fn prepare(root: &Path, public_port: u16, remote_port: u16) -> Result<
         phone_routes,
         hooks,
         git,
+        landing,
+        disk,
         writes,
         runs,
         actions: Arc::new(RunActions { runs: runs_for_actions }),
@@ -541,8 +573,8 @@ fn start_run_timers(core: &Arc<Core>, runs: &Arc<RunLoop>, ops: Arc<TicketOps>, 
         .unwrap_or(5.0);
     let poller = ckanban_board::git::pr::start_poller(ops, Arc::new(ckanban_board::git::pr::GhCli), minutes.max(0.0) as u64);
     core.on_stop("pr-poller", move || poller.abort());
-    // Run logs of tickets Done for over 30 days are compressed a few at a time (report-only until
-    // CKANBAN_RUST_DELETE=1, plan 5.3).
+    // Run logs of tickets Done for over 30 days are compressed a few at a time (report-only with
+    // CKANBAN_RUST_DELETE=0, plan 5.3).
     let compressor = ckanban_board::runs::run_log_compress::RunLogCompressor::new(root, runs.clone(), Default::default());
     let stop = compressor.start();
     core.on_stop("run-log-compress", stop);
@@ -619,6 +651,10 @@ pub enum Own {
     Restart,
     /// `GET /api/awake`.
     Awake,
+    /// `GET`/`POST /api/disk/free-up`: Free up space (the low-disk banner), its progress and result.
+    FreeUp,
+    /// `GET /api/disk`: free space (kept a minute) for the low-disk banner.
+    Disk,
 }
 
 
@@ -639,6 +675,8 @@ pub fn own_route(method: &Method, path: &str) -> Option<Own> {
         ("pick-folder", _) if post => Own::PickFolder,
         ("restart", None) if (get || post) && parts.len() == 1 => Own::Restart,
         ("awake", None) if get && parts.len() == 1 => Own::Awake,
+        ("disk", None) if get && parts.len() == 1 => Own::Disk,
+        ("disk", Some("free-up")) if (get || post) && parts.len() == 2 => Own::FreeUp,
         _ => return None,
     })
 }
@@ -1527,6 +1565,18 @@ impl BoardMode {
             Own::ClaudeDefaults => self.json_at(StatusCode::OK, &system::claude_defaults(&self.versions)),
             Own::PickFolder => self.json_at(StatusCode::OK, &system::pick_folder().await),
             Own::Awake => self.json_at(StatusCode::OK, &json!({ "held": self.awake.held() })),
+            Own::Disk => {
+                let d = self.disk.clone();
+                let v = tokio::task::spawn_blocking(move || d.status()).await.unwrap_or(Value::Null);
+                self.json_at(StatusCode::OK, &v)
+            }
+            Own::FreeUp if parts.method == Method::GET => self.json_at(StatusCode::OK, &self.landing.free_up_status()),
+            Own::FreeUp => {
+                let started = self.landing.start_free_up();
+                let mut st = self.landing.free_up_status();
+                st["alreadyRunning"] = json!(!started);
+                self.json_at(if started { StatusCode::ACCEPTED } else { StatusCode::OK }, &st)
+            }
             Own::Restart if parts.method == Method::GET => self.json_at(StatusCode::OK, &self.runs.restart_state()),
             Own::Restart => {
                 let exit = self.exit.clone();

@@ -9,6 +9,7 @@ import { isImageFile } from "../attachText";
 import { req } from "./request";
 import type { Health, Profile, RepoKind, SetupDetection, Snippet, SnippetInput, TicketPage, TicketRow, VersionHistory } from "./types/board";
 import type { BrowsersState, DeviceView } from "./types/browsers";
+import type { DiskSpace, FreeUp } from "./types/disk";
 import type { AgentInfo, ClaudeProject, ClaudeSession, HelpCard, HelpKind, QuickChat, SessionEntry, ToolDetail, WorkflowAgentDetail } from "./types/chat";
 import type { AgentStatus, McpAddInput, McpConfig, McpState } from "./types/connections";
 import type { FileContent, FileEntry, FileRootName, OutputFile, TicketDiff, TicketFile } from "./types/files";
@@ -102,6 +103,11 @@ export const api = {
   pushVisible: (endpoint: string, visible: boolean) => req<{ ok: boolean }>("POST", "/api/push/visible", { endpoint, visible }),
   restartState: () => req<{ pending: boolean; waiting: number }>("GET", "/api/restart"),
   awakeState: () => req<{ held: boolean }>("GET", "/api/awake"),
+  /** Free space for the low-disk banner. */
+  diskSpace: () => req<DiskSpace>("GET", "/api/disk"),
+  freeUpState: () => req<FreeUp>("GET", "/api/disk/free-up"),
+  /** Starts Free up space; progress comes as `disk.freeup` events. */
+  freeUp: () => req<FreeUp>("POST", "/api/disk/free-up", {}),
   bugDraft: (ref: { profile: string; ticketId: string } | null) =>
     req<{ blocks: BugBlock[]; screenshots: string[] }>("POST", "/api/bug-report/draft", ref ?? {}),
   reportBug: (input: { title: string; description: string; include: BugBlockId[]; profile?: string; ticketId?: string }) =>

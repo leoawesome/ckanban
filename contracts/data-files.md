@@ -375,6 +375,9 @@ removes the whole folder (`Store.deleteTicket`).
   then only the optional fields that were given (`scheduleId, jobId, source, parentId, planKey, proposedAs, madeFrom,
   dependsOn, needs, tags, important, partOf, partOfVia, model, raisedBy, kind, effort, main, waitsForStart, tool,
   startFrom`). `body` is not in the front matter.
+- **Package trim:** the board writes `setupPending: true` and `depsTrimmedAt: <iso>` on a Done ticket after removing
+  the installed packages (`node_modules`, `.venv`, `__pycache__`...) from its kept copy of the folder
+  (`rust/board/src/git/trim.rs`); a successful setup run sets `setupPending: false` and `depsTrimmedAt: null`.
 - **Outside edits:** **mtime/size**. `getTicket` stats the file on every call; board listings re-stat every ticket file
   in the background every 30 s (`TICKET_RECHECK_MS`) and re-read the folder when its mtime changes. Planning chats are
   given this file's path and may rewrite the body directly; that is expected.
@@ -765,6 +768,10 @@ subfolders). Fixed-tmp writers can leave `<file>.tmp`. A port must ignore names 
 Written by the daemon but not under `root`, listed so a port knows they exist:
 
 - Ticket copies (worktrees): `<parent of the board folder>/.ckanban-worktrees/<slug>/<ticket id>/` (`worktreeDir` in
-  `git.ts`), on branch `ck/<ticket id>-<title slug>`.
+  `git.ts`), on branch `ck/<ticket id>-<title slug>`. Clean copies of Done or deleted tickets are removed (the branch
+  stays); a copy with changes is kept, and 3 days after Done its dependency folders are removed (`git/trim.rs`).
+  Only folders named like a ticket id are ever treated as left behind; a copy whose ticket is running or hosts a
+  huddle that isn't closed is skipped (Free up space too). `CKANBAN_RUST_DELETE=0` makes all of this
+  report-only (`<data>/rust-board-dryrun.log`).
 - Claude session transcripts: `$CLAUDE_CONFIG_DIR/projects/...` (default `~/.claude`), written only by fork and rewind.
 - The launchd job: `~/Library/LaunchAgents/<label>.plist` (`launchd.ts`, `ckanban install`).

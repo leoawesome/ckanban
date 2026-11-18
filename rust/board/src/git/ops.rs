@@ -45,6 +45,11 @@ pub trait BoardOps: Send + Sync {
     fn session_exists(&self, session_id: &str) -> bool;
     /// `land_milestone`'s record: the milestone in the feature's status file, `statusAt`, and its comment.
     fn record_milestone(&self, slug: &str, id: &str, summary: &str, landed: &str) -> Result<(), Failure>;
+    /// The package trim's candidates (`trim.rs`): Done tickets that still have a copy and weren't trimmed. The board
+    /// answers from its index; this default goes over `tickets`. Blocking: call it on the blocking pool.
+    fn trim_candidates(&self, slug: &str) -> Vec<super::trim::Candidate> {
+        self.tickets(slug).iter().filter_map(|t| t.as_object().and_then(super::trim::candidate)).collect()
+    }
 }
 
 /// A string field of a ticket or profile.

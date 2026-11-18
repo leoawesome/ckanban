@@ -7,8 +7,8 @@
 //!   they haven't read (steered mid-turn, queued for a monitor's turn boundary, or a new run);
 //! - ticket sessions (@main, invited tickets): their unread messages as a chat message of their ticket (R7a);
 //! - the cost of each turn on the roster and on the board's day ledger, the budget brake after it;
-//! - after a close: the helpers' copies and what they left in the outputs, both report-only until
-//!   `CKANBAN_RUST_DELETE=1` (plan 5.3);
+//! - after a close: the helpers' copies and what they left in the outputs (`CKANBAN_RUST_DELETE=0` keeps both
+//!   report-only, plan 5.3);
 //! - shutdown and recovery: helpers mid-turn are marked and carry on after the restart.
 //!
 //! Auto huddles are in `auto.rs`, the session viewer in `session.rs`.
@@ -374,11 +374,13 @@ impl Agents {
         let board = self.board_path(slug).ok_or_else(|| format!("board {slug} not found"))?;
         let dir = agent_dir(&board, slug, s(&h, "hostTicket"), handle);
         if let Some(wt) = opt_s(&p, "worktree").filter(|_| opt_s(&p, "branch").is_none()) {
+            // Only the snapshot folder the board made for this helper is removed; a stored path elsewhere is left
+            // on disk (the record is still dropped, the helper gets its copy at `dir`).
             let wt = PathBuf::from(wt);
-            if wt.exists() {
-                let _ = ws::force_remove_worktree(&board, &wt).await;
+            if wt == dir {
+                let _ = ws::remove_snapshot(&board, &wt, &dir).await;
+                let _ = tokio::fs::remove_dir_all(&wt).await;
             }
-            let _ = tokio::fs::remove_dir_all(&wt).await;
             ws::prune(&board).await;
             self.update_p(slug, hid, handle, obj([("worktree", Value::Null), ("snapshot", Value::Null)])).await;
         }
@@ -836,10 +838,11 @@ impl Agents {
                     report(&wt, "remove-snapshot");
                     continue;
                 }
-                let r = if Path::new(&wt).exists() { ws::force_remove_worktree(&board, Path::new(&wt)).await } else { Ok(()) };
-                match r {
+                let mine = agent_dir(&board, &slug, s(&h, "hostTicket"), &handle);
+                match ws::remove_snapshot(&board, Path::new(&wt), &mine).await {
                     Err(e) => kept.push(format!("@{handle}: {wt}: {e}")),
-                    Ok(()) => self.update_p(&slug, &hid, &handle, obj([("worktree", Value::Null)])).await,
+                    Ok(false) => kept.push(format!("@{handle}: {wt} (not where the board keeps copies, so it was left alone)")),
+                    Ok(true) => self.update_p(&slug, &hid, &handle, obj([("worktree", Value::Null)])).await,
                 }
                 continue;
             }

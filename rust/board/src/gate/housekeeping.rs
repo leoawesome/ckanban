@@ -1,6 +1,6 @@
 //! Start-up clean-ups of `src/core/housekeeping.ts`: temp files a crash left behind (`sweepTempFiles`) and the
-//! daemon's own log (`trimDaemonLog`). In board mode they start report-only (plan 5.3): what they would remove or
-//! trim goes to `<data>/rust-board-dryrun.log` and nothing is touched, unless `CKANBAN_RUST_DELETE=1`. Both run off
+//! daemon's own log (`trimDaemonLog`). They delete unless `CKANBAN_RUST_DELETE=0` (plan 5.3, `dryrun.rs`): then what
+//! they would remove or trim goes to `<data>/rust-board-dryrun.log` and nothing is touched. Both run off
 //! the runtime (`spawn_blocking`); the satellite skips its own copies.
 
 use std::fs::{self, OpenOptions};
@@ -16,9 +16,9 @@ const DATA_DIRS: [&str; 3] = ["profiles", "learned", "huddle-notes"];
 /// Folders that hold copies of a project (`SKIP`).
 const SKIP: [&str; 3] = ["node_modules", ".git", ".ckanban-worktrees"];
 
-/// Whether the background deleters really delete (`CKANBAN_RUST_DELETE=1`); otherwise they only report.
+/// Whether the background deleters really delete (on unless `CKANBAN_RUST_DELETE=0`; `dryrun::deletes_on`).
 pub fn deletes_on() -> bool {
-    std::env::var("CKANBAN_RUST_DELETE").is_ok_and(|v| v == "1")
+    crate::dryrun::deletes_on()
 }
 
 /// One line in `<data>/rust-board-dryrun.log`.

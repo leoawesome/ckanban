@@ -1,10 +1,9 @@
 //! Compressing the run logs of tickets Done for more than 30 days (`src/runs/run-log-compress.ts`). Every reader
 //! handles both forms (`run_log.rs`), and the log comes back as a plain file before anything is appended.
 //!
-//! **Report-only first** (plan 5.3): unless deleting is switched on (`CKANBAN_RUST_DELETE=1`, or `delete: true`),
+//! **Report-only on request** (plan 5.3): deleting is on by default; with `CKANBAN_RUST_DELETE=0` (or `delete: false`)
 //! nothing is written, renamed or removed: each log it would compress (and each temp file it would remove) is written
-//! as a line to `<data>/rust-board-dryrun.log`, and the handled list stays in memory (the shared
-//! `run-logs-compressed.jsonl` is Bun's until then). F1 compares those lines with Bun's own choices.
+//! as a line to `<data>/rust-board-dryrun.log`, and the handled list stays in memory.
 //!
 //! With deleting on, the steps are Bun's: the copy is written to a temp file, synced, read back and compared with the
 //! original byte for byte; then, holding the log's lock (appends wait), it checks the original didn't change and the
@@ -85,7 +84,7 @@ pub struct CompressOptions {
     pub now: Arc<dyn Fn() -> f64 + Send + Sync>,
     /// Called after the copy is verified, just before the swap (tests change things in between).
     pub before_swap: Option<BeforeSwap>,
-    /// Really compress (else report only); default `CKANBAN_RUST_DELETE=1`.
+    /// Really compress (else report only); default on unless `CKANBAN_RUST_DELETE=0`.
     pub delete: bool,
 }
 
@@ -97,7 +96,7 @@ impl Default for CompressOptions {
             min_bytes: MIN_BYTES,
             now: Arc::new(now_ms),
             before_swap: None,
-            delete: std::env::var("CKANBAN_RUST_DELETE").is_ok_and(|v| v == "1"),
+            delete: crate::dryrun::deletes_on(),
         }
     }
 }

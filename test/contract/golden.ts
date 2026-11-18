@@ -12,7 +12,11 @@ export class Golden {
   private kept: { label: string; value: unknown }[] = [];
   private next = 0;
 
-  constructor(name: string) {
+  /**
+   * `recordedOn`: the day the golden was recorded (YYYY-MM-DD). Where a server answer shows today's date (a ticket's
+   * creation day), the recorded day and today, local or UTC, both read as "<today>".
+   */
+  constructor(name: string, private recordedOn?: string) {
     this.file = join(import.meta.dir, "golden", `${name}.json`);
     if (!existsSync(this.file)) throw new Error(`${this.file} is missing: it was recorded from Bun (see golden.ts)`);
     this.kept = JSON.parse(readFileSync(this.file, "utf8"));
@@ -20,7 +24,15 @@ export class Golden {
 
   /** The server's `value` must be the one Bun gave at this point. */
   match(label: string, value: unknown) {
-    const want = this.kept[this.next++];
+    let want: { label: string; value: unknown } | undefined = this.kept[this.next++];
+    if (this.recordedOn) {
+      const d = new Date();
+      const local = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      const today = <T,>(x: T, days: string[]): T =>
+        x === undefined ? x : JSON.parse(days.reduce((t, day) => t.replaceAll(day, "<today>"), JSON.stringify(x)));
+      want = today(want, [this.recordedOn]);
+      value = today(value, [local, d.toISOString().slice(0, 10)]);
+    }
     expect({ label, value }).toEqual(want ?? { label: "(nothing recorded here)", value: null });
   }
 

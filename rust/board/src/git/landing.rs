@@ -4,7 +4,8 @@
 //! worktree sweep, cleaning up a Done ticket's copy). The plain-folder path (no git, no commits, no remote, no `gh`)
 //! works everywhere: such tickets run in the folder itself and landing only records the milestone.
 //!
-//! Background deletes (the sweep, the Done cleanup) are report-only unless `CKANBAN_RUST_DELETE=1` (`dryrun.rs`).
+//! Background deletes (the sweep, the Done cleanup, the package trim in `trim.rs`) delete unless `CKANBAN_RUST_DELETE=0`
+//! (`dryrun.rs`), which keeps them report-only.
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -44,6 +45,15 @@ pub struct Session {
     pub in_place: bool,
 }
 
+/// What a sweep did: its decisions (as logged when deletes are off), the copies it removed and their size in bytes
+/// (only added up when asked).
+#[derive(Debug, Default)]
+pub struct Swept {
+    pub decisions: Vec<Value>,
+    pub removed: usize,
+    pub bytes: u64,
+}
+
 /// Opens a pull request (`openPrWithGh`); tests give their own.
 pub type OpenPr = Arc<dyn Fn(PathBuf, String, String, String, String) -> BoxFuture<'static, Result<String, String>> + Send + Sync>;
 
@@ -62,6 +72,13 @@ pub struct Git {
     merge_locks: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
     setups: Mutex<HashMap<String, (SetupRun, Arc<tokio::sync::Notify>)>>,
     open_pr: OpenPr,
+    /// One package trim pass at a time (`trim.rs`).
+    pub(super) trim_gate: tokio::sync::Mutex<()>,
+    /// The last Free up space: its progress and result (`trim.rs`).
+    pub(super) free_up: Mutex<Value>,
+    pub(super) on_free_up: Mutex<Option<Arc<dyn Fn(&Value) + Send + Sync>>>,
+    /// Report-only trim: copies already logged by the hourly pass.
+    pub(super) trim_reported: Mutex<HashSet<String>>,
 }
 
 fn key(slug: &str, id: &str) -> String {
@@ -208,6 +225,10 @@ impl Git {
             merge_locks: Mutex::new(HashMap::new()),
             setups: Mutex::new(HashMap::new()),
             open_pr,
+            trim_gate: tokio::sync::Mutex::new(()),
+            free_up: Mutex::new(json!({ "state": "idle", "phase": null, "reportOnly": !dryrun::deletes_on(), "startedAt": null, "finishedAt": null, "bytesFreed": 0, "foldersRemoved": 0, "foldersTrimmed": 0 })),
+            on_free_up: Mutex::new(None),
+            trim_reported: Mutex::new(HashSet::new()),
         })
     }
 
@@ -279,17 +300,32 @@ impl Git {
     /// `ensureSession`: where the ticket's next run works, making its copy of the folder first when it needs one.
     /// One at a time per ticket: a run and a "copy command" click must not both create the copy.
     pub async fn ensure_session(self: &Arc<Self>, slug: &str, id: &str) -> Result<Session, Failure> {
-        let k = key(slug, id);
-        let lock = self.session_locks.lock().entry(k.clone()).or_default().clone();
+        let lock = self.session_lock(slug, id);
         let out = {
             let _held = lock.lock().await;
             self.ensure_session_now(slug, id).await
         };
+        self.drop_session_lock(slug, id, &lock);
+        out
+    }
+
+    /// The ticket's session lock (making a copy, the package trim): one at a time per ticket.
+    pub(super) fn session_lock(&self, slug: &str, id: &str) -> Arc<tokio::sync::Mutex<()>> {
+        self.session_locks.lock().entry(key(slug, id)).or_default().clone()
+    }
+
+    /// Forgets the ticket's session lock once nobody else holds or waits for it.
+    pub(super) fn drop_session_lock(&self, slug: &str, id: &str, lock: &Arc<tokio::sync::Mutex<()>>) {
+        let k = key(slug, id);
         let mut locks = self.session_locks.lock();
-        if locks.get(&k).is_some_and(|l| Arc::ptr_eq(l, &lock) && Arc::strong_count(l) == 2) {
+        if locks.get(&k).is_some_and(|l| Arc::ptr_eq(l, lock) && Arc::strong_count(l) == 2) {
             locks.remove(&k);
         }
-        out
+    }
+
+    /// The board's setup command runs in the ticket's copy right now.
+    pub(super) fn setup_running(&self, slug: &str, id: &str) -> bool {
+        self.setups.lock().contains_key(&key(slug, id))
     }
 
     async fn ensure_session_now(self: &Arc<Self>, slug: &str, id: &str) -> Result<Session, Failure> {
@@ -446,6 +482,10 @@ impl Git {
                 let mut p = Map::new();
                 if r["ok"] == true && s(&now, "worktree") == Some(dir.as_str()) {
                     p.insert("setupPending".into(), json!(false));
+                    // Packages are back: a later Done may trim them again (`trim.rs`).
+                    if truthy(&now, super::trim::TRIMMED_AT) {
+                        p.insert(super::trim::TRIMMED_AT.into(), Value::Null);
+                    }
                 }
                 if s(&now, "lastActivity") == Some(INSTALLING) {
                     p.insert("lastActivity".into(), Value::Null);
@@ -491,12 +531,17 @@ impl Git {
         repo::remove_worktree(&repo_path, dir, before).await
     }
 
-    /// `cleanupWorktree` (a ticket moved to Done): removes its copy when clean, else says where it was kept. Report-
-    /// only until deletes are switched on: the decision goes to the dry-run log and the ticket keeps its copy.
+    /// `cleanupWorktree` (a ticket moved to Done): removes its copy when clean, else says where it was kept. With
+    /// deletes switched off (`dryrun.rs`) the decision only goes to the dry-run log and the ticket keeps its copy.
     pub async fn cleanup_worktree(&self, slug: &str, id: &str) -> Result<(), Failure> {
+        self.cleanup_worktree_with(slug, id, dryrun::deletes_on()).await
+    }
+
+    /// `cleanup_worktree` with the switch given (tests).
+    pub async fn cleanup_worktree_with(&self, slug: &str, id: &str, deleting: bool) -> Result<(), Failure> {
         let (Some(profile), Some(t)) = (self.ops.profile(slug), self.ops.ticket(slug, id)) else { return Ok(()) };
         let Some(wt) = set(&t, "worktree").map(PathBuf::from) else { return Ok(()) };
-        if !dryrun::deletes_on() {
+        if !deleting {
             let (action, reason) = would_remove(&wt).await;
             dryrun::report(&self.root, "done-cleanup", decision(slug, id, &wt, action, reason));
             return Ok(());
@@ -511,11 +556,18 @@ impl Git {
     }
 
     /// `sweepWorktrees` (once at start): copies left behind by Done or deleted tickets in each board's own copies
-    /// folder. Clean ones are removed, ones with changes kept and logged. Report-only until deletes are switched on
+    /// folder. Clean ones are removed, ones with changes kept and logged. Report-only when deletes are switched off
     /// (and then `git worktree prune` is skipped too). Never fails. The decisions, as written to the dry-run log.
     pub async fn sweep_worktrees(&self) -> Vec<Value> {
-        let deleting = dryrun::deletes_on();
+        self.sweep_worktrees_with(dryrun::deletes_on(), false).await.decisions
+    }
+
+    /// The sweep with the switch given. `measure`: add up the size of each copy before removing it (Free up space
+    /// shows the bytes freed; the start-up sweep skips the walk). Only folders named like a ticket id are ever treated
+    /// as left behind: a worktree someone made by hand in the copies folder (`t_..._xxxx-ops`) is kept.
+    pub async fn sweep_worktrees_with(&self, deleting: bool, measure: bool) -> Swept {
         let mut decisions = Vec::new();
+        let (mut removed_total, mut bytes) = (0usize, 0u64);
         for profile in self.ops.profiles() {
             let (Some(slug), Some(path)) = (s(&profile, "slug").map(str::to_string), s(&profile, "path").map(PathBuf::from)) else { continue };
             if !repo::is_git_repo(&path).await {
@@ -536,6 +588,14 @@ impl Git {
                 }
                 let id = dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
                 let t = self.ops.ticket(&slug, &id);
+                if t.is_none() && !ckanban_core::layout::is_ticket_id(&id) {
+                    let d = decision(&slug, &id, &dir, "keep", Some("not a ticket copy".into()));
+                    if !deleting {
+                        dryrun::report(&self.root, "worktree-sweep", d.clone());
+                    }
+                    decisions.push(Value::Object(d));
+                    continue;
+                }
                 // A ticket file the board couldn't load (unreadable, half written) still names a ticket: its copy is
                 // never treated as left behind (Bun would sweep it; keeping it costs only disk).
                 if t.is_none() && ckanban_core::DataDir::new(self.root.clone()).ticket_dir(&slug, &id).join("ticket.md").exists() {
@@ -554,12 +614,43 @@ impl Git {
                     decisions.push(Value::Object(d));
                     continue;
                 }
+                // The ticket's session lock while it goes: a run starting now waits, then makes a fresh copy. Held
+                // elsewhere (a run or a copy being made): left for the next sweep.
+                let lock = self.session_lock(&slug, &id);
+                let Ok(held) = lock.try_lock() else {
+                    self.drop_session_lock(&slug, &id, &lock);
+                    continue;
+                };
+                let size = if measure && dir.exists() {
+                    let d = dir.clone();
+                    tokio::task::spawn_blocking(move || super::trim::tree_size(&d)).await.unwrap_or(0)
+                } else {
+                    0
+                };
+                // Last look right before removing: still Done (or still no ticket) and nothing working in it.
+                let now = self.ops.ticket(&slug, &id);
+                let still = match (&t, &now) {
+                    (None, None) => true,
+                    (Some(_), Some(n)) => s(n, "status") == Some("done") && !self.ops.busy(&slug, &id) && !self.setup_running(&slug, &id),
+                    _ => false,
+                };
+                if !still {
+                    drop(held);
+                    self.drop_session_lock(&slug, &id, &lock);
+                    continue;
+                }
                 let r = self.remove_ticket_worktree(&profile, &dir).await;
+                drop(held);
+                self.drop_session_lock(&slug, &id, &lock);
                 if !r.removed {
                     kept.push(format!("{id} ({})", r.reason.unwrap_or_default()));
                     continue;
                 }
                 swept += 1;
+                removed_total += 1;
+                if !dir.exists() {
+                    bytes += size;
+                }
                 if t.as_ref().and_then(|t| set(t, "worktree")).is_some() {
                     let _ = self.ops.patch(&slug, &id, super::ops::patch1("worktree", Value::Null));
                 }
@@ -569,7 +660,7 @@ impl Git {
                 eprintln!("profile {slug}: swept {swept} orphan worktree{}, kept {} with changes{list}", if swept == 1 { "" } else { "s" }, kept.len());
             }
         }
-        decisions
+        Swept { decisions, removed: removed_total, bytes }
     }
 
     /// `merge_into_main`: fast-forwards the main ticket's copy to the tool ticket's branch, one at a time per main
@@ -1038,7 +1129,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn the_sweep_only_reports_by_default() {
+    async fn the_sweep_reports_with_deletes_off_and_keeps_hand_made_folders() {
         let t = tempfile::tempdir().unwrap();
         let data = t.path().join("data");
         fs::create_dir(&data).unwrap();
@@ -1054,29 +1145,46 @@ mod tests {
         let dirty = PathBuf::from(b.get("p", "d2")["worktree"].as_str().unwrap());
         fs::write(dirty.join("x.txt"), "x").unwrap();
         // A copy whose ticket is gone.
-        let orphan = repo::worktree_dir(&repo, "p", "gone");
+        let orphan = repo::worktree_dir(&repo, "p", "t_20260101_gone");
         repo::add_worktree(&repo, &orphan, "ck/gone", "main").await.unwrap();
+        // A worktree someone made by hand in the copies folder: not a ticket id, never treated as left behind.
+        let hand = repo::worktree_dir(&repo, "p", "t_20260101_gone-ops");
+        repo::add_worktree(&repo, &hand, "ck/gone-ops", "main").await.unwrap();
         // A copy whose ticket file is there but wasn't loaded (unreadable): never treated as left behind.
-        let unread = repo::worktree_dir(&repo, "p", "unread");
+        let unread = repo::worktree_dir(&repo, "p", "t_20260101_unrd");
         repo::add_worktree(&repo, &unread, "ck/unread", "main").await.unwrap();
-        let tdir = ckanban_core::DataDir::new(data.clone()).ticket_dir("p", "unread");
+        let tdir = ckanban_core::DataDir::new(data.clone()).ticket_dir("p", "t_20260101_unrd");
         fs::create_dir_all(&tdir).unwrap();
         fs::write(tdir.join("ticket.md"), "not front matter").unwrap();
-        let mut got: Vec<(String, String)> = g
-            .sweep_worktrees()
-            .await
-            .iter()
-            .map(|d| (d["ticket"].as_str().unwrap().to_string(), d["action"].as_str().unwrap().to_string()))
-            .collect();
-        got.sort();
-        assert_eq!(got, [("d1".to_string(), "delete".to_string()), ("d2".into(), "keep".into()), ("gone".into(), "delete".into())]);
+        let pairs = |v: &[Value]| {
+            let mut got: Vec<(String, String)> = v.iter().map(|d| (d["ticket"].as_str().unwrap().to_string(), d["action"].as_str().unwrap().to_string())).collect();
+            got.sort();
+            got
+        };
+        let got = pairs(&g.sweep_worktrees_with(false, false).await.decisions);
+        assert_eq!(
+            got,
+            [("d1".to_string(), "delete".to_string()), ("d2".into(), "keep".into()), ("t_20260101_gone".into(), "delete".into()), ("t_20260101_gone-ops".into(), "keep".into())]
+        );
         // Nothing was deleted, and it was all logged.
-        assert!(orphan.exists() && PathBuf::from(b.get("p", "d1")["worktree"].as_str().unwrap()).exists());
-        assert_eq!(ckanban_core::jsonl::read_all(&dryrun::log_path(&data)).unwrap().len(), 3);
+        assert!(orphan.exists() && hand.exists() && PathBuf::from(b.get("p", "d1")["worktree"].as_str().unwrap()).exists());
+        assert_eq!(ckanban_core::jsonl::read_all(&dryrun::log_path(&data)).unwrap().len(), 4);
         // The Done cleanup reports too.
-        g.cleanup_worktree("p", "d1").await.unwrap();
+        g.cleanup_worktree_with("p", "d1", false).await.unwrap();
         let log = ckanban_core::jsonl::read_all(&dryrun::log_path(&data)).unwrap();
-        assert_eq!(log[3]["job"], "done-cleanup");
+        assert_eq!(log[4]["job"], "done-cleanup");
         assert!(b.get("p", "d1")["worktree"].is_string());
+
+        // Deletes on: the clean Done copy and the left-behind one go; changes, open tickets, an unreadable ticket's
+        // copy and the hand-made folder stay.
+        let d1 = PathBuf::from(b.get("p", "d1")["worktree"].as_str().unwrap());
+        let open = PathBuf::from(b.get("p", "o1")["worktree"].as_str().unwrap());
+        let swept = g.sweep_worktrees_with(true, true).await;
+        assert_eq!(swept.removed, 2);
+        assert!(swept.bytes > 0);
+        assert!(!d1.exists() && !orphan.exists());
+        assert!(b.get("p", "d1")["worktree"].is_null());
+        assert!(dirty.join("x.txt").exists() && open.exists() && unread.exists() && hand.exists());
+        assert_eq!(ckanban_core::jsonl::read_all(&dryrun::log_path(&data)).unwrap().len(), 5);
     }
 }

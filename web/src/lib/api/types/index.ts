@@ -2,6 +2,7 @@ export * from "./board";
 export * from "./browsers";
 export * from "./chat";
 export * from "./connections";
+export * from "./disk";
 export * from "./files";
 export * from "./helper";
 export * from "./huddle";

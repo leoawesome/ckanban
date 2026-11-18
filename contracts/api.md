@@ -86,8 +86,8 @@ the board (taking `board.lock`; if another daemon holds it, it exits 1 naming th
 itself and serves the built web page (`web/dist`) for any other path, `index.html` for paths that aren't files. A
 route it doesn't have answers Bun's JSON `404 {"error":"not found"}` (or `415` for a change that isn't JSON). Bun's
 front mode, satellite and shadow mode (and their `x-ckanban-front*` headers and stdin lines) went with Bun's server; a
-deleted ticket's copy of the folder, like a Done one's, is still only reported in `rust-board-dryrun.log` until
-`CKANBAN_RUST_DELETE=1`. `rust-board-status.json` records each start and whether it stopped cleanly (`data-files.md`).
+deleted ticket's copy of the folder, like a Done one's, is removed when it is clean (with `CKANBAN_RUST_DELETE=0` it
+is only reported in `rust-board-dryrun.log`). `rust-board-status.json` records each start and whether it stopped cleanly (`data-files.md`).
 
 **Run rights (`runRights`).** Ticket changes sent with `x-ckanban-run` are allowed only for: a Planning chat answering
 the user's typed message (any ticket of its board but its own: "requester"); a main ticket or tool group on its own
@@ -115,7 +115,9 @@ and sends `: ping` every 15 s. Each bus event is one `data: <json>` message. Eve
 `schedule.updated`, `loop.updated`, `integration.updated`, `job.updated`, `snippets.updated`, `devices.updated`,
 `browsers.updated`, `restart.updated`, `awake.updated`, `helper.updated`, `helper.message`, `messages.updated`,
 `learned.updated`, `huddle.updated`, `huddle.message`, `huddle.activity`, `huddle.session`, `chat.updated`,
-`chat.draft`, `chat.activity`, `context.updated`.
+`chat.draft`, `chat.activity`, `context.updated`, `disk.freeup` (`{status}`: Free up space moved on, the same object
+as `GET /api/disk/free-up`), `disk.space` (`{space}`: the same object as `GET /api/disk`, sent when the free space
+moves by a tenth of a GB at the minute check, or after Free up space finishes).
 - `ticket.updated`: `ticket` is replaced by its `TicketView`.
 - `session.updated` and `huddle.updated` are followed by an extra `ticket.updated` message for the affected ticket.
 - `activity`: long strings inside `event` are cut (`liveCut.ts`).
@@ -147,6 +149,9 @@ The upgrade needs an `Origin` equal to the board's own origin (local) or the tai
 | GET | `/api/spend` | | 200 `SpendIndex.recent()` (spend.ts): `{ day, costUsd, boards }`, see "Today's spend" below | |
 | GET | `/api/team-usage` | | 200 `{teammates: {name: Usage}, templates: {name: Usage}}`, `Usage {huddles, lastUsed, costUsd, recent: [{board, huddle, ticket, title, at, costUsd}]}` (newest first, at most 5), over every board's huddles, closed ones included | |
 | GET | `/api/awake` | | 200 `{held: boolean}` | |
+| GET | `/api/disk` | | 200 `{freeBytes, low, lowBelowBytes, checkedAt}`: free space on the disk holding the data folder (and the ticket copies), read with `statvfs` and kept a minute; `low` is `freeBytes < lowBelowBytes` (10 GB); `freeBytes` null (not low) when it can't be read. `CKANBAN_FAKE_FREE_GB` replaces the reading (tests) | |
+| GET | `/api/disk/free-up` | | 200 `FreeUp {state: "idle" \| "running" \| "done", phase: "removing" \| "trimming" \| null, reportOnly, startedAt, finishedAt, bytesFreed, foldersRemoved, foldersTrimmed}`: the last Free up space (`state: "idle"` before any since the start) | |
+| POST | `/api/disk/free-up` | body ignored (`{}`) | 202 `FreeUp` with `state: "running"`, `alreadyRunning: false`: started in the background: clean copies of Done and deleted tickets removed (the start-up sweep), then every kept Done copy's packages removed without the 3-day wait (`git/trim.rs`). `bytesFreed` adds up the sizes of what was removed; `reportOnly` true (with `CKANBAN_RUST_DELETE=0`) removes nothing and frees 0 (`foldersRemoved`/`foldersTrimmed` then count what would go). `error` is set when it stopped early. Progress: `GET` or the `disk.freeup` event | 200 `FreeUp` with `alreadyRunning: true` when one is running |
 | GET | `/api/restart` | | 200 `Board.restartState()` | |
 | POST | `/api/restart` | body ignored | 200 `{running, alreadyPending}` | 501 not running as the daemon |
 | GET | `/api/claude/projects` | | 200 list of Claude Code projects (`listClaudeProjects`) each with `hasProfile` | |

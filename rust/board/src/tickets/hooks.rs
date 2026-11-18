@@ -61,6 +61,10 @@ pub trait BoardHooks: Send + Sync {
     }
     /// Closes the huddles hosted by a ticket that is going (R11a).
     fn close_huddles(&self, _slug: &str, _id: &str) {}
+    /// An open huddle (any kind) is hosted by the ticket: its helpers may work in the ticket's copy (R11a).
+    fn huddle_open(&self, _slug: &str, _id: &str) -> bool {
+        false
+    }
     /// A live huddle the user started works on the ticket (R11a).
     fn huddle_live(&self, _slug: &str, _id: &str) -> bool {
         false

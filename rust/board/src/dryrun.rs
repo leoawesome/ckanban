@@ -1,9 +1,9 @@
-//! Report-only deletes (plan 5.3). In board mode the background jobs that delete (the worktree sweep, cleaning up a
-//! Done ticket's copy, later run log compression, temp files, rewind copies, huddle helper copies...) start in
-//! report-only mode: they append what they would delete to `<data>/rust-board-dryrun.log` and delete nothing. F1
-//! compares that list with Bun's own decisions on a copy of the real data folder; only then are deletes switched on
-//! with `CKANBAN_RUST_DELETE=1` (later the default). Deletes the user asks for (a ticket, a schedule, a board) are not
-//! held back.
+//! The switch for background deletes (plan 5.3). The background jobs that delete (the worktree sweep, cleaning up a
+//! Done ticket's copy and a deleted ticket's copy, trimming packages from kept Done copies, run log compression, temp
+//! files, rewind copies, huddle helper copies...) really delete by default since the dry-run log was checked
+//! (2026-11-18, ticket t_20261118_awxv). `CKANBAN_RUST_DELETE=0` keeps the old report-only mode: each job then appends
+//! what it would delete to `<data>/rust-board-dryrun.log` and deletes nothing. The copy of a ticket the user deletes
+//! goes through this switch too; other deletes the user asks for (a schedule, a board) don't.
 
 use std::path::{Path, PathBuf};
 
@@ -12,9 +12,9 @@ use serde_json::{Map, Value};
 pub const LOG_FILE: &str = "rust-board-dryrun.log";
 pub const ENV: &str = "CKANBAN_RUST_DELETE";
 
-/// Background deletes really delete (`CKANBAN_RUST_DELETE=1`); otherwise they are only reported.
+/// Background deletes really delete unless `CKANBAN_RUST_DELETE=0` (then they are only reported).
 pub fn deletes_on() -> bool {
-    std::env::var(ENV).is_ok_and(|v| v == "1")
+    std::env::var(ENV).map_or(true, |v| v.trim() != "0")
 }
 
 pub fn log_path(root: &Path) -> PathBuf {
