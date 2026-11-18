@@ -107,6 +107,42 @@ describe("sessions: fresh chat, fresh session, take-over, link-session", () => {
     expect(args).not.toContain("--resume");
   }, 60_000);
 
+  test("Planning to work: a ticked Apply & start begins the work in a fresh chat; a short or unknown planning chat is kept", async () => {
+    const planned = async (name: string) => {
+      const t = await create(`Planned ${name}`, `x ${s.set(name, [{ summary: "Planned." }, {}])}`, "planning");
+      await until(() => s.runs(name).length === 1, 30_000, "the planning run");
+      return settled(d, SLUG, t.id, (x) => x.sessionStarted === true && !x.running);
+    };
+    // Ticked: the old session becomes an earlier one, the note shows, and the first work run starts a new session
+    // with the first-run prompt and a line on where the planning chat is.
+    const a = await planned("planfresh");
+    const r = await d.api("PATCH", `${T}/${a.id}`, { status: "ready", freshChat: true });
+    expect(r.status).toBe(200);
+    expect(meta(a.id).earlierSessions.map((e: any) => e.sessionId)).toContain(a.sessionId);
+    expect(comments(a.id).some((c) => c.text.startsWith("Started a fresh chat for the work"))).toBe(true);
+    await until(() => s.runs("planfresh").length === 2, 30_000, "the work run");
+    const v = await settled(d, SLUG, a.id, (x) => x.status === "review");
+    const work = s.runs("planfresh")[1];
+    expect(work.args).not.toContain("--resume");
+    expect(work.args[work.args.indexOf("--session-id") + 1]).toBe(v.sessionId);
+    expect(v.sessionId).not.toBe(a.sessionId);
+    expect(work.prompt).toContain("Board started work on the ticket");
+    expect(work.prompt).toContain("# The planning chat");
+    expect(meta(a.id).freshFromPlanning ?? null).toBeNull();
+    expect(meta(a.id).freshChat).toBeUndefined();
+
+    // No choice and a planning chat of unknown or small size (a drag, move_ticket): the work resumes it.
+    const b = await planned("plankeep");
+    expect((await d.api("PATCH", `${T}/${b.id}`, { status: "ready" })).status).toBe(200);
+    await until(() => s.runs("plankeep").length === 2, 30_000, "the work run");
+    await settled(d, SLUG, b.id, (x) => x.status === "review");
+    const kept = s.runs("plankeep")[1];
+    expect(kept.args[kept.args.indexOf("--resume") + 1]).toBe(b.sessionId);
+    expect(kept.prompt).not.toContain("# The planning chat");
+    expect(meta(b.id).earlierSessions ?? []).toEqual([]);
+    expect((await d.api("PATCH", `${T}/${b.id}`, { freshChat: "yes" })).status).toBe(400);
+  }, 90_000);
+
   test("fresh session: a new session and a work run at once; refused while running (409) and from a run (403)", async () => {
     const gate = s.gate("freshsess");
     const t = await create("Fresh session", `x ${s.set("freshsess", [{ waitFile: gate.file }, {}])}`);

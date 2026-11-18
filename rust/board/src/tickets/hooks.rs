@@ -47,6 +47,9 @@ pub trait BoardHooks: Send + Sync {
     fn after_update(&self, _slug: &str, _id: &str, _new_status: Option<&str>, _by_user: bool, _was_running: bool) -> BoxFuture<'_, ()> {
         Box::pin(async {})
     }
+    /// A move from Planning (or Backlog) to Ready, before the status is written: the work may start in a fresh chat
+    /// (`choice`: the user's tick sent with "Apply & start work"; None: decided by the planning chat's size) (R7a).
+    fn fresh_for_work(&self, _slug: &str, _id: &str, _choice: Option<bool>) {}
     /// After a delete or a move away: what the run loop keeps for the ticket goes.
     fn after_delete(&self, _slug: &str, _id: &str) {}
     /// A board's settings changed: work waiting for a slot may start (`dispatch`).

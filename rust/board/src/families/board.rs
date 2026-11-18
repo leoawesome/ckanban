@@ -49,6 +49,8 @@ pub trait PlanRuns: Send + Sync {
     fn dispatch(&self, _slug: &str) {}
     /// A fresh chat before a wake when the session is too big (`autoFresh`).
     fn auto_fresh(&self, _slug: &str, _id: &str) {}
+    /// A ticket moved from Planning to work may start the work in a fresh chat (see `RunLoop::fresh_for_work`).
+    fn fresh_for_work(&self, _slug: &str, _id: &str, _choice: Option<bool>) {}
     /// A ticket moved to Planning starts its interview (`autoRefine`).
     fn auto_refine(&self, _slug: &str, _id: &str) {}
     /// A notification for the user (`notify`).

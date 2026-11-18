@@ -113,6 +113,9 @@ impl PlanRuns for RunLoop {
     fn auto_refine(&self, slug: &str, id: &str) {
         RunLoop::auto_refine(self, slug, id);
     }
+    fn fresh_for_work(&self, slug: &str, id: &str, choice: Option<bool>) {
+        RunLoop::fresh_for_work(self, slug, id, choice);
+    }
     fn notify(&self, title: &str, body: &str, slug: &str, id: &str) {
         // The helper's Mac-only notice (P1b): the banner, or this Mac's browser; a click opens the ticket.
         match self.mac_only.get() {

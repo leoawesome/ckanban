@@ -38,6 +38,7 @@
     "toolsVersion": { "type": "string" },
     "freshSession": { "type": "boolean" },
     "freshAuto": { "type": ["boolean", "null"] },
+    "freshFromPlanning": { "type": ["boolean", "null"], "description": "The work started in a fresh chat after a long planning chat; cleared once that chat starts." },
     "earlierSessions": { "type": "array", "items": { "$ref": "#/$defs/obj" } },
     "rewindUndo": { "$ref": "#/$defs/nullableObj" },
     "refineStarted": { "type": "boolean" },

@@ -306,7 +306,7 @@ export const api = {
       "POST", `${t(slug, id)}/gather`, { tickets, newGroup }),
   plan: (slug: string, id: string, action: "start" | "pause" | "resume" | "done") =>
     req<Ticket>("POST", `${t(slug, id)}/plan`, { action }),
-  updateTicket: (slug: string, id: string, patch: Partial<Pick<Ticket, "title" | "body" | "status" | "order" | "mode" | "notice" | "needs" | "tags" | "suggestedTags" | "important" | "runCapUsd" | "model" | "effort" | "ultracode" | "chrome" | "browsers">> & { expectedBody?: string; pinned?: boolean }) =>
+  updateTicket: (slug: string, id: string, patch: Partial<Pick<Ticket, "title" | "body" | "status" | "order" | "mode" | "notice" | "needs" | "tags" | "suggestedTags" | "important" | "runCapUsd" | "model" | "effort" | "ultracode" | "chrome" | "browsers">> & { expectedBody?: string; pinned?: boolean; freshChat?: boolean }) =>
     req<Ticket>("PATCH", t(slug, id), patch),
   deleteTicket: (slug: string, id: string) => req<void>("DELETE", t(slug, id)),
   /** Part of parent's family (null unlinks). */

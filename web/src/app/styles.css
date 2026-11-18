@@ -1235,6 +1235,18 @@ body > .output-view.reader { position: fixed; }
 .proposal-actions { display: flex; align-items: center; gap: var(--sp-3h); flex-wrap: wrap; }
 .proposal-note { font-size: var(--fs-xs); background: var(--surface-2); color: var(--text); border-radius: var(--r-sm); padding: var(--sp-2h) var(--sp-3h); }
 .proposal .btn.ghost { color: var(--muted); }
+/* "Start work in a fresh chat" above the buttons: a tinted row, the whole row is the tap target. */
+.proposal-fresh { display: flex; gap: var(--sp-3h); align-items: flex-start; min-height: 40px; margin: var(--sp-2h) 0 var(--sp-1); padding: var(--sp-3h) var(--sp-4); border-radius: var(--r-sm); background: var(--info-soft); cursor: pointer; }
+.proposal-fresh input { width: 20px; height: 20px; flex: none; margin: var(--sp-1) 0 0; accent-color: var(--accent-strong); }
+.proposal-fresh input:disabled { cursor: default; }
+.proposal-fresh > span { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; font-size: var(--fs-sm); }
+.proposal-fresh b { font-weight: 600; color: var(--text); }
+@media (max-width: 720px) {
+  .proposal-fresh { min-height: var(--tap); }
+  .proposal-fresh input { width: 22px; height: 22px; }
+  .proposal-fresh b { font-size: var(--fs-lg); }
+  .proposal-fresh > span { font-size: var(--fs-md); }
+}
 /* propose_delete: the user confirms deleting tickets */
 .delete-card { border-color: var(--err); }
 .delete-card .proposal-tag { color: var(--err); display: inline-flex; align-items: center; gap: var(--sp-2); }

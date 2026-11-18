@@ -37,6 +37,29 @@ pub fn board_note(text: &str) -> bool {
 /// `FRESH_CHAT_TOKENS` of `src/chat/chat-cache.ts`.
 pub const FRESH_CHAT_TOKENS: f64 = 150_000.0;
 
+/// A ticket moved from Planning (or Backlog) to work starts the work in a fresh chat when its planning chat is longer
+/// than this (the size Claude re-reads, from the session summary). A long planning chat (discussion, mockups) lowers the
+/// work's quality and is re-read in full every time the work wakes on a cold cache; a short one is kept, so the work
+/// still sees what was said. Not a board setting on purpose.
+pub const PLANNING_FRESH_TOKENS: f64 = 50_000.0;
+
+/// Whether the work after Planning starts in a fresh chat: the user's tick on "Apply & start work" wins; otherwise a
+/// planning chat over `PLANNING_FRESH_TOKENS` starts fresh, and a short or unknown one is kept.
+pub fn planning_fresh(choice: Option<bool>, tokens: Option<f64>) -> bool {
+    choice.unwrap_or_else(|| tokens.is_some_and(|n| n > PLANNING_FRESH_TOKENS))
+}
+
+/// The size of a chat Claude re-reads, from a session summary's `cache` (what `autoFresh` uses); None: unknown.
+pub fn chat_tokens(summary: Option<&Value>) -> Option<f64> {
+    let cache = summary?.get("cache").filter(|c| c.is_object())?;
+    cache.get("coldTokens").filter(|v| !v.is_null()).or_else(|| cache.get("tokens")).and_then(Value::as_f64)
+}
+
+/// "86k" (rounded to the nearest thousand, at least 1k).
+pub fn k_tokens(n: f64) -> String {
+    format!("{}k", ((n / 1000.0).round() as i64).max(1))
+}
+
 /// A run's board browsers (`RunBrowsers`): tool servers, the prompt note, whether to leave out Claude in Chrome.
 #[derive(Default)]
 pub struct RunBrowsers {
@@ -259,12 +282,24 @@ impl RunLoop {
         if !self.seeds_from_status(slug, t) {
             return crate::prompts::chat::fresh_chat_note(&prompt_ticket(t), last.as_deref(), &recent, None);
         }
+        let f = self.fresh_feature(slug, t);
+        crate::prompts::chat::fresh_chat_note(&prompt_ticket(t), last.as_deref(), &recent, Some(&f))
+    }
+
+    /// A main ticket's or feature's status and tool tickets, for a chat that starts fresh.
+    fn fresh_feature(&self, slug: &str, t: &Tk) -> pt::FreshFeature {
         let status = self.families.refresh_status_file(slug, &t.id).filter(|p| p.exists()).and_then(|p| std::fs::read_to_string(p).ok());
         let list = self.tickets.list(slug);
         let kids: Vec<Arc<Tk>> = list.tickets.iter().filter(|c| c.parent_id.as_deref() == Some(&t.id) || c.part_of.as_deref() == Some(&t.id)).cloned().collect();
         let table = crate::families::plan::wake_table(&kids, &list, &|id| self.is_running(slug, id));
-        let f = pt::FreshFeature { status, table, auto: t.is("freshAuto") };
-        crate::prompts::chat::fresh_chat_note(&prompt_ticket(t), last.as_deref(), &recent, Some(&f))
+        pt::FreshFeature { status, table, auto: t.is("freshAuto") }
+    }
+
+    /// The first work prompt after a fresh start from Planning: where the planning chat is, and (main ticket or
+    /// feature, outside a chat that already got its status) where the feature stands.
+    pub(super) fn planning_fresh_context(&self, slug: &str, t: &Tk, with_status: bool) -> String {
+        let f = (with_status && self.seeds_from_status(slug, t)).then(|| self.fresh_feature(slug, t));
+        crate::prompts::chat::planning_fresh_note(f.as_ref())
     }
 
     /// `seedsFromStatus`: a main ticket or a feature's top: its fresh chats start from the status.
@@ -298,7 +333,51 @@ impl RunLoop {
     /// `startFreshChat`: the next message starts a new session seeded with the ticket (the old one stays shown).
     pub fn start_fresh_chat(&self, slug: &str, id: &str, auto: bool) -> Result<Arc<Tk>, RunError> {
         let t = self.get(slug, id).ok_or_else(|| RunError::other(format!("ticket {id} not found")))?;
-        let sid = ts(&t, "sessionId").map(str::to_string);
+        let text = if auto {
+            crate::runloop::rules::AUTO_FRESH_NOTE
+        } else if self.seeds_from_status(slug, &t) {
+            "Started a fresh chat: Claude starts from the status and can look up earlier messages."
+        } else {
+            "Started a fresh chat: Claude no longer sees the earlier messages; it gets the ticket, its last result and recent comments instead."
+        };
+        let extra = obj(json!({ "freshAuto": if auto { Value::Bool(true) } else { Value::Null }, "freshFromPlanning": null }));
+        self.begin_fresh_chat(slug, &t, text, extra)
+    }
+
+    /// A ticket moved from Planning (or Backlog) to work: its work starts in a fresh chat when `planning_fresh` says so
+    /// (`choice`: the tick sent with "Apply & start work"). Called by every move before the status is written, so the
+    /// first work run already uses the new session. Only the session summary is read (no transcript parse).
+    pub fn fresh_for_work(&self, slug: &str, id: &str, choice: Option<bool>) -> Option<Arc<Tk>> {
+        let t = self.get(slug, id)?;
+        // No planning chat to leave (never started), or the next run already starts fresh.
+        if t.is("freshSession") || !t.is("sessionStarted") {
+            return None;
+        }
+        let sid = ts(&t, "sessionId")?;
+        let tokens = chat_tokens(self.sessions.summary(sid).as_ref());
+        if !planning_fresh(choice, tokens) {
+            return None;
+        }
+        let text = match tokens.filter(|n| *n > PLANNING_FRESH_TOKENS && choice.is_none()) {
+            Some(n) => format!(
+                "Started a fresh chat for the work: the planning chat was long ({}), so Claude starts from the ticket and can look back at the planning chat when it needs to.",
+                k_tokens(n)
+            ),
+            None => "Started a fresh chat for the work, as chosen: Claude starts from the ticket and can look back at the planning chat when it needs to.".into(),
+        };
+        let extra = obj(json!({ "freshAuto": null, "freshFromPlanning": true }));
+        match self.begin_fresh_chat(slug, &t, &text, extra) {
+            Ok(t) => Some(t),
+            Err(e) => {
+                eprintln!("[board] fresh chat for the work of {slug}/{id}: {e:?}");
+                None
+            }
+        }
+    }
+
+    /// The old session goes to `earlierSessions` (when Claude had it), the note is written, and a new session id waits.
+    fn begin_fresh_chat(&self, slug: &str, t: &Tk, text: &str, extra: Map<String, Value>) -> Result<Arc<Tk>, RunError> {
+        let sid = ts(t, "sessionId").map(str::to_string);
         let mut earlier = t.get("earlierSessions").filter(|v| !v.is_null()).cloned();
         if let Some(s) = &sid
             && (t.is("sessionStarted") || self.session_exists(s))
@@ -307,19 +386,13 @@ impl RunLoop {
             list.push(json!({ "sessionId": s, "endedAt": now_iso() }));
             earlier = Some(Value::Array(list));
         }
-        let text = if auto {
-            crate::runloop::rules::AUTO_FRESH_NOTE
-        } else if self.seeds_from_status(slug, &t) {
-            "Started a fresh chat: Claude starts from the status and can look up earlier messages."
-        } else {
-            "Started a fresh chat: Claude no longer sees the earlier messages; it gets the ticket, its last result and recent comments instead."
-        };
-        self.note(slug, id, text);
-        let mut p = obj(json!({ "sessionId": uuid(), "sessionStarted": false, "freshSession": true, "freshAuto": if auto { Value::Bool(true) } else { Value::Null } }));
+        self.note(slug, &t.id, text);
+        let mut p = obj(json!({ "sessionId": uuid(), "sessionStarted": false, "freshSession": true }));
+        p.extend(extra);
         if let Some(e) = earlier {
             p.insert("earlierSessions".into(), e);
         }
-        self.patch(slug, id, p)
+        self.patch(slug, &t.id, p)
     }
 
     /// `sessionExists`: Claude has a stored session with this id.
@@ -516,5 +589,45 @@ impl RunLoop {
         let out = self.outputs_dir(slug, id);
         let env = self.chat_env(slug, id, &out.to_string_lossy());
         Some(crate::chat::context::ContextSpec { session_id: sid, cwd, args, env })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn planning_fresh_decides_by_size_unless_the_user_chose() {
+        // No choice sent (a drag, the phone's move menu, the CLI, move_ticket): the size decides.
+        assert!(planning_fresh(None, Some(86_000.0)), "over 50k starts fresh");
+        assert!(!planning_fresh(None, Some(9_000.0)), "under keeps the planning chat");
+        assert!(!planning_fresh(None, Some(PLANNING_FRESH_TOKENS)), "exactly 50k keeps it");
+        assert!(!planning_fresh(None, None), "unknown size keeps it");
+        // The tick sent with Apply & start work wins either way.
+        assert!(planning_fresh(Some(true), Some(9_000.0)));
+        assert!(planning_fresh(Some(true), None));
+        assert!(!planning_fresh(Some(false), Some(200_000.0)));
+    }
+
+    #[test]
+    fn chat_tokens_reads_the_summary_like_auto_fresh() {
+        assert_eq!(chat_tokens(Some(&json!({ "cache": { "tokens": 90_000, "coldTokens": 86_000 } }))), Some(86_000.0));
+        assert_eq!(chat_tokens(Some(&json!({ "cache": { "tokens": 9_000, "coldTokens": null } }))), Some(9_000.0));
+        assert_eq!(chat_tokens(Some(&json!({ "cache": null }))), None);
+        assert_eq!(chat_tokens(Some(&json!({}))), None);
+        assert_eq!(chat_tokens(None), None);
+        assert_eq!(k_tokens(86_400.0), "86k");
+        assert_eq!(k_tokens(200.0), "1k");
+    }
+
+    #[test]
+    fn the_planning_note_points_to_the_chat_tools_and_a_main_ticket_gets_its_status() {
+        let plain = crate::prompts::chat::planning_fresh_note(None);
+        assert!(plain.contains("search_chat") && plain.contains("read_chat") && plain.contains("Don't read the planning chat up front"));
+        assert!(!plain.contains("status.md"));
+        let f = pt::FreshFeature { status: Some("Step 2 of 4 done".into()), table: "| a | done |".into(), auto: false };
+        let main = crate::prompts::chat::planning_fresh_note(Some(&f));
+        assert!(main.starts_with(&plain));
+        assert!(main.contains("# Where we are (the feature's status.md)\nStep 2 of 4 done") && main.contains("| a | done |"));
     }
 }

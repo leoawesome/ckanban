@@ -646,6 +646,12 @@ impl Writes {
                 patch.insert(k.into(), v.clone());
             }
         }
+        if let Some(v) = b.get("freshChat") {
+            if !v.is_boolean() {
+                return Err(bad("freshChat must be true or false"));
+            }
+            patch.insert("freshChat".into(), v.clone());
+        }
         if let Some(cap) = b.get("runCapUsd") {
             if req.run.is_some() {
                 return Err((403, "only the user can change a ticket's spending cap".into()));
@@ -761,6 +767,7 @@ impl Writes {
         if changer {
             let what: Vec<String> = patch
                 .iter()
+                .filter(|(k, _)| k.as_str() != "freshChat")
                 .map(|(k, v)| match k.as_str() {
                     "status" => format!("moved it to {}", js_string(Some(v), "")),
                     "parentId" => format!("released it from plan {}", js_string(target.get("parentId"), "undefined")),

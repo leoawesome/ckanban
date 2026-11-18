@@ -531,6 +531,11 @@ impl Tickets {
                 clean.insert("waitsForStart".into(), Value::Bool(false));
             }
         }
+        // Planning to work: the work may start in a fresh chat; decided before the status is written, so the first work
+        // run already uses the new session. Every move (the UI, a drag, the CLI, move_ticket, a chat's own move) comes here.
+        if new_status.as_deref() == Some("ready") && matches!(current.status.as_str(), "planning" | "backlog") {
+            self.hooks().fresh_for_work(slug, id, patch.get("freshChat").and_then(Value::as_bool));
+        }
         let shaping = matches!(new_status.as_deref(), Some("planning" | "backlog"));
         if shaping && matches!(current.status.as_str(), "review" | "done") {
             let outcome = current.get("outcome").cloned().unwrap_or(Value::Null);
@@ -914,6 +919,60 @@ mod tests {
         assert_eq!(r.unwrap_err().0, 500);
         assert!(t.list("b").get(&a.id).is_some());
         assert!(t.get("b", &a.id).is_some());
+    }
+
+    /// Records each `fresh_for_work` call (ticket, choice, its status then) and writes a new session id like the run
+    /// loop's fresh start does.
+    struct FreshSpy {
+        calls: Mutex<Vec<(String, Option<bool>, String)>>,
+        tickets: std::sync::OnceLock<std::sync::Weak<Tickets>>,
+    }
+    impl BoardHooks for FreshSpy {
+        fn fresh_for_work(&self, slug: &str, id: &str, choice: Option<bool>) {
+            let t = self.tickets.get().and_then(|w| w.upgrade()).unwrap();
+            let status = t.get(slug, id).unwrap().status.clone();
+            self.calls.lock().push((id.to_string(), choice, status));
+            if choice != Some(false) {
+                t.patch(slug, id, json!({ "sessionId": "new", "freshSession": true }).as_object().unwrap().clone()).unwrap();
+            }
+        }
+    }
+
+    #[test]
+    fn every_move_from_planning_to_ready_asks_for_a_fresh_work_chat_first() {
+        let (_d, t) = board();
+        let spy = Arc::new(FreshSpy { calls: Mutex::new(vec![]), tickets: Default::default() });
+        spy.tickets.set(Arc::downgrade(&t)).ok();
+        t.set_hooks(spy.clone());
+        let status = |s: &str| json!({ "status": s }).as_object().unwrap().clone();
+        let with = |s: &str, fresh: bool| json!({ "status": s, "freshChat": fresh, "title": "Applied" }).as_object().unwrap().clone();
+        let a = t.create("b", input("Drag", "planning")).unwrap();
+        let b = t.create("b", input("Apply ticked", "planning")).unwrap();
+        let c = t.create("b", input("Apply unticked", "planning")).unwrap();
+        let d = t.create("b", input("From a run", "backlog")).unwrap();
+        let e = t.create("b", input("Not to work", "planning")).unwrap();
+        let f = t.create("b", input("Already working", "review")).unwrap();
+        // A drag, the phone's move menu (the user's PATCH {status}): no choice, the size decides.
+        let moved = t.update("b", &a.id, &status("ready"), true).unwrap();
+        // "Apply & start work" with the box ticked and unticked: the choice goes along.
+        t.update("b", &b.id, &with("ready", true), true).unwrap();
+        let unticked = t.update("b", &c.id, &with("ready", false), true).unwrap();
+        // The CLI and move_ticket (a run's PATCH, by_user false), from Backlog too.
+        t.update("b", &d.id, &status("ready"), false).unwrap();
+        // Other moves don't ask.
+        t.update("b", &e.id, &status("backlog"), true).unwrap();
+        t.update("b", &f.id, &status("ready"), true).unwrap();
+        t.update("b", &b.id, &status("ready"), true).unwrap();
+        let calls = spy.calls.lock().clone();
+        let p = "planning".to_string();
+        assert_eq!(
+            calls,
+            vec![(a.id.clone(), None, p.clone()), (b.id.clone(), Some(true), p.clone()), (c.id.clone(), Some(false), p), (d.id.clone(), None, "backlog".into())]
+        );
+        // The fresh start lands before the move, and both stay; the choice itself isn't stored.
+        assert_eq!((moved.status.as_str(), moved.get("sessionId"), moved.get("freshSession")), ("ready", Some(&json!("new")), Some(&json!(true))));
+        assert_eq!((unticked.status.as_str(), unticked.title.as_str(), unticked.get("freshChat")), ("ready", "Applied", None));
+        assert_eq!(unticked.get("sessionId").and_then(Value::as_str) == Some("new"), false);
     }
 
     #[test]

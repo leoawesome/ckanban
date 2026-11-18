@@ -5,6 +5,7 @@ import { MOD } from "../../app/Shortcuts";
 import { ImportantStar } from "../../components/StarToggle";
 import { Markdown } from "../chat/Transcript";
 import type { FollowUpPlace } from "../ticket/followUp";
+import { freshNote, type FreshDefault } from "./freshChat";
 
 /**
  * A proposal on a plain ticket that already ran (Done, In review, or ran before): follow-up work, so the ticket keeps its
@@ -37,7 +38,7 @@ function ProposalBody({ text }: { text: string }) {
 }
 
 /** Claude's proposed title/description; Apply replaces the ticket's fields, Apply & start work also queues it (status `ready`, shown in the In Progress column). */
-export function ProposalCard({ proposal, applied, started, onApply, onApplyStart, keyHint, followUp, family }: {
+export function ProposalCard({ proposal, applied, started, onApply, onApplyStart, keyHint, followUp, family, freshChat }: {
   proposal: Proposal;
   applied: boolean;
   /** Applied with "Apply & start work" in this session. */
@@ -51,6 +52,8 @@ export function ProposalCard({ proposal, applied, started, onApply, onApplyStart
   followUp?: FollowUp;
   /** What Apply does to the ticket's family (proposal.partOf), e.g. Moves it under “Outbound calls”. */
   family?: string;
+  /** "Start work in a fresh chat": the planning chat's size, whether the box is ticked (it goes with Apply & start work). */
+  freshChat?: FreshDefault & { onChange: (on: boolean) => void };
 }) {
   const [busy, setBusy] = useState<"apply" | "start" | null>(null);
   const run = (kind: "apply" | "start", fn: () => Promise<void>) => async () => {
@@ -67,6 +70,15 @@ export function ProposalCard({ proposal, applied, started, onApply, onApplyStart
       {proposal.title && <div className="proposal-title">{proposal.important && <ImportantStar />}{proposal.title}</div>}
       {proposal.description && <ProposalBody text={proposal.description} />}
       {family && <div className="proposal-family muted small">{family}</div>}
+      {!applied && onApplyStart && freshChat && (
+        <label className="proposal-fresh">
+          <input type="checkbox" checked={freshChat.on} disabled={!!busy} onChange={(e) => freshChat.onChange(e.target.checked)} />
+          <span>
+            <b>Start work in a fresh chat</b>
+            <span className="muted">{freshNote(freshChat)}</span>
+          </span>
+        </label>
+      )}
       <div className="proposal-actions">
         {applied ? (
           <span className="badge ok">{started ? "Applied · moved to In Progress" : "Applied to ticket"}</span>

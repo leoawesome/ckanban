@@ -291,6 +291,22 @@ pub fn fresh_chat_note(t: &Ticket, last_result: Option<&str>, comments: &[Commen
     )
 }
 
+/// Added to the first work prompt when the work starts in a fresh chat after a long planning chat: the planning chat is
+/// still there to search, but not to read up front. A main ticket or feature also gets where it stands.
+pub fn planning_fresh_note(feature: Option<&FreshFeature>) -> String {
+    let status = match feature {
+        Some(f) => {
+            let status = f.status.as_deref().map(js::trim).filter(|s| !s.is_empty()).unwrap_or("(no status written yet)");
+            format!("\n\n# Where we are (the feature's status.md)\n{status}\n\n# Family (tool tickets)\n{}", f.table)
+        }
+        None => String::new(),
+    };
+    cat!(
+        "# The planning chat\nThis work starts in a new chat: the planning chat on this ticket is not in your context. The ticket above holds what was agreed, with any files it names (such as the chosen mockups). Don't read the planning chat up front; when something you need is missing, look it up there with the search_chat board tool (then read_chat on a result's ref).",
+        status,
+    )
+}
+
 /// First prompt of a new session on a ticket whose previous session can't be resumed (`freshSessionPrompt`).
 pub fn fresh_session_prompt(t: &Ticket, ctx: &FreshContext) -> String {
     let comments = comment_lines(&ctx.comments);

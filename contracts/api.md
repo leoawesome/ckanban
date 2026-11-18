@@ -679,7 +679,13 @@ else is 400: planned tickets are retired. From a run, an unsuitable
 **PATCH body.** Any of: `status`, `title`, `body`, `expectedBody`, `mode`, `order`, `notice: null`, `dependsOn`,
 `needs`, `tags`, `suggestedTags`, `parentId: null` (only clearing), `partOf` (id or null), `parentSuggestion: null`,
 `showOnBoard`, `important`, `pinned`, `runCapUsd` (user only), `model`, `effort`, `ultracode` (user only), `chrome`,
-`browsers` (user only), `confirmParallel`. Notes:
+`browsers` (user only), `confirmParallel`, `freshChat` (true or false, else 400). Notes:
+- A move from `planning` or `backlog` to `ready` (any path: this PATCH, a drag, `move_ticket`, the CLI, a chat's own
+  move) starts the work in a fresh chat when the planning chat is over 50k tokens (`coldTokens`, else `tokens`, of the
+  session summary's `cache`), and keeps it when shorter or unknown. `freshChat` (sent by "Apply & start work") overrides
+  that. Fresh: the old session goes to `earlierSessions`, a "Started a fresh chat for the work…" note is written, and
+  `freshSession` and `freshFromPlanning` are set until the first work run starts. A ticket whose chat never started is
+  left as it is.
 - The ticket's own run (header equals `<slug>/<id>`, no huddle header) may set only `important` and `suggestedTags`,
   and may send `{status}` with `done`, `backlog` or `ready` when the user asked in the chat; that answers
   `TicketView` plus `selfMove` and the move happens after the reply.

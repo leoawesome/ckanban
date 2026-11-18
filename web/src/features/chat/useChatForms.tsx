@@ -10,6 +10,7 @@ import { type FormState, formStates } from "../ticket/questionForms";
 import { canStartFromProposal } from "../../app/keynav";
 import { toast } from "../../components/toast";
 import { laterCounts } from "./chatMemo";
+import { freshDefault, proposalPatch } from "../family/freshChat";
 
 /** Chat's forms and proposal cards: answered state, Apply, teammate cards and follow-up work (moved from Chat.tsx). */
 export function useChatForms({
@@ -66,18 +67,18 @@ export function useChatForms({
   // An already-planned main ticket's card offers "Apply & start work" too: moving it to Ready is the go-ahead for its plan
   // (the user asked for it after finding only Apply there; plain Apply still never starts anything).
   const canStart = canStartFromProposal({ status: ticket.status, working: ticket.status === "in_progress" || running });
+  // "Start work in a fresh chat" on each card, by proposal uuid; untouched boxes follow the planning chat's size.
+  const fresh = freshDefault(ticket);
+  const [freshChoice, setFreshChoice] = useState<ReadonlyMap<string, boolean>>(new Map());
+  const freshFor = (uuid: string) => freshChoice.get(uuid) ?? fresh.on;
+  const setFresh = (uuid: string, on: boolean) => setFreshChoice((m) => new Map(m).set(uuid, on));
   const applyProposal = async (p: Proposal, start?: { uuid: string }) => {
     const before = { title: ticket.title, body: ticket.body, important: !!ticket.important };
     try {
       // The family move first: when it can't be made (a plan sibling depends on it), nothing changes.
       if (familyNote(p)) await api.setPartOf(slug, ticket.id, p.partOf!);
       // One update, so the ticket never sits in Ready with the old text.
-      await api.updateTicket(slug, ticket.id, {
-        ...(p.title ? { title: p.title } : {}),
-        ...(p.description ? { body: p.description } : {}),
-        ...(p.important ? { important: true } : {}),
-        ...(start ? { status: "ready" as const } : {}),
-      });
+      await api.updateTicket(slug, ticket.id, proposalPatch(p, start && { fresh: freshFor(start.uuid) }));
       // No Undo once it starts: Claude may already be working from the new text.
       if (start) {
         setStartedProposals((s) => new Set(s).add(start.uuid));
@@ -148,5 +149,5 @@ export function useChatForms({
     onPendingProposal?.(pendingProposal ? (start) => applyPendingRef.current(start) : null);
   }, [pendingProposal?.uuid]);
   useEffect(() => () => onPendingProposal?.(null), []);
-  return { answerOf, answeredAfter, applyProposal, canStart, closeForm, counts, dismissTeammate, familyNote, followUpOf, formState, formWaiting, forms, isApplied, openKey, pendingProposal, presets, replacedBy, saveTeammate, setPresetsVersion, startedProposals };
+  return { answerOf, answeredAfter, applyProposal, canStart, fresh, freshFor, setFresh, closeForm, counts, dismissTeammate, familyNote, followUpOf, formState, formWaiting, forms, isApplied, openKey, pendingProposal, presets, replacedBy, saveTeammate, setPresetsVersion, startedProposals };
 }

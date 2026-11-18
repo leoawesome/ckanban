@@ -417,7 +417,7 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
   };
 
   const {
-    answerOf, answeredAfter, applyProposal, canStart, closeForm, counts, dismissTeammate,
+    answerOf, answeredAfter, applyProposal, canStart, fresh, freshFor, setFresh, closeForm, counts, dismissTeammate,
     familyNote, followUpOf, formState, formWaiting, forms, isApplied, openKey, pendingProposal, presets, replacedBy,
     saveTeammate, setPresetsVersion, startedProposals,
   } = useChatForms({
@@ -566,6 +566,7 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
                 <ProposalCard proposal={e.proposal} applied={isApplied(e.proposal)} started={startedProposals.has(e.uuid)}
                   onApply={() => applyProposal(e.proposal!)}
                   onApplyStart={canStart ? () => applyProposal(e.proposal!, { uuid: e.uuid }) : undefined}
+                  freshChat={canStart ? { ...fresh, on: freshFor(e.uuid), onChange: (on) => setFresh(e.uuid, on) } : undefined}
                   keyHint={e === pendingProposal} followUp={followUpOf(e.proposal)} family={familyNote(e.proposal)} />
               )}
               {e.branch && (

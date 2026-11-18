@@ -250,6 +250,10 @@ impl RunLoop {
         let out_s = output_dir.to_string_lossy().into_owned();
         let fresh = t.is("freshSession") && chat.is_none();
         let fresh_chat = t.is("freshSession") && chat.is_some() && !session.existed && (!chat.as_ref().is_some_and(|c| c.raw) || self.seeds_from_status(slug, &t));
+        // The work's first run after a fresh start from Planning: a first run still gets the first-run prompt (its
+        // rules, a main ticket's role), in the new session, with a line on where the planning chat is.
+        let planning_fresh = t.is("freshFromPlanning") && t.is("freshSession") && !session.existed && !refine;
+        let fresh_prompt = fresh && !(planning_fresh && run_count == 0.0);
         let mut texts: Vec<Option<&str>> = vec![Some(&t.body), chat.as_ref().map(|c| c.text.as_str())];
         let comment_texts: Vec<String> = new_comments.iter().filter_map(|c| s(c, "text")).collect();
         texts.extend(comment_texts.iter().map(|c| Some(c.as_str())));
@@ -303,7 +307,7 @@ impl RunLoop {
                         x.push_str(&self.fresh_chat_context(slug, &t));
                     }
                     x
-                } else if fresh {
+                } else if fresh_prompt {
                     self.fresh_prompt(slug, &t, repo, session.in_place, &out_s, &recall)
                 } else if let (Some(RunRole::Tool(r)), true) = (&role, run_count == 0.0 || !session.existed) {
                     crate::prompts::main_role::tool_first_prompt(
@@ -334,6 +338,12 @@ impl RunLoop {
                     crate::prompts::chat::first_run_prompt(&pticket, &ctx)
                 } else {
                     crate::prompts::chat::resume_prompt(&pticket, &comments, &out_s, auto_huddles_on(Some(&profile)), artifacts, repo, session.in_place, Some(&home), role.as_ref())
+                };
+                let body = if planning_fresh {
+                    // A chat's fresh-chat context already has the status; a work run's prompt doesn't.
+                    format!("{body}\n\n{}", self.planning_fresh_context(slug, &t, !fresh_chat))
+                } else {
+                    body
                 };
                 let body = localize_attachments(&body, &attachments);
                 self.with_setup_note(slug, &t, &profile, &session.dir, refine, body)
@@ -709,6 +719,7 @@ impl RunLoop {
         if (prep.fresh || prep.fresh_chat) && started {
             base.insert("freshSession".into(), Value::Bool(false));
             base.insert("freshAuto".into(), Value::Null);
+            base.insert("freshFromPlanning".into(), Value::Null);
         }
         if !refine && !quiet {
             base.insert("lastRunAt".into(), Value::String(started_at.to_string()));
