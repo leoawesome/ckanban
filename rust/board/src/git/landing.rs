@@ -660,21 +660,38 @@ impl Git {
     /// shows the bytes freed; the start-up sweep skips the walk). Only folders named like a ticket id are ever treated
     /// as left behind: a worktree someone made by hand in the copies folder (`t_..._xxxx-ops`) is kept.
     pub async fn sweep_worktrees_with(&self, deleting: bool, measure: bool) -> Swept {
+        self.sweep_leftovers(deleting, measure, None).await
+    }
+
+    /// The sweep, also over helpers' copies in `<ticket>.huddle` folders (`huddle_sweep.rs`). `limit`: stop once this
+    /// many copies were removed (the hourly pass takes a few at a time; the rest wait for the next pass).
+    pub async fn sweep_leftovers(&self, deleting: bool, measure: bool, limit: Option<usize>) -> Swept {
         let mut decisions = Vec::new();
         let (mut removed_total, mut bytes) = (0usize, 0u64);
+        let full = |n: usize| limit.is_some_and(|l| n >= l);
         for profile in self.ops.profiles() {
-            let (Some(slug), Some(path)) = (s(&profile, "slug").map(str::to_string), s(&profile, "path").map(PathBuf::from)) else { continue };
-            if !repo::is_git_repo(&path).await {
-                continue;
+            if full(removed_total) {
+                break;
             }
+            let (Some(slug), Some(path)) = (s(&profile, "slug").map(str::to_string), s(&profile, "path").map(PathBuf::from)) else { continue };
             let root = repo::worktree_dir(&path, &slug, "x").parent().map(Path::to_path_buf).unwrap_or_default();
             if !root.exists() {
+                continue;
+            }
+            let h = self.sweep_huddle_copies(&slug, &root, deleting, measure, limit.map(|l| l - removed_total)).await;
+            decisions.extend(h.decisions);
+            removed_total += h.removed;
+            bytes += h.bytes;
+            if full(removed_total) || !repo::is_git_repo(&path).await {
                 continue;
             }
             let real_root = std::fs::canonicalize(&root).unwrap_or_else(|_| root.clone());
             let listed = if deleting { repo::list_worktrees(&path).await } else { list_worktrees_quietly(&path).await };
             let (mut swept, mut kept) = (0, Vec::new());
             for dir in listed {
+                if full(removed_total) {
+                    break;
+                }
                 let dir = PathBuf::from(dir);
                 let parent = dir.parent().map(Path::to_path_buf).unwrap_or_default();
                 if parent != real_root && parent != root {
@@ -742,6 +759,8 @@ impl Git {
                 }
                 swept += 1;
                 removed_total += 1;
+                // Small steps: other work on the runtime gets its turn between two removals.
+                tokio::task::yield_now().await;
                 if !dir.exists() {
                     bytes += size;
                 }

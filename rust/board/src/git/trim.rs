@@ -401,11 +401,18 @@ impl Git {
     }
 }
 
-/// The background trim: once now (after the start-up sweep), then every `TRIM_EVERY`; runs until its task is aborted.
+/// Copies the hourly leftover sweep removes at most in one pass; the rest wait for the next hour.
+pub const SWEEP_BATCH: usize = 10;
+
+/// The background trim: once now (after the start-up sweep), then every `TRIM_EVERY` after a small leftover sweep
+/// (copies of Done or deleted tickets and their helpers' copies that something left behind) and the clean-up of old
+/// run temp folders; runs until its task is aborted.
 pub async fn run_forever(git: Arc<Git>) {
     loop {
         git.trim_done_packages(TRIM_AFTER_MS, dryrun::deletes_on()).await;
         tokio::time::sleep(TRIM_EVERY).await;
+        git.sweep_leftovers(dryrun::deletes_on(), false, Some(SWEEP_BATCH)).await;
+        let _ = tokio::task::spawn_blocking(|| crate::runs::run_temp::sweep(Some(crate::runs::run_temp::MAX_AGE_MS))).await;
     }
 }
 

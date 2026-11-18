@@ -49,6 +49,8 @@ satellite, Bun answering a route or board mode being off, that is how it was bef
 A library for the run loop (R7a); nothing calls it at run time yet except `LiveCut` (the event stream's
 `ActivityCut`). One file per Bun file, listed in `src/runs/mod.rs`. What R7a calls:
 
+- A ticket's Claude process (its `CKANBAN_TICKET` set) gets `TMPDIR` = its own folder under
+  `<system temp>/ckanban-runs/`, removed when the process ends (`run_temp.rs`).
 - `runner::build_args(&BuildArgs { session_id, resume, model, disallowed, mcp, system_prompt, max_budget_usd, effort,
   ultracode, settings, tools, strict_mcp, no_chrome })`, then `runner::start_run(RunOptions { bin, cwd, args, env,
   input, input_local, planning, on_event, on_waiting, grace_ms, idle_ms, stall_ms, on_stall })` → `RunHandle`:
@@ -341,8 +343,11 @@ Ported from `src/board/board-families.ts`, `board-plans.ts`, `board-main.ts` (wi
   the satellite. `merge-into-main` and `land` are answered by R2b's family routes over `landing::Git`; the other
   write routes (`branch`, `setup`, `pr/*`, `check-pr`) come with R7a.
 - At start (`start_jobs`): setup detection; after `recover()` the worktree sweep (only folders named like a ticket id
-  count as left behind), then the package trim (`trim.rs`): once, then hourly, kept Done copies lose their dependency
-  folders 3 days after Done (`setupPending` brings them back); `free_up` (`/api/disk/free-up`) runs both at once.
+  count as left behind, plus helpers' copies in `<ticket>.huddle` folders, `huddle_sweep.rs`) and the clean-up of run
+  temp folders (`runs/run_temp.rs`), then the package trim (`trim.rs`): once, then hourly, kept Done copies lose their
+  dependency folders 3 days after Done (`setupPending` brings them back). Each hour also runs a small sweep
+  (`sweep_leftovers`, at most `SWEEP_BATCH` copies) and removes run temp folders older than a day; `free_up`
+  (`/api/disk/free-up`) runs the full sweep and the trim at once.
 - Background deletes delete (`src/dryrun.rs`); with `CKANBAN_RUST_DELETE=0` the sweep, the Done cleanup and the trim
   only append their decisions to `<data>/rust-board-dryrun.log` (plan 5.3).
 - Pure logic is checked against Bun: `tests/fixtures/git.json` (written by `test/rust-git-fixtures.test.ts`,

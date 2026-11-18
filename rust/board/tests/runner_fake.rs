@@ -398,3 +398,40 @@ async fn a_side_call_reads_the_clis_json_answer() {
         side_call::SideCallResult::Err { error: "Claude Code isn't installed or isn't on PATH".into(), cost_usd: None }
     );
 }
+
+/// The TMPDIR the fake was given (from its args file), once it has started.
+async fn tmpdir_given(args_file: &Path) -> PathBuf {
+    until("the fake's args record", || std::fs::read_to_string(args_file).is_ok_and(|s| s.contains("TMPDIR"))).await;
+    let rec: Value = serde_json::from_str(std::fs::read_to_string(args_file).unwrap().lines().next().unwrap()).unwrap();
+    PathBuf::from(rec["env"]["TMPDIR"].as_str().expect("TMPDIR given"))
+}
+
+#[tokio::test]
+async fn a_tickets_run_gets_its_own_temp_folder_removed_when_it_ends_or_is_stopped() {
+    use ckanban_board::runs::run_temp;
+    for mode in ["ok", "slow"] {
+        let dir = tempfile::tempdir().unwrap();
+        let args_file = dir.path().join("args.jsonl");
+        let af = args_file.to_string_lossy().into_owned();
+        let Some(e) = env(&[("FAKE_MODE", mode), ("FAKE_ARGS_FILE", &af), ("FAKE_ENV_KEYS", "TMPDIR"), ("CKANBAN_TICKET", "p/t_tmp")]) else { return };
+        let h = runner::start_run(opts(&e, vec![], Box::new(|_| {})));
+        let tmp = tmpdir_given(&args_file).await;
+        let root = std::fs::canonicalize(run_temp::root()).unwrap();
+        assert!(tmp.starts_with(&root), "{} not under {}", tmp.display(), root.display());
+        assert!(tmp.file_name().unwrap().to_string_lossy().starts_with("p-t_tmp-"));
+        assert!(tmp.is_dir(), "the folder is there while the run works");
+        if mode == "slow" {
+            h.stop();
+        }
+        h.wait().await;
+        assert!(!tmp.exists(), "{mode}: the run's temp folder is gone once it ended");
+    }
+    // A process that isn't a ticket's keeps the usual temp folder.
+    let dir = tempfile::tempdir().unwrap();
+    let args_file = dir.path().join("args.jsonl");
+    let af = args_file.to_string_lossy().into_owned();
+    let Some(e) = env(&[("FAKE_ARGS_FILE", &af), ("FAKE_ENV_KEYS", "TMPDIR")]) else { return };
+    runner::start_run(opts(&e, vec![], Box::new(|_| {}))).wait().await;
+    let rec: Value = serde_json::from_str(std::fs::read_to_string(&args_file).unwrap().lines().next().unwrap()).unwrap();
+    assert!(!rec["env"]["TMPDIR"].as_str().unwrap_or("").contains("ckanban-runs"));
+}

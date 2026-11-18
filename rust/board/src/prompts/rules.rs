@@ -525,7 +525,7 @@ pub fn deliverable_rule(output_dir: &str) -> String {
         output_dir,
         "\n- For research, analysis, planning or writing tasks, save the deliverable there as a well-structured Markdown file (for example report.md). Start with a TL;DR of one or two sentences that gives the clear recommendation, then the details. The user reads files in this folder from the board.\n- Quantify when you can reach real data (code, logs, analytics, cost dashboards, docs). Say where each number comes from and label estimates as estimates.\n- Judge options against explicit criteria (e.g. value, cost, effort, risk) and end with concrete next steps.\n- If you also publish the deliverable somewhere (e.g. as an artifact or doc), include the link in your summary.\n- ",
         review_file_rule(output_dir),
-        "\n- Code changes still belong in the repository, not in the outputs folder. Never put copies of the project, installed dependencies or build output there; use a temporary folder for those.",
+        "\n- Code changes still belong in the repository, not in the outputs folder. Never put copies of the project, installed dependencies or build output there; use a temporary folder for those. Put scratch clones, trial builds and other temporary files under `$TMPDIR` (this run's own temp folder, removed when the run ends), not straight in `/tmp`.",
     )
 }
 

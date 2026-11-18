@@ -719,8 +719,16 @@ async fn run(mut opts: RunOptions, ctl: Arc<Ctl>) -> RunOutput {
         claude::find_claude(claude::FindClaude::default()).await;
     }
     let mut cmd = tokio::process::Command::new(&opts.bin);
+    // A ticket's process gets a temp folder of its own, removed when it ends (`run_temp.rs`).
+    let temp = match opts.env.get("CKANBAN_TICKET") {
+        Some(t) if !opts.env.contains_key("TMPDIR") => super::run_temp::RunTemp::make(t),
+        _ => None,
+    };
     let env = inherited_env(std::env::vars().map(|(k, v)| if k == "PATH" { (k, claude::path_for_runs(&v)) } else { (k, v) }));
     cmd.args(&opts.args).current_dir(&opts.cwd).env_clear().envs(env).envs(&opts.env);
+    if let Some(t) = &temp {
+        cmd.env("TMPDIR", t.path());
+    }
     cmd.stdin(if opts.input.is_some() { Stdio::piped() } else { Stdio::null() }).stdout(Stdio::piped()).stderr(Stdio::piped());
     // Own process group so stop() can take down tools Claude spawned (shells, dev servers).
     cmd.process_group(0);
@@ -821,6 +829,9 @@ async fn run(mut opts: RunOptions, ctl: Arc<Ctl>) -> RunOutput {
         }
     }
     let stderr = stderr_task.await.unwrap_or_default();
+    if let Some(t) = temp {
+        t.finish().await;
+    }
     r.stall_at = None;
     for (_, (reply, _)) in r.pending.drain() {
         let _ = reply.send(Err("the run ended".into()));
