@@ -43,6 +43,14 @@ export class Golden {
 }
 
 /**
+ * A board run's own temp folder (`<temp>/ckanban-runs/<board>-<ticket>-<random>`, the TMPDIR of a test run started by
+ * the board) holds that run's ticket id: left in, it takes the first ticket name and shifts every later one.
+ */
+export function dropRunTemp(text: string): string {
+  return text.replace(/\/ckanban-runs\/[^/"\n\\ ]+/g, "/ckanban-runs/run");
+}
+
+/**
  * What differs between two runs of the same script: ids (named in the order they first appear, so the same object
  * gets the same name), times, durations, ports and temp paths.
  */
@@ -52,7 +60,7 @@ export function runMasker(): (text: string) => string {
     if (!seen.has(m)) seen.set(m, `<${kind}${seen.size}>`);
     return seen.get(m)!;
   };
-  return (text) => text
+  return (text) => dropRunTemp(text)
     .replace(/[tshjc]_\d{8}_[a-z0-9]{4}(?![a-z0-9])/g, name("ticket"))
     .replace(/(?:(?<=\\n)|(?<![a-z0-9]))[hsjc]_[0-9a-z]{6,}(?![a-z0-9])/g, name("id"))
     .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g, name("uuid"))

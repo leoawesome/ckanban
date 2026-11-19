@@ -56,11 +56,23 @@ export interface BoardBrowserView {
   checkedAt: string | null;
   /** Tasks using it now. */
   inUse: number;
+  /** Who uses it now: a task's run, or a huddle helper on a task (`id` is that task). */
+  holders: BrowserHolder[];
   /** Open window was asked while a task used it: it opens once that task is done. */
   windowPending: boolean;
   /** Last start or close problem, in plain words. */
   error: string | null;
   folder: string;
+}
+
+export interface BrowserHolder {
+  kind: "task" | "huddle" | "chat";
+  /** The board's slug and the ticket's id. */
+  slug: string;
+  id: string;
+  /** The ticket's title (null when it is gone) and the board's name. */
+  title: string | null;
+  board: string;
 }
 
 export interface BrowsersState {

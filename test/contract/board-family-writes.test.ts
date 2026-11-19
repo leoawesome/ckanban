@@ -8,7 +8,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { type Daemon, startDaemon, until } from "./daemon";
-import { Golden } from "./golden";
+import { dropRunTemp, Golden } from "./golden";
 
 const SLUG = "fam";
 
@@ -151,7 +151,7 @@ function normalize(text: string): string {
     if (!seen.has(m)) seen.set(m, `<${kind}${seen.size}>`);
     return seen.get(m)!;
   };
-  return text
+  return dropRunTemp(text)
     .replace(/t_\d{8}_[a-z0-9]{4}/g, name("ticket"))
     .replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z/g, (m) => (m.startsWith("9999") ? m : "<time>"))
     // A day on its own ("- 2026-11-17: First milestone" in the status file): the day the script ran.
@@ -168,9 +168,9 @@ function normalize(text: string): string {
 /** Ticket ids by their first appearance in the script's answers (the same order on both servers). */
 function ticketNames(steps: Step[]): (text: string) => string {
   const names = new Map<string, string>();
-  for (const m of JSON.stringify(steps).matchAll(/t_\d{8}_[a-z0-9]{4}/g)) if (!names.has(m[0])) names.set(m[0], `<t${names.size}>`);
+  for (const m of dropRunTemp(JSON.stringify(steps)).matchAll(/t_\d{8}_[a-z0-9]{4}/g)) if (!names.has(m[0])) names.set(m[0], `<t${names.size}>`);
   // familySig lists the family sorted by ticket id, which differs between the two runs: sorted again by name.
-  return (text) => text.replace(/t_\d{8}_[a-z0-9]{4}/g, (m) => names.get(m) ?? m)
+  return (text) => dropRunTemp(text).replace(/t_\d{8}_[a-z0-9]{4}/g, (m) => names.get(m) ?? m)
     .replace(/("familySig": ?")([^"]*)"/g, (_, head, sig) => `${head}${sig.split("|").sort().join("|")}"`);
 }
 

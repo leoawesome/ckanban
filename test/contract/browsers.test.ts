@@ -3,7 +3,7 @@
 // contracts/data-files.md (devices.json, browsers.json, board-browsers.json).
 // No real Chrome ever starts: the daemon's Chrome is the stub from daemon.ts (it notes its arguments and exits), and
 // "user only" requests come from user-browser.ts. The fake Claude runs in slow mode, so a run stays active until the
-// test stops it (a run holds its board browsers and devices while it runs).
+// test stops it (a run holds its devices while it runs, and a board browser from its tools' first call).
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { existsSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -216,7 +216,7 @@ describe("board browsers (/api/board-browsers)", () => {
     expect(typeof r.data.message).toBe("string");
   });
 
-  test("while a run uses it: ensure starts it hidden, close and remove are refused; after the run, ensure is 409", async () => {
+  test("a run holds it only from its tools' first call (claim): then close and remove are refused; after the run, the secret and ensure are 409/403", async () => {
     const t = await ticket("Uses the browser");
     // Choosing a board browser for a ticket is the user's too.
     expect((await d.api("PATCH", `/api/profiles/${SLUG}/tickets/${t}`, { browsers: [{ kind: "board", id }] }, origin())).status).toBe(403);
@@ -224,27 +224,42 @@ describe("board browsers (/api/board-browsers)", () => {
     expect(set.status).toBe(200);
     expect(set.data.browsers).toEqual([{ kind: "board", id, note: "for customers" }]);
     const before = d.chromeStarts().length;
+    const calls = () => readFileSync(d.env.FAKE_ARGS_FILE, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
+    const sent = existsSync(d.env.FAKE_ARGS_FILE) ? calls().length : 0;
     await startRun(t);
-    const view = await until(async () => {
-      const v = (await d.api("GET", "/api/board-browsers")).data.boardBrowsers.find((x: any) => x.id === id);
-      return v.inUse === 1 ? v : null;
-    }, 10_000, "the run to hold the browser");
-    expect(typeof view.lastUsedAt).toBe("string");
-    // The run's start tried to start it hidden (the stub then closed).
+    // The run gets the browser's tool server with its secret, but holds nothing and starts nothing yet.
+    // The run's Claude (not any other Claude call the board makes): the one given this browser's tool server.
+    const browserTool = (c: any): string[] | null => {
+      const i = c.args.indexOf("--mcp-config");
+      return i < 0 ? null : JSON.parse(c.args[i + 1]).mcpServers?.[`browser-${id}`]?.args ?? null;
+    };
+    const tool: string[] = await until(() => (existsSync(d.env.FAKE_ARGS_FILE) ? calls().slice(sent).map(browserTool).find(Boolean) ?? null : null), 10_000, "the run's Claude");
+    expect(tool).toContain("browser-mcp");
+    const secret = tool[tool.indexOf("--claim") + 1];
+    expect(secret).toMatch(/^[0-9a-f]{48}$/);
+    const idle = (await d.api("GET", "/api/board-browsers")).data.boardBrowsers.find((x: any) => x.id === id);
+    expect(idle).toMatchObject({ inUse: 0, holders: [] });
+    expect(d.chromeStarts().length).toBe(before);
+
+    // Nobody else can hold it: no secret, a wrong one, the user, a run header.
+    expect((await d.api("POST", `/api/board-browsers/${id}/claim`, {}, { [RUN]: `${SLUG}/${t}` })).status).toBe(403);
+    expect((await d.api("POST", `/api/board-browsers/${id}/claim`, { token: "0".repeat(48) })).status).toBe(403);
+    expect((await user("POST", `/api/board-browsers/${id}/claim`, { token: "nope" })).status).toBe(403);
+
+    // The tools' first call holds it and starts it hidden (the stub then closes: 502, and the hold is dropped).
+    const claim = await d.api("POST", `/api/board-browsers/${id}/claim`, { token: secret });
+    expect(claim.status).toBe(502);
     await until(() => d.chromeStarts().length > before, 10_000, "a Chrome start for the run");
     const hidden = d.chromeStarts()[before];
     expect(hidden).toContain(`--user-data-dir=${join(d.home, "browsers", id)}`);
     expect(hidden.some((a) => a.startsWith("--headless"))).toBe(true);
-
-    const ensure = await d.api("POST", `/api/board-browsers/${id}/ensure`, {}, { [RUN]: `${SLUG}/${t}` });
-    expect(ensure.status).toBe(502);
-    const close = await user("POST", `/api/board-browsers/${id}/close`, {});
-    expect(close.status).toBe(409);
-    expect(close.data.error).toMatch(/task/);
-    expect((await user("DELETE", `/api/board-browsers/${id}`)).status).toBe(409);
+    const after = (await d.api("GET", "/api/board-browsers")).data.boardBrowsers.find((x: any) => x.id === id);
+    expect(after.inUse).toBe(0);
+    expect(typeof after.lastUsedAt).toBe("string");
 
     await stopRun(t);
-    await until(async () => (await d.api("GET", "/api/board-browsers")).data.boardBrowsers.find((x: any) => x.id === id).inUse === 0, 10_000, "the run to let go");
+    // The run is over: its secret no longer works.
+    expect((await d.api("POST", `/api/board-browsers/${id}/claim`, { token: secret })).status).toBe(403);
     expect((await d.api("POST", `/api/board-browsers/${id}/ensure`, {})).status).toBe(409);
   }, 60_000);
 

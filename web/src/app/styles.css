@@ -5154,6 +5154,9 @@ button.composer-old:hover { color: var(--text); }
 .browser-keep > span { display: flex; flex-direction: column; font-size: var(--fs-sm); }
 .browser-start { display: flex; align-items: center; gap: var(--sp-3); }
 .browser-start input { width: 220px; }
+/* Who holds a board browser now (BrowserHolders): one line per holder, then what Open window does meanwhile. */
+.browser-use { display: flex; flex-direction: column; gap: var(--sp-1); background: var(--surface-2); border-radius: var(--r-md); padding: var(--sp-3) var(--sp-3h); font-size: var(--fs-sm); overflow-wrap: anywhere; }
+.browser-use .link-btn { display: inline; }
 .browser-msg { background: var(--ok-soft); color: var(--ok); border-radius: var(--r-sm); padding: var(--sp-2) var(--sp-3); align-self: flex-start; }
 /* The whole id, wrapped (never cut mid-way): it is how the board tells two Chromes apart. */
 .browser-id { font-family: var(--mono); font-size: var(--fs-2xs); overflow-wrap: anywhere; }

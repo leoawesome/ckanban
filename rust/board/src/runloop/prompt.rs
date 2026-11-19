@@ -449,8 +449,9 @@ impl RunLoop {
         crate::runs::js::stringify(&json!({ "mcpServers": m }))
     }
 
-    /// `browserServers`: tool servers for the board browsers in a list (without starting them).
-    pub(super) fn browser_servers(&self, picks: Option<&Value>, out_dir: Option<&std::path::Path>) -> Map<String, Value> {
+    /// `browserServers`: tool servers for the board browsers in a list (without starting them). `claim`: the run's
+    /// secret from `grant`, so its tools can hold the browser on their first call (None: they can't, e.g. /context).
+    pub(super) fn browser_servers(&self, picks: Option<&Value>, out_dir: Option<&std::path::Path>, claim: Option<&str>) -> Map<String, Value> {
         let mut out = Map::new();
         let Some(b) = &self.browsers else { return out };
         for p in picks.and_then(Value::as_array).into_iter().flatten() {
@@ -464,6 +465,9 @@ impl RunLoop {
             let (command, args) = self.opts.mcp_argv.split_first().map(|(c, _)| (c.clone(), Vec::<String>::new())).unwrap_or_else(|| ("ckanban".into(), vec![]));
             let mut a = args;
             a.extend(["browser-mcp", "--id", id, "--name", &bb.name, "--dir", &folder.to_string_lossy(), "--out", &dir.to_string_lossy()].map(String::from));
+            if let Some(token) = claim {
+                a.extend(["--claim".to_string(), token.to_string()]);
+            }
             out.insert(crate::browsers::board_browsers::server_name(id), json!({ "command": command, "args": a }));
         }
         out
@@ -488,7 +492,7 @@ impl RunLoop {
             None => {
                 let picks = self.devices.browser_picks(slug, Some(&t.id));
                 let out = self.tickets.ticket_dir(slug, &t.id).join("outputs");
-                servers.extend(self.browser_servers(picks.as_ref(), Some(&out)));
+                servers.extend(self.browser_servers(picks.as_ref(), Some(&out), None));
             }
         }
         let model = ts(t, "model").map(str::to_string).or_else(|| if t.main { profile.get("mainModel").and_then(Value::as_str).filter(|s| !s.is_empty()).map(str::to_string) } else { None }).or_else(|| profile.get("model").and_then(Value::as_str).filter(|s| !s.is_empty()).map(str::to_string));
@@ -518,8 +522,10 @@ impl RunLoop {
         env
     }
 
-    /// `runBrowsers`: each chosen board browser started and held for the run (`lease`); one that can't start is left
-    /// out and the run told so. Nothing chosen: nothing changes.
+    /// `runBrowsers`: each chosen board browser's tool server for the run. Nothing starts and nothing is held here:
+    /// the run may claim them (`grant`, under `lease`), and its tools hold a browser only from their first browser
+    /// call (`claim`) until the run ends or makes no browser call for a while. A removed browser (or no Chrome on the
+    /// Mac) is left out and the run told so. Nothing chosen: nothing changes.
     pub(crate) async fn run_browsers(&self, slug: &str, id: &str, lease: &str, out_dir: &std::path::Path) -> RunBrowsers {
         let Some(b) = self.browsers.clone() else { return RunBrowsers::default() };
         let picks = self.devices.browser_picks(slug, Some(id));
@@ -542,20 +548,24 @@ impl RunLoop {
         }
         let mut servers = Map::new();
         if !own.is_empty() {
+            let installed = b.board_browsers.chrome_installed();
             let ids: Vec<String> = own.iter().map(|(i, _)| i.clone()).collect();
-            let got = b.board_browsers.acquire(lease, &ids).await;
-            let up: Vec<Value> = own.iter().filter(|(i, _)| got.get(i).is_some_and(|r| r.is_ok())).map(|(i, _)| json!({ "kind": "board", "id": i })).collect();
-            servers = self.browser_servers(Some(&Value::Array(up)), Some(out_dir));
+            let kind = if lease.starts_with("huddle:") { "huddle" } else { "task" };
+            let holder = crate::browsers::board_browsers::Holder { kind, slug: slug.to_string(), id: id.to_string() };
+            let token = b.board_browsers.grant(lease, &ids, holder);
+            if installed {
+                let up: Vec<Value> = ids.iter().map(|i| json!({ "kind": "board", "id": i })).collect();
+                servers = self.browser_servers(Some(&Value::Array(up)), Some(out_dir), Some(&token));
+            }
             for (pid, note) in own {
                 let Some(bb) = b.board_browsers.get(&pid) else { continue };
-                let r = got.get(&pid);
                 board.push(BoardBrowserChoice {
                     id: bb.id.clone(),
                     name: bb.name.clone(),
                     note,
                     server: crate::browsers::board_browsers::server_name(&bb.id),
-                    available: r.is_some_and(|r| r.is_ok()),
-                    why: r.and_then(|r| r.as_ref().err().cloned()),
+                    available: installed,
+                    why: (!installed).then(|| "Google Chrome isn't installed on this Mac".to_string()),
                 });
             }
         }

@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { api, subscribe, type BoardBrowserView, type BrowserPick, type BrowsersState, type ChromeBrowser } from "../../lib/api";
+import { api, subscribe, type BoardBrowserView, type BrowserHolder, type BrowserPick, type BrowsersState, type ChromeBrowser } from "../../lib/api";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { Modal, useFormDirty } from "../../components/Modal";
 import { FormError, LoadState, SavedNote, useSavedFlash } from "../../components/formParts";
@@ -98,7 +98,11 @@ export function BrowserPicker({ state, value, onChange }: {
  * logins) as cards, Add, the user's own Chromes through the Claude extension (chromes.ts) folded, then the browsers
  * each board uses.
  */
-export function BrowsersDialog({ onClose }: { onClose: () => void }) {
+export function BrowsersDialog({ onClose, onOpenTicket }: {
+  onClose: () => void;
+  /** Opens a holder's ticket (on its board). */
+  onOpenTicket?: (board: string, id: string) => void;
+}) {
   const [state, setState] = useState<BrowsersState | null>(null);
   const [error, setError] = useState<string | null>(null);
   useNow();
@@ -138,7 +142,7 @@ export function BrowsersDialog({ onClose }: { onClose: () => void }) {
               <p className="muted small">None yet. Add one for each set of logins a task needs, for example a business WhatsApp.</p>
             )}
             {boardBrowsers.map((b) => (
-              <BoardBrowserCard key={b.id} browser={b} chromeInstalled={state.chrome.installed} setState={setState} />
+              <BoardBrowserCard key={b.id} browser={b} chromeInstalled={state.chrome.installed} setState={setState} onOpenTicket={onOpenTicket} />
             ))}
             <AddBoardBrowser disabled={!state.chrome.installed} onAdded={setState} />
 
@@ -176,10 +180,11 @@ export function BrowsersDialog({ onClose }: { onClose: () => void }) {
 }
 
 /** One board browser: name, Signed in / Needs sign-in, last site and use, Open window or Sign in, keep running, rename, remove. */
-function BoardBrowserCard({ browser: b, chromeInstalled, setState }: {
+function BoardBrowserCard({ browser: b, chromeInstalled, setState, onOpenTicket }: {
   browser: BoardBrowserView;
   chromeInstalled: boolean;
   setState: (s: BrowsersState) => void;
+  onOpenTicket?: (board: string, id: string) => void;
 }) {
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState(b.name);
@@ -265,19 +270,16 @@ function BoardBrowserCard({ browser: b, chromeInstalled, setState }: {
           {!renaming && <button className="btn ghost" disabled={!!busy} onClick={() => setRenaming(true)}>Rename</button>}
           {!inUse && <button className="btn ghost danger browser-remove-btn" disabled={!!busy} onClick={() => setConfirming(true)}>Remove</button>}
         </div>
-        <span className="muted small">
-          {b.windowPending
-            ? "A task is using it now. Its window opens on your Mac once the task is done."
-            : inUse
-              ? "A task is using it now. Open window waits until the task is done; the window opens on your Mac."
-              : phone
-                ? needsSignIn && running
-                  ? "Or sign in above, from this phone. The button opens a window on the Mac, not on this phone."
-                  : "Opens a Chrome window on the Mac, not on this phone."
-                : needsSignIn || notChecked
-                  ? "Opens a Chrome window on your Mac. Sign in to the sites this browser needs, then close it."
-                  : "Opens a Chrome window on your Mac."}
-        </span>
+        {inUse && <BrowserHolders holders={b.holders ?? []} pending={b.windowPending} onOpenTicket={onOpenTicket} />}
+        {!inUse && <span className="muted small">
+          {phone
+            ? needsSignIn && running
+              ? "Or sign in above, from this phone. The button opens a window on the Mac, not on this phone."
+              : "Opens a Chrome window on the Mac, not on this phone."
+            : needsSignIn || notChecked
+              ? "Opens a Chrome window on your Mac. Sign in to the sites this browser needs, then close it."
+              : "Opens a Chrome window on your Mac."}
+        </span>}
         <label className="browser-keep">
           <input type="checkbox" role="switch" className="switch" checked={b.keepRunning} disabled={!!busy}
             onChange={async (e) => { if (await run("keep", () => api.updateBoardBrowser(b.id, { keepRunning: e.target.checked }))) saved.flash(); }} />
@@ -307,6 +309,38 @@ function BoardBrowserCard({ browser: b, chromeInstalled, setState }: {
           This deletes the browser and every login saved in it. To use those sites again, you would add a new browser and sign in again.
         </ConfirmDialog>
       )}
+    </div>
+  );
+}
+
+/**
+ * Who holds a board browser now, one line each ("Used now by <task> (<board>)", the task a link to it; a huddle
+ * helper or a quick chat gets a plain label), then what Open window does meanwhile.
+ */
+function BrowserHolders({ holders, pending, onOpenTicket }: {
+  holders: BrowserHolder[];
+  pending: boolean;
+  onOpenTicket?: (board: string, id: string) => void;
+}) {
+  const task = (h: BrowserHolder, link: boolean) => {
+    const title = h.title ?? "a task that was deleted";
+    return link && onOpenTicket && h.title
+      ? <button className="link-btn browser-use-task" onClick={() => onOpenTicket(h.slug, h.id)}>{title}</button>
+      : <span className="browser-use-task">{title}</span>;
+  };
+  const after = pending
+    ? "Its window opens on your Mac once it is done with the browser."
+    : "Open window waits until it is done with the browser.";
+  return (
+    <div className="browser-use">
+      {holders.length === 0 && <span>A task is using it now.</span>}
+      {holders.map((h) => (
+        <span key={`${h.kind}:${h.slug}/${h.id}`}>
+          Used now by {h.kind === "chat" ? "a quick chat" : h.kind === "huddle" ? <>a huddle on {task(h, false)}</> : task(h, true)}
+          {" "}<span className="muted">({h.board})</span>
+        </span>
+      ))}
+      <span className="muted">{after}</span>
     </div>
   );
 }

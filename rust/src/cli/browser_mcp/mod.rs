@@ -3,6 +3,9 @@
 //! use, named browser-<id>, so its tools are mcp__browser-<id>__browser_*. Same tools, texts and files as Bun's: the
 //! tool list (tools.json) and the page scripts (page-lib.js, snapshot.js) are Bun's own, written out by
 //! `bun -e` from browser-mcp.ts. Only 127.0.0.1 is dialled (ckanban_board::browsers::cdp).
+//!
+//! With `--claim <secret>` (a board run's tools) the browser is held for the run only from its first browser call:
+//! each call tells the board (`POST /api/board-browsers/<id>/claim`, at most once a minute), which starts it if needed.
 
 use std::collections::HashSet;
 use std::path::{Component, Path, PathBuf};
@@ -21,6 +24,8 @@ const PAGE_LIB: &str = include_str!("page-lib.js");
 const SNAPSHOT_JS: &str = include_str!("snapshot.js");
 const TOOLS_JSON: &str = include_str!("tools.json");
 const USAGE: &str = "usage: ckanban browser-mcp --id <id> --dir <data folder> [--name <name>] [--out <folder>]";
+/// How often a working run tells the board it still uses the browser (well inside the board's 5 idle minutes).
+const TOUCH_EVERY: Duration = Duration::from_secs(60);
 
 fn ms(n: u64) -> Duration {
     Duration::from_millis(n)
@@ -230,6 +235,10 @@ pub struct BrowserMcp {
     dir: PathBuf,
     out: PathBuf,
     port: u16,
+    /// The run's secret for holding the browser (`--claim`); None: the old way (the browser is held for the whole run).
+    claim: Option<String>,
+    /// When this run last told the board it is using the browser.
+    claimed_at: Mutex<Option<Instant>>,
     state: Arc<Mutex<State>>,
     notes: Arc<Mutex<Vec<String>>>,
     /// Serialises connecting, so overlapping calls share one connection.
@@ -249,6 +258,32 @@ impl BrowserMcp {
 
     fn not_running(&self) -> String {
         format!("The board browser \"{}\" isn't running and couldn't be started. Tell the user it isn't available right now; don't use another browser in its place.", self.name)
+    }
+
+    /// Tells the board this run is using the browser (`hold`): the first call holds it for this run (and starts it,
+    /// waiting for that), later ones keep the hold from running out while the run works. Sent at most once a
+    /// `TOUCH_EVERY` unless `force`. A board that can't be reached doesn't stop the call; a refusal does.
+    async fn hold(&self, force: bool) -> R<()> {
+        let Some(token) = &self.claim else { return Ok(()) };
+        if !force && self.claimed_at.lock().expect("claimed").is_some_and(|t| t.elapsed() < TOUCH_EVERY) {
+            return Ok(());
+        }
+        let Ok(c) = reqwest::Client::builder().no_proxy().timeout(Duration::from_secs(90)).build() else { return Ok(()) };
+        let id = super::http::enc(&self.id);
+        let r = c
+            .post(format!("http://localhost:{}/api/board-browsers/{id}/claim", self.port))
+            .header("content-type", "application/json")
+            .body(stringify(&json!({ "token": token })))
+            .send()
+            .await;
+        let Ok(r) = r else { return Ok(()) };
+        if r.status().is_success() {
+            *self.claimed_at.lock().expect("claimed") = Some(Instant::now());
+            return Ok(());
+        }
+        let text = r.text().await.unwrap_or_default();
+        let why = bjs::parse(&text).and_then(|v| v.get("error").and_then(Value::as_str).map(str::to_string)).unwrap_or(text);
+        Err(format!("The board browser \"{}\" isn't available to this task right now: {why} Tell the user; don't use another browser in its place.", self.name))
     }
 
     /// Asks the daemon to start the browser when it isn't running.
@@ -279,7 +314,11 @@ impl BrowserMcp {
             Some(pf) => pf,
             None => {
                 // Not running (it crashed, or was closed): the daemon starts it again, then the new port is read.
-                self.ensure().await;
+                if self.claim.is_some() {
+                    self.hold(true).await?;
+                } else {
+                    self.ensure().await;
+                }
                 self.ready_port().await.ok_or_else(|| self.not_running())?
             }
         };
@@ -698,7 +737,11 @@ impl BrowserMcp {
             Some(v @ (Value::Object(_) | Value::Array(_))) => v,
             _ => &empty,
         };
-        match self.run(name, a).await {
+        let out = match self.hold(false).await {
+            Ok(()) => self.run(name, a).await,
+            Err(e) => Err(e),
+        };
+        match out {
             Ok(out) => {
                 let mut content = match out {
                     Value::String(s) => vec![json!({ "type": "text", "text": s })],
@@ -828,6 +871,8 @@ pub fn run(argv: &[String]) -> u8 {
         dir: dir.into(),
         out,
         port: super::board_port(),
+        claim: arg(argv, "claim").filter(|t| !t.is_empty()).map(str::to_string),
+        claimed_at: Mutex::new(None),
         state: Arc::new(Mutex::new(State { cdp: None, own: HashSet::new(), current: None })),
         notes: Arc::new(Mutex::new(Vec::new())),
         connecting: tokio::sync::Mutex::new(()),

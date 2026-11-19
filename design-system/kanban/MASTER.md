@@ -190,6 +190,8 @@ Small numbers (0 to 7) only order parts inside one component (a resize handle ov
 
 **Settings windows** (Automations, Connections, Devices, Browsers, Schedules, Squads, Notifications, Board settings). Same frame: title, one-line explanation, list, then detail. Phone: list then detail with a back arrow (the Automations pattern). Empty list: a short sentence on what it is, one example, and the primary action. Loading: skeleton rows the size of real rows, not a spinner in empty space. Errors: inline banner with a Retry.
 
+**Something in use** (a board browser, a device): name who uses it, one line each, "Used now by <task> (<board>)" with the task a link that opens it (a huddle helper or quick chat is a plain label), then what the user's action does meanwhile. A `.chip`-style tag ("In use by a task") stays for a glance; the lines sit in a `--surface-2` box with `--r-md`.
+
 **Toasts.** Bottom centre (desktop) or above the bottom nav (phone). `role="status"` (`role="alert"` for errors), never takes focus. 4s for info, 8s when there is an Undo, errors stay until closed. Max 3 stacked. Close button 32px / 44px phone.
 
 **Empty and loading states.** Empty: what goes here, why it's empty, one action. Loading under 300ms shows nothing; under 1s a quiet spinner; longer shows skeletons; past 10s says what it is waiting for and offers Retry.

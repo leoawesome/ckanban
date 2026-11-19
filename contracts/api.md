@@ -258,7 +258,8 @@ found"}`, also for `/info`.
 Board browsers (board-browsers.ts) and named Chromes (chromes.ts) share one view, here called `BrowsersView`: the
 Chromes view (`browsers.json` as saved: `{browsers, listedAt, connected}`), plus `boardBrowsers` (`BoardBrowserView[]`:
 the saved entry plus `state`, `signIn` "Signed in"/"Needs sign-in"/"Not checked", `signInSite`, `checkedAt`, `inUse`
-(runs holding it), `windowPending`, `error` (last start or close problem, plain words, or null), `folder`
+(runs holding it), `holders` (who holds it: `[{kind: "task"|"huddle", slug, id, title, board}]`, `id` a huddle's host
+ticket, `title` null when the ticket is gone, `board` the board's name or its slug), `windowPending`, `error` (last start or close problem, plain words, or null), `folder`
 (`<data>/browsers/<id>`)), `chrome: {installed, message}` (whether Google Chrome is found: `CKANBAN_CHROME_BIN`, then
 the usual app paths), and `boards: [{slug, name, chrome, browsers}]` (`browsers` is the board's own picks or null).
 `:id` and `:deviceId` are percent-decoded.
@@ -271,8 +272,11 @@ the usual app paths), and `boards: [{slug, name, chrome, browsers}]` (`browsers`
 - Starting Chrome (open, sign-in, ensure, a run's start): a Chrome that exits before it reports its port gives 502,
   too slow 504; the message also shows as the browser's `error`. open and sign-in start it with a window on
   `--user-data-dir=<folder>` and the given URL; ensure and a run's start start it hidden (`--headless=new`).
-- A run whose ticket or board picked a board browser holds it (`inUse`) from its start until it ends, even when Chrome
-  couldn't start. While held: close and DELETE 409, ensure tries to start it; once let go, ensure 409.
+- A run (or huddle helper) whose ticket or board picked a board browser gets its tool server with a secret
+  (`browser-mcp --claim`) but holds nothing at its start. Its first browser call holds it (`claim`, which starts
+  Chrome hidden if needed); it lets go when the run ends or after 5 minutes with no browser call (its next call holds
+  it again). A claim whose Chrome can't start doesn't hold it. While held: close and DELETE 409, open and sign-in wait
+  (`windowPending`) and open once the last holder lets go, ensure tries to start it; once let go, ensure 409.
 - close on a browser that isn't running: 200 `closed: true`. screen and input: 404 unknown, 409 when it isn't
   running or doesn't need sign-in; input checks its shape first (400 for a tap outside 0..1, an unknown key or type).
 - DELETE moves its folder out of `browsers/` at once and deletes it in the background.
@@ -281,6 +285,7 @@ the usual app paths), and `boards: [{slug, name, chrome, browsers}]` (`browsers`
 |---|---|---|---|---|
 | GET | `/api/board-browsers` | | 200 `BrowsersView` | |
 | POST | `/api/board-browsers/:id/ensure` | body ignored | 200 `{ok: true, port}` | 404 unknown browser, 409 no run is using it |
+| POST | `/api/board-browsers/:id/claim` | `{token}`: the run's secret from its `browser-mcp --claim` | 200 `{ok: true, port}` | 403 no live run has that secret or its run didn't pick this browser, 404 unknown browser, `BrowserError` when Chrome can't start |
 | POST | `/api/board-browsers` | `{name}`; user only | 200 `BrowsersView` plus `added` (new id) | 403, `BrowserError` status |
 | PATCH | `/api/board-browsers/:id` | `{name?, keepRunning?, startUrl?}`; user only | 200 `BrowsersView` | 403, `BrowserError` |
 | DELETE | `/api/board-browsers/:id` | user only | 200 `BrowsersView` | 403, `BrowserError` |

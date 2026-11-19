@@ -12,6 +12,10 @@
 //! Hidden (headless) browsers close after `IDLE_MS` without a run, unless "keep running" is on; those start with the
 //! board and again if they die. The state sits behind one lock never held across an await; one start, close or
 //! switch at a time per browser (`serial`).
+//!
+//! A run that picked a browser holds it only while it uses it: `grant` gives the run's tool server a secret, its first
+//! browser call `claim`s the browser (starting it if needed), and the hold ends when the run ends (`release`) or after
+//! `LEASE_IDLE_MS` with no browser call (`expire_leases`). Holds and secrets live in memory only.
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -39,6 +43,8 @@ const STATE_FILE: &str = "board-browsers.json";
 pub const BROWSER_FILES_DIR: &str = "browser-files";
 
 pub const IDLE_MS: f64 = 10.0 * 60_000.0;
+/// A run lets go of a browser it hasn't called for this long (`LEASE_IDLE_MS`); its next call claims it again.
+pub const LEASE_IDLE_MS: f64 = 5.0 * 60_000.0;
 pub const TICK_MS: u64 = 30_000;
 const START_TIMEOUT_MS: u64 = 30_000;
 const CLOSE_TIMEOUT_MS: u64 = 30_000;
@@ -429,13 +435,46 @@ pub fn clean_start_url(v: &Value) -> Result<Option<String>, BrowserError> {
     }
 }
 
+/// Who holds a browser, for the card's "Used now by": a task's run or a huddle helper working on a task.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Holder {
+    /// "task" or "huddle".
+    pub kind: &'static str,
+    pub slug: String,
+    /// The ticket (a huddle's host ticket).
+    pub id: String,
+}
+
+impl Holder {
+    pub fn to_json(&self) -> Value {
+        json!({ "kind": self.kind, "slug": self.slug, "id": self.id })
+    }
+}
+
+/// A run's right to claim some browsers (`grant`), proven by its secret.
+#[derive(Debug, Clone)]
+struct Grant {
+    token: String,
+    ids: HashSet<String>,
+    holder: Holder,
+}
+
+fn new_token() -> String {
+    let mut b = [0u8; 24];
+    getrandom::fill(&mut b).expect("random bytes");
+    b.iter().map(|x| format!("{x:02x}")).collect()
+}
+
 /// Live state that isn't saved, plus the saved lists.
 #[derive(Default)]
 struct State {
     browsers: Vec<BoardBrowser>,
     /// Insertion order kept (Bun's object order).
     running: Vec<(String, Runtime)>,
-    leases: HashMap<String, HashSet<String>>,
+    /// Per browser: the runs holding it now (lease key) and when each last made a browser call.
+    leases: HashMap<String, HashMap<String, f64>>,
+    /// Per lease key: the browsers that run may claim, with its secret (kept in memory only).
+    grants: HashMap<String, Grant>,
     idle_since: HashMap<String, f64>,
     empty_ticks: HashMap<String, u32>,
     misses: HashMap<String, u32>,
@@ -468,7 +507,7 @@ impl State {
         self.running.retain(|(k, _)| k != id);
     }
     fn in_use(&self, id: &str) -> usize {
-        self.leases.get(id).map_or(0, HashSet::len)
+        self.leases.get(id).map_or(0, HashMap::len)
     }
     fn to_json(&self) -> Value {
         let mut running = Map::new();
@@ -584,6 +623,10 @@ impl BoardBrowsers {
                 m.insert("signInSite".into(), site);
                 m.insert("checkedAt".into(), at);
                 m.insert("inUse".into(), json!(s.in_use(&b.id)));
+                let mut keys: Vec<&String> = s.leases.get(&b.id).map(|l| l.keys().collect()).unwrap_or_default();
+                keys.sort();
+                let holders: Vec<Value> = keys.into_iter().filter_map(|k| s.grants.get(k)).map(|g| g.holder.to_json()).collect();
+                m.insert("holders".into(), Value::Array(holders));
                 m.insert("windowPending".into(), json!(s.pending.contains(&b.id)));
                 m.insert("error".into(), json!(s.errors.get(&b.id)));
                 m.insert("folder".into(), json!(self.dir.join(&b.id).to_string_lossy()));
@@ -951,52 +994,84 @@ impl BoardBrowsers {
 
     // --- Runs ---------------------------------------------------------------------------------------
 
-    /// A run (key: "slug/id", a quick chat, a huddle agent) will use these browsers (`acquire`): each one is started if
-    /// needed and kept from closing until `release(key)`. Never fails: a browser that can't start says why.
-    pub async fn acquire(self: &Arc<Self>, key: &str, ids: &[String]) -> HashMap<String, Result<u16, String>> {
-        let mut todo = Vec::new();
-        let mut out = HashMap::new();
-        {
-            let mut s = self.state.lock();
-            for id in ids {
-                if s.get(id).is_none() {
-                    out.insert(id.clone(), Err("it was removed from More, Browsers".to_string()));
-                    continue;
-                }
-                s.leases.entry(id.clone()).or_default().insert(key.to_string());
-                if let Some(b) = s.get_mut(id) {
-                    b.last_used_at = Some(now_iso());
-                }
-                todo.push(id.clone());
-            }
-        }
-        let got = futures_util::future::join_all(todo.iter().map(|id| async move { (id.clone(), self.ensure(id).await.map_err(|e| e.message)) })).await;
-        out.extend(got);
-        self.save();
-        out
+    /// A run (key: "slug/id", or a huddle helper's key) may use these browsers (`grant`): nothing starts and nothing
+    /// is held yet. Its browser tools claim a browser with the secret returned here on their first call (`claim`).
+    /// Browsers that don't exist are left out. Asking again for the same key keeps its secret.
+    pub fn grant(&self, key: &str, ids: &[String], holder: Holder) -> String {
+        let mut s = self.state.lock();
+        let known: Vec<String> = ids.iter().filter(|id| s.get(id).is_some()).cloned().collect();
+        let g = s.grants.entry(key.to_string()).or_insert_with(|| Grant { token: new_token(), ids: HashSet::new(), holder: holder.clone() });
+        g.ids.extend(known);
+        g.holder = holder;
+        g.token.clone()
     }
 
-    /// The run is done with its browsers (`release`): idle ones may close later, a window asked for meanwhile opens.
-    pub fn release(self: &Arc<Self>, key: &str) {
-        let mut open = Vec::new();
-        let mut changed = false;
-        {
+    /// Google Chrome is on this Mac (board browsers can start).
+    pub fn chrome_installed(&self) -> bool {
+        (self.d.chrome_bin)().is_some()
+    }
+
+    /// A run's browser tools are about to use the browser (`claim`): held for that run from now (or still held, its
+    /// idle clock reset) and started if needed; its port. Only the secret `grant` gave that run works. The first call
+    /// waits for the browser to start; a browser that was idle or stopped is started again, never refused.
+    pub async fn claim(self: &Arc<Self>, token: &str, id: &str) -> Result<u16, BrowserError> {
+        let fresh = {
             let mut s = self.state.lock();
+            let Some(key) = s.grants.iter().find(|(_, g)| !token.is_empty() && g.token == token).map(|(k, g)| (k.clone(), g.ids.contains(id))) else {
+                return Err(err(403, "Only the browser tools of a task that picked this browser can use it."));
+            };
+            let (key, allowed) = key;
+            if !allowed {
+                return Err(err(403, "This task didn't pick this browser."));
+            }
+            if s.get(id).is_none() {
+                return Err(err(404, NO_SUCH));
+            }
             let now = (self.d.now)();
-            let ids: Vec<String> = s.leases.keys().cloned().collect();
-            for id in ids {
-                let Some(set) = s.leases.get_mut(&id) else { continue };
-                if !set.remove(key) || !set.is_empty() {
-                    continue;
+            let fresh = s.leases.entry(id.to_string()).or_default().insert(key.clone(), now).is_none();
+            if fresh && let Some(b) = s.get_mut(id) {
+                b.last_used_at = Some(now_iso());
+            }
+            fresh.then_some(key)
+        };
+        if let Some(key) = &fresh {
+            self.note(id, &format!("claimed by {key}"));
+            self.save();
+        }
+        match self.ensure(id).await {
+            Ok(port) => Ok(port),
+            Err(e) => {
+                // It couldn't start: this run doesn't hold it (the card shouldn't name a task that can't use it).
+                if let Some(key) = fresh {
+                    self.let_go(id, &key);
                 }
-                s.leases.remove(&id);
-                s.idle_since.insert(id.clone(), now);
-                if s.pending.contains(&id) && !self.stopped.load(Ordering::SeqCst) {
-                    open.push(id.clone());
-                }
-                changed = true;
+                Err(e)
             }
         }
+    }
+
+    /// Drops one run's hold on one browser (`let_go`); the last one out opens a window asked for meanwhile.
+    fn let_go(self: &Arc<Self>, id: &str, key: &str) {
+        let open = {
+            let mut s = self.state.lock();
+            let now = (self.d.now)();
+            Self::drop_lease(&mut s, id, key, now, self.stopped.load(Ordering::SeqCst))
+        };
+        self.after_drop(open.into_iter().collect(), true);
+    }
+
+    /// Under the lock: `key` stops holding `id`. Returns `Some(id)` when it was the last holder and a window waits.
+    fn drop_lease(s: &mut State, id: &str, key: &str, now: f64, stopped: bool) -> Option<String> {
+        let set = s.leases.get_mut(id)?;
+        if set.remove(key).is_none() || !set.is_empty() {
+            return None;
+        }
+        s.leases.remove(id);
+        s.idle_since.insert(id.to_string(), now);
+        (s.pending.contains(id) && !stopped).then(|| id.to_string())
+    }
+
+    fn after_drop(self: &Arc<Self>, open: Vec<String>, changed: bool) {
         for id in open {
             let me = self.clone();
             tokio::spawn(async move {
@@ -1008,6 +1083,50 @@ impl BoardBrowsers {
         if changed {
             (self.on_change)();
         }
+    }
+
+    /// The run is done with its browsers (`release`): its claims and its secret end, idle ones may close later, a
+    /// window asked for meanwhile opens.
+    pub fn release(self: &Arc<Self>, key: &str) {
+        let mut open = Vec::new();
+        let mut changed = false;
+        {
+            let mut s = self.state.lock();
+            s.grants.remove(key);
+            let now = (self.d.now)();
+            let stopped = self.stopped.load(Ordering::SeqCst);
+            let ids: Vec<String> = s.leases.iter().filter(|(_, l)| l.contains_key(key)).map(|(id, _)| id.clone()).collect();
+            for id in ids {
+                open.extend(Self::drop_lease(&mut s, &id, key, now, stopped));
+                changed = true;
+            }
+        }
+        self.after_drop(open, changed);
+    }
+
+    /// Runs that made no browser call for `LEASE_IDLE_MS` let go (`expire_leases`, each upkeep tick); their next call
+    /// claims it again.
+    pub fn expire_leases(self: &Arc<Self>) {
+        let mut open = Vec::new();
+        let mut gone = Vec::new();
+        {
+            let mut s = self.state.lock();
+            let now = (self.d.now)();
+            let stopped = self.stopped.load(Ordering::SeqCst);
+            let idle: Vec<(String, String)> = s
+                .leases
+                .iter()
+                .flat_map(|(id, l)| l.iter().filter(|(_, at)| now - **at >= LEASE_IDLE_MS).map(move |(k, _)| (id.clone(), k.clone())))
+                .collect();
+            for (id, key) in idle {
+                open.extend(Self::drop_lease(&mut s, &id, &key, now, stopped));
+                gone.push((id, key));
+            }
+        }
+        for (id, key) in &gone {
+            self.note(id, &format!("let go by {key} (no browser call for {} min)", (LEASE_IDLE_MS / 60_000.0).round()));
+        }
+        self.after_drop(open, !gone.is_empty());
     }
 
     // --- The user's actions -------------------------------------------------------------------------
@@ -1246,6 +1365,7 @@ impl BoardBrowsers {
     }
 
     async fn tick_now(self: &Arc<Self>) {
+        self.expire_leases();
         let mut changed = false;
         for id in self.ids() {
             if self.op_running(&id) || self.state.lock().busy.contains_key(&id) {
@@ -1790,6 +1910,121 @@ mod tests {
         }
     }
 
+    fn holder(id: &str) -> Holder {
+        Holder { kind: "task", slug: "b".into(), id: id.into() }
+    }
+
+    /// A board with one browser whose Chrome already runs (adopted on its port file, nothing spawned), and a clock
+    /// the test moves.
+    async fn running_board(d: &Path, clock: Arc<Mutex<f64>>, started: Arc<Mutex<Vec<Vec<String>>>>) -> Arc<BoardBrowsers> {
+        let dir = d.join("browsers/biz-whatsapp");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(PORT_FILE), "53111\n/devtools/browser/0b5e5a6c-1111-2222-3333-444455556666\n").unwrap();
+        std::fs::write(d.join("board-browsers.json"), r#"{"browsers":[{"id":"biz-whatsapp","name":"Biz WhatsApp","createdAt":"2026-11-01T10:00:00.000Z","lastUsedAt":null,"lastSite":null,"keepRunning":false,"signedIn":true,"startUrl":null,"check":null}],"running":{}}"#).unwrap();
+        let mut deps = fake(started);
+        // Asked to close, it is gone.
+        let closed = Arc::new(AtomicBool::new(false));
+        let (c1, c2, c3) = (closed.clone(), closed.clone(), closed);
+        deps.matches = Arc::new(move |pf| {
+            let up = !c1.load(Ordering::SeqCst);
+            Box::pin(async move { up && pf.port == 53111 })
+        });
+        deps.close = Arc::new(move |_| {
+            c2.store(true, Ordering::SeqCst);
+            Box::pin(async { Ok(()) })
+        });
+        deps.owner = Arc::new(|_, _| Box::pin(async { Ok(PortOwner { pid: 777, headless: true }) }));
+        deps.alive = Arc::new(move |pid| pid == 777 && !c3.load(Ordering::SeqCst));
+        deps.now = Arc::new(move || *clock.lock());
+        let bb = BoardBrowsers::new(d, Arc::new(|| {}), deps);
+        bb.init().await;
+        bb
+    }
+
+    #[tokio::test]
+    async fn a_run_holds_a_browser_only_from_its_first_call_until_it_ends() {
+        let d = tempfile::tempdir().unwrap();
+        let clock = Arc::new(Mutex::new(1_000_000.0));
+        let started = Arc::new(Mutex::new(Vec::new()));
+        let bb = running_board(d.path(), clock.clone(), started.clone()).await;
+        let id = "biz-whatsapp";
+        let token = bb.grant("b/t1", &[id.to_string()], holder("t1"));
+        // Granted but never used: not held, so Open window wouldn't wait.
+        assert_eq!(bb.in_use(id), 0);
+        assert_eq!(bb.view().0[0]["holders"], json!([]));
+        // Outside callers and other runs' secrets can't hold it.
+        assert_eq!(bb.claim("", id).await.unwrap_err().status, 403);
+        assert_eq!(bb.claim("not-the-secret", id).await.unwrap_err().status, 403);
+        let other = bb.grant("b/t2", &[], holder("t2"));
+        assert_eq!(bb.claim(&other, id).await.unwrap_err().status, 403);
+        // The first browser call holds it and names the run.
+        assert_eq!(bb.claim(&token, id).await.unwrap(), 53111);
+        assert_eq!(bb.in_use(id), 1);
+        assert_eq!(bb.view().0[0]["holders"], json!([{ "kind": "task", "slug": "b", "id": "t1" }]));
+        // Asking again keeps the same secret.
+        assert_eq!(bb.grant("b/t1", &[id.to_string()], holder("t1")), token);
+        // The run ends: it lets go, and its secret stops working.
+        bb.release("b/t1");
+        assert_eq!(bb.in_use(id), 0);
+        assert_eq!(bb.claim(&token, id).await.unwrap_err().status, 403);
+        assert_eq!(bb.in_use(id), 0);
+    }
+
+    #[tokio::test]
+    async fn an_idle_run_lets_go_and_its_next_call_holds_it_again() {
+        let d = tempfile::tempdir().unwrap();
+        let clock = Arc::new(Mutex::new(1_000_000.0));
+        let started = Arc::new(Mutex::new(Vec::new()));
+        let bb = running_board(d.path(), clock.clone(), started.clone()).await;
+        let id = "biz-whatsapp";
+        let token = bb.grant("huddle:b/h1/qa", &[id.to_string()], Holder { kind: "huddle", slug: "b".into(), id: "t1".into() });
+        bb.claim(&token, id).await.unwrap();
+        // A call within the idle time keeps the hold.
+        *clock.lock() += LEASE_IDLE_MS - 1.0;
+        bb.claim(&token, id).await.unwrap();
+        *clock.lock() += LEASE_IDLE_MS - 1.0;
+        bb.expire_leases();
+        assert_eq!(bb.in_use(id), 1);
+        assert_eq!(bb.view().0[0]["holders"][0]["kind"], "huddle");
+        // No call for the idle time: it lets go.
+        *clock.lock() += 2.0;
+        bb.expire_leases();
+        assert_eq!(bb.in_use(id), 0);
+        // Its next call holds it again: the hold ran out, the right to use it didn't. Nothing new was started.
+        assert_eq!(bb.claim(&token, id).await.unwrap(), 53111);
+        assert_eq!(bb.in_use(id), 1);
+        assert!(started.lock().is_empty());
+        bb.release("huddle:b/h1/qa");
+        assert_eq!(bb.in_use(id), 0);
+    }
+
+    #[tokio::test]
+    async fn open_window_waits_for_the_holder_then_opens() {
+        let d = tempfile::tempdir().unwrap();
+        let clock = Arc::new(Mutex::new(1_000_000.0));
+        let started = Arc::new(Mutex::new(Vec::new()));
+        let bb = running_board(d.path(), clock.clone(), started.clone()).await;
+        let id = "biz-whatsapp";
+        let token = bb.grant("b/t1", &[id.to_string()], holder("t1"));
+        // Granted, never called: Open window doesn't wait (it goes ahead, and starts Chrome with a window).
+        bb.claim(&token, id).await.unwrap();
+        let (opened, msg) = bb.open_window(id, &Value::Null).await.unwrap();
+        assert!(!opened, "{msg}");
+        assert!(bb.view().0[0]["windowPending"].as_bool().unwrap());
+        assert!(started.lock().is_empty(), "nothing taken from the run mid-task");
+        // The run goes idle: the window it waited for opens (with a window, not hidden).
+        *clock.lock() += LEASE_IDLE_MS;
+        bb.expire_leases();
+        for _ in 0..300 {
+            if !started.lock().is_empty() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        let argv = started.lock().first().cloned().expect("the window was opened once the run let go");
+        assert!(!argv.iter().any(|a| a.starts_with("--headless")));
+    }
+
     #[test]
     fn names_slugs_and_addresses_like_bun() {
         assert_eq!(slug_for("  Work: WhatsApp!"), "work-whatsapp");
@@ -1838,14 +2073,13 @@ mod tests {
         assert_eq!(bb.input("work-whatsapp", &json!({"type":"click","x":2,"y":0})).await.unwrap_err().status, 400);
         assert_eq!(bb.input("work-whatsapp", &json!({"type":"text","text":"hi"})).await.unwrap_err().status, 409);
         assert!(bb.close("work-whatsapp", "test").await.unwrap());
-        // A run holds it: remove is refused until it lets go.
-        let got = bb.acquire("b/t1", &["work-whatsapp".to_string(), "gone".to_string()]).await;
-        assert!(got["work-whatsapp"].is_err());
-        assert_eq!(got["gone"], Err("it was removed from More, Browsers".to_string()));
-        assert_eq!(bb.in_use("work-whatsapp"), 1);
-        assert_eq!(bb.remove("work-whatsapp").await.unwrap_err().status, 409);
-        bb.release("b/t1");
+        // A run that may use it but hasn't called it holds nothing; a claim whose Chrome can't start doesn't hold it.
+        let token = bb.grant("b/t1", &["work-whatsapp".to_string(), "gone".to_string()], holder("t1"));
         assert_eq!(bb.in_use("work-whatsapp"), 0);
+        assert_eq!(bb.claim(&token, "work-whatsapp").await.unwrap_err().status, 502);
+        assert_eq!(bb.in_use("work-whatsapp"), 0);
+        assert_eq!(bb.claim(&token, "gone").await.unwrap_err().status, 403);
+        bb.release("b/t1");
         bb.remove("work-whatsapp").await.unwrap();
         assert!(!d.path().join("browsers/work-whatsapp").exists());
         assert_eq!(bb.remove("work-whatsapp").await.unwrap_err().status, 404);

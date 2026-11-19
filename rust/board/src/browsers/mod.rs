@@ -187,7 +187,20 @@ impl Browsers {
     /// `browsersView`: the named Chromes, the board's own browsers, and each board's choice.
     pub fn browsers_view(&self) -> Value {
         let mut m = self.chromes.view().to_json();
-        let (own, chrome) = self.board_browsers.view();
+        let (mut own, chrome) = self.board_browsers.view();
+        // Each holder's ticket title and board name, read by id (one small file each; a browser has few holders).
+        for b in &mut own {
+            let Some(hs) = b.get_mut("holders").and_then(Value::as_array_mut) else { continue };
+            for h in hs.iter_mut() {
+                let (Some(slug), Some(id)) = (h.get("slug").and_then(Value::as_str).map(str::to_string), h.get("id").and_then(Value::as_str).map(str::to_string)) else { continue };
+                let title = self.lookup.ticket(&slug, &id).and_then(|t| t.get("title").cloned()).unwrap_or(Value::Null);
+                let board = self.lookup.profile(&slug).and_then(|p| p.get("name").cloned()).unwrap_or_else(|| json!(slug));
+                if let Some(o) = h.as_object_mut() {
+                    o.insert("title".into(), title);
+                    o.insert("board".into(), board);
+                }
+            }
+        }
         m.insert("boardBrowsers".into(), Value::Array(own));
         m.insert("chrome".into(), chrome);
         let boards: Vec<Value> = self

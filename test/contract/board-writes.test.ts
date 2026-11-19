@@ -8,7 +8,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { chmodSync, existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { type Daemon, startDaemon, until } from "./daemon";
-import { Golden } from "./golden";
+import { dropRunTemp, Golden } from "./golden";
 
 const SLUG = "writes";
 const SECRET = "sntrys_SECRET_value_9d1c42aa";
@@ -190,7 +190,7 @@ function normalize(text: string): string {
     if (!seen.has(m)) seen.set(m, `<${kind}${seen.size}>`);
     return seen.get(m)!;
   };
-  return text
+  return dropRunTemp(text)
     .replace(/t_\d{8}_[a-z0-9]{4}/g, name("ticket"))
     .replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z/g, (m) => (m.startsWith("9999") ? m : "<time>"))
     .replace(/[0-9a-f]{32}\.png/g, name("file"))

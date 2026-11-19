@@ -8,7 +8,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { DAEMON_CMD, type Daemon, startDaemon, until } from "./daemon";
-import { Golden } from "./golden";
+import { dropRunTemp, Golden } from "./golden";
 import { Scripts, scriptDir, settled } from "./runs";
 
 const SLUG = "parity";
@@ -30,7 +30,9 @@ async function script(d: Daemon, s: Scripts): Promise<Step[]> {
     return r;
   };
   const wait = async (what: string, id: string, ok: (t: any) => boolean) => {
-    const v = await settled(d, SLUG, id, ok);
+    // runStartedAt is cleared by the run's last ticket write, a moment after `running` turns false: read before it,
+    // the answer lacks that write (about 1 run in 10 under load).
+    const v = await settled(d, SLUG, id, (t) => ok(t) && t.runStartedAt == null);
     steps.push({ what, status: 200, data: v });
     return v;
   };
@@ -117,7 +119,7 @@ function masker(): (text: string) => string {
     if (!seen.has(m)) seen.set(m, `<${kind}${seen.size}>`);
     return seen.get(m)!;
   };
-  return (text) => text
+  return (text) => dropRunTemp(text)
     .replace(/'[^'\n]*\/bun' '[^'\n]*\/src\/cli\.ts'|'[^'\n]*\/ckanban-rs'/g, "<ckanban>")
     .replace(/t_\d{8}_[a-z0-9]{4}/g, name("ticket"))
     .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g, name("uuid"))

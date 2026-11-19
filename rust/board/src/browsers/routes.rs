@@ -218,6 +218,15 @@ impl Browsers {
             let port = bb.ensure(&id).await.map_err(be)?;
             return ctx.ok(json!({ "ok": true, "port": port }));
         }
+        // A run's browser tools, on their first call and then now and then while they work: hold the browser for that
+        // run and start it if needed. Only the secret the board gave that run's tools works (no user, phone or other
+        // program can hold a browser this way).
+        if p.len() == 3 && p[2] == "claim" && m == Method::POST {
+            let b = body_or_empty(req).await?;
+            let token = field(&b, "token").and_then(Value::as_str).unwrap_or("").to_string();
+            let port = bb.claim(&token, &id).await.map_err(be)?;
+            return ctx.ok(json!({ "ok": true, "port": port }));
+        }
         // Everything else is the user's, from the board in a browser (checked before the route is matched).
         ctx.user_only(req.headers(), peer, "Changing board browsers").await?;
         let view = || self.browsers_view();

@@ -148,6 +148,9 @@ export async function startDaemon(opts: StartOptions = {}): Promise<Daemon> {
     FAKE_MODE: opts.fakeMode ?? "ok",
     FAKE_ARGS_FILE: join(root, "claude-args.jsonl"),
     TMPDIR: tmpdir(),
+    // Never the real board's run temp folders (<system temp>/ckanban-runs): a test daemon removes the ones it doesn't
+    // know at start, and with the system TMPDIR that once deleted the folders of runs still going on the real board.
+    CKANBAN_RUN_TEMP_ROOT: join(root, "run-temp"),
     LANG: "en_US.UTF-8",
     // The test's own time zone (bun test runs in UTC), so local day keys (spend) agree on both sides.
     TZ: Intl.DateTimeFormat().resolvedOptions().timeZone,

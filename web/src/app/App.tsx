@@ -1114,7 +1114,14 @@ export function App() {
       {moreOpen && <MoreSheet items={phoneMain} rare={phoneRare} footer={menuFooter} onClose={() => setMoreOpen(false)}
         top={<UsageBox state={usage} />} bottom={<ThemePicker />} />}
       {phoneAccess && <PhoneAccessDialog onClose={() => setPhoneAccess(false)} />}
-      {browsersOpen && <BrowsersDialog onClose={() => setBrowsersOpen(false)} />}
+      {browsersOpen && (
+        <BrowsersDialog onClose={() => setBrowsersOpen(false)}
+          onOpenTicket={(board, id) => {
+            setBrowsersOpen(false);
+            if (board !== slug) switchBoard(board);
+            openTicket(id, board);
+          }} />
+      )}
       {devicesOpen && (
         <DevicesDialog board={profile?.slug ?? null} onClose={() => setDevicesOpen(false)}
           onOpenTicket={(board, id) => {
