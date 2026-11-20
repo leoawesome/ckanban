@@ -1406,13 +1406,43 @@ impl BoardMode {
         let agents = Some(outside::agents_admin::AgentsAdmin::new(Arc::new(crate::agents::Agents::new(&exe))));
         let bugs = outside::bugreport::BugReports::new(self.root.clone(), None);
         let _ = self.outside_sat.signin.set(signin.clone());
-        let o = Arc::new(Outside { mcp: mcp.clone(), signin, phone: phone.clone(), agents, bugs });
+        let claude = outside::claude_signin::ClaudeSignIn::new(outside::claude_signin::Options::new(), self.root.clone(), emit.clone());
+        let o = Arc::new(Outside { mcp: mcp.clone(), signin, phone: phone.clone(), agents, bugs, claude: claude.clone() });
         if self.outside.set(o).is_ok() {
             mcp.start();
             phone.watch();
+            self.watch_claude_signin(claude);
             // The helper offers a check-in only when some MCP server works (`checkinOffer`).
             self.mirror_mcp(mcp);
         }
+    }
+
+    /// Claude's sign-in: its status check on a timer, a check soon after a run shows a sign-in error (one event at a
+    /// time, never a walk over tickets), and its two notifications sent like the helper's own messages.
+    fn watch_claude_signin(&self, claude: Arc<crate::outside::claude_signin::ClaudeSignIn>) {
+        use ckanban_board::helper::{core::OutBody, messages::NewMessage};
+        let core = self.helper.core.clone();
+        claude.set_tell(Arc::new(move |title: String, body: String| {
+            let core = core.clone();
+            tokio::spawn(async move {
+                let url = format!("{}/", core.board.base_url().trim_end_matches('/'));
+                let text = format!("{title}. {body}");
+                let m = NewMessage::new("direct", title.clone(), text.clone());
+                let out = OutBody::new("direct", &title, &body, &text, Some(url)).with("tag", "claude-signin");
+                core.send(m, out, None).await;
+            });
+        }));
+        claude.start();
+        let mut rx = self.core.bus.subscribe();
+        tokio::spawn(async move {
+            loop {
+                match rx.recv().await {
+                    Ok(e) => claude.on_event(&e.ty, &e.body),
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
+                    Err(_) => return,
+                }
+            }
+        });
     }
 
     /// Tells the helper whether any MCP server is connected, at start and when that changes.

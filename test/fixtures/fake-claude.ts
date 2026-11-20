@@ -34,6 +34,45 @@
 import { appendFileSync, existsSync } from "node:fs";
 
 const args = process.argv.slice(2);
+// `claude auth status|login` (the board's sign-in strip and sheet), answered before anything is recorded so other tests
+// never see these calls. FAKE_AUTH_STATE_FILE=<path> holds "ok" (default: runs out in 30 days), "soon" (in 3 days) or
+// "out" (signed out); a successful login writes "ok". `auth login` prints the link and the prompt like Claude Code
+// 2.1.328, then reads one line: a code with "good" in it succeeds, any other code is refused; one without "#" is asked again.
+if (args[0] === "auth") {
+  const { readFileSync, writeFileSync } = await import("node:fs");
+  const file = process.env.FAKE_AUTH_STATE_FILE;
+  let state = "ok";
+  try { if (file) state = readFileSync(file, "utf8").trim() || "ok"; } catch { /* no file: signed in */ }
+  if (args[1] === "status") {
+    const days = state === "soon" ? 2.5 : 30;
+    const out = state === "out" ? { loggedIn: false, authMethod: "none" } : { loggedIn: true, authMethod: "claude.ai", loginExpiresAt: new Date(Date.now() + days * 86_400_000).toISOString() };
+    process.stdout.write(JSON.stringify(out, null, 2) + "\n");
+    process.exit(state === "out" ? 1 : 0);
+  }
+  if (args[1] === "login") {
+    process.stdout.write("Opening browser to sign in…\nIf the browser didn't open, visit: https://claude.com/cai/oauth/authorize?code=true&state=fake\nPaste code here if prompted > ");
+    const decoder = new TextDecoder();
+    let buf = "";
+    for await (const chunk of Bun.stdin.stream()) {
+      buf += decoder.decode(chunk);
+      let nl: number;
+      while ((nl = buf.indexOf("\n")) >= 0) {
+        const line = buf.slice(0, nl).trim();
+        buf = buf.slice(nl + 1);
+        if (!line.includes("#")) { process.stdout.write("That doesn't look like the full code. Copy all of it, including the # in the middle.\n"); continue; }
+        if (line.includes("good")) {
+          if (file) writeFileSync(file, "ok");
+          process.stdout.write("Login successful.\n");
+          process.exit(0);
+        }
+        process.stdout.write("Couldn't log in: That code wasn't accepted.\n");
+        process.exit(1);
+      }
+    }
+    process.exit(1);
+  }
+  process.exit(1);
+}
 if (process.env.FAKE_SIDE_JSON && args.includes("--output-format") && args[args.indexOf("--output-format") + 1] === "json") {
   process.stdout.write(JSON.stringify({ type: "result", subtype: "success", is_error: false, result: process.env.FAKE_SIDE_TEXT ?? "In plain words: it is done.", total_cost_usd: 0.002, session_id: "side" }) + "\n");
   process.exit(0);

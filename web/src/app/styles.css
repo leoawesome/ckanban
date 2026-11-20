@@ -347,6 +347,35 @@ body.show-hints .sortable-card:not(:focus) .key-hint.card-keys { display: none; 
   .disk-banner > .btn { min-height: var(--tap); }
   .banner.disk-banner .icon-btn { width: var(--tap); height: var(--tap); }
 }
+/* Claude's sign-in (features/claudeSignin): a rounded strip under the header, yellow before it runs out, red once
+   signed out (the words say which, not only the colour); Sign in on the right. */
+.banner.cs-strip { margin: var(--sp-4); border: 0; border-radius: var(--r-md); padding: var(--sp-3) var(--sp-4); font-size: var(--fs-md); }
+.banner.cs-strip.cs-warn { background: var(--warn-soft); color: var(--warn); }
+.banner.cs-strip.cs-err { background: var(--err-soft); color: var(--err); }
+.cs-strip > .btn { flex: none; }
+/* The sheet: three numbered steps, the code field and its buttons under step 3. */
+.cs-content { padding: var(--sp-2) var(--sp-5) var(--sp-6); }
+.cs-sub { margin: 0 0 var(--sp-5); color: var(--muted); font-size: var(--fs-md); }
+.cs-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-5); }
+.cs-step { display: flex; gap: var(--sp-4); align-items: flex-start; }
+.cs-n { flex: none; width: 28px; height: 28px; border-radius: 50%; background: var(--surface-2); display: grid; place-items: center; font-weight: 700; font-size: var(--fs-md); }
+.cs-step.done .cs-n, .cs-n.cs-ok { background: var(--ok-soft); color: var(--ok); }
+.cs-body { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-3); padding-top: var(--sp-1); }
+.cs-body > input { width: 100%; }
+.cs-body > a.btn { color: var(--text); text-decoration: none; display: inline-flex; align-items: center; }
+.cs-hint { margin: 0; color: var(--muted); font-size: var(--fs-md); }
+.cs-row { display: flex; gap: var(--sp-3); width: 100%; justify-content: flex-end; }
+.cs-row .btn.primary { display: inline-flex; align-items: center; gap: var(--sp-2h); }
+.cs-wait { display: flex; align-items: center; gap: var(--sp-3); color: var(--muted); margin: 0; }
+.cs-done { display: flex; gap: var(--sp-4); align-items: flex-start; }
+.cs-done b { display: block; margin-bottom: var(--sp-2); }
+.banner.inline.cs-alert { margin: 0 0 var(--sp-4); border-radius: var(--r-md); background: var(--err-soft); color: var(--err); cursor: default; font-size: var(--fs-md); }
+.cs-actions { display: flex; gap: var(--sp-3); justify-content: flex-end; margin-top: var(--sp-5); }
+@media (max-width: 720px) {
+  .cs-strip > .btn, .cs-sheet .btn { min-height: var(--tap); }
+  .cs-body > input { min-height: var(--tap); }
+  .cs-row .btn, .cs-actions .btn { flex: 1; justify-content: center; }
+}
 
 .empty { margin: auto; text-align: center; color: var(--muted); padding: calc(var(--sp-7) + var(--sp-3)); }
 .empty h2 { color: var(--text); margin-bottom: var(--sp-2h); }

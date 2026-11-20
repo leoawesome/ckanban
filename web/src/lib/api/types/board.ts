@@ -8,6 +8,7 @@ import type { Huddle, HuddleMessage } from "./huddle";
 import type { Job, Schedule } from "./schedules";
 import type { Ticket, Workspace } from "./ticket";
 import type { DiskSpace, FreeUp } from "./disk";
+import type { ClaudeSignInState } from "./claudeSignin";
 
 export type { Status } from "../../../features/board/columns";
 
@@ -130,6 +131,7 @@ export type BusEvent =
   | { type: "awake.updated"; held: boolean }
   | { type: "disk.space"; space: DiskSpace }
   | { type: "disk.freeup"; status: FreeUp }
+  | { type: "claude-signin.updated"; state: ClaudeSignInState }
   | { type: "helper.updated" }
   | { type: "helper.message"; id: string; level: string; oneLine: string }
   | { type: "messages.updated"; unread: number }

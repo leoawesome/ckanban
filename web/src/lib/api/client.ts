@@ -10,6 +10,7 @@ import { req } from "./request";
 import type { Health, Profile, RepoKind, SetupDetection, Snippet, SnippetInput, TicketPage, TicketRow, VersionHistory } from "./types/board";
 import type { BrowsersState, DeviceView } from "./types/browsers";
 import type { DiskSpace, FreeUp } from "./types/disk";
+import type { ClaudeSignInState } from "./types/claudeSignin";
 import type { AgentInfo, ClaudeProject, ClaudeSession, HelpCard, HelpKind, QuickChat, SessionEntry, ToolDetail, WorkflowAgentDetail } from "./types/chat";
 import type { AgentStatus, McpAddInput, McpConfig, McpState } from "./types/connections";
 import type { FileContent, FileEntry, FileRootName, OutputFile, TicketDiff, TicketFile } from "./types/files";
@@ -108,6 +109,11 @@ export const api = {
   freeUpState: () => req<FreeUp>("GET", "/api/disk/free-up"),
   /** Starts Free up space; progress comes as `disk.freeup` events. */
   freeUp: () => req<FreeUp>("POST", "/api/disk/free-up", {}),
+  /** Claude Code's own sign-in on the Mac: the strip's status, and the sheet's start, paste and cancel (user only). */
+  claudeSignIn: () => req<ClaudeSignInState>("GET", "/api/claude-signin"),
+  claudeSignInStart: () => req<ClaudeSignInState>("POST", "/api/claude-signin/start", {}),
+  claudeSignInPaste: (id: number, code: string) => req<ClaudeSignInState>("POST", "/api/claude-signin/paste", { id, code }),
+  claudeSignInCancel: (id: number) => req<ClaudeSignInState>("POST", "/api/claude-signin/cancel", { id }),
   bugDraft: (ref: { profile: string; ticketId: string } | null) =>
     req<{ blocks: BugBlock[]; screenshots: string[] }>("POST", "/api/bug-report/draft", ref ?? {}),
   reportBug: (input: { title: string; description: string; include: BugBlockId[]; profile?: string; ticketId?: string }) =>

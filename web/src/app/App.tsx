@@ -27,6 +27,7 @@ import { QuickChatPane } from "../features/quickchat/QuickChat";
 import { usePhone } from "../hooks/usePhone";
 import { StatusPill, UsageBox } from "../features/usage/UsagePill";
 import { LowDiskBanner } from "../features/disk/LowDiskBanner";
+import { ClaudeSignInStrip } from "../features/claudeSignin/ClaudeSignInStrip";
 import { useUsage } from "../hooks/useUsage";
 import { Board, useCollapsedColumns } from "../features/board/Board";
 import { doneNotDrawn, joinsBoard } from "../features/board/donePaging";
@@ -949,6 +950,7 @@ export function App() {
       <div className="app-row">
       <div className="app-col">
 
+      <ClaudeSignInStrip />
       <LowDiskBanner />
       {version?.updateAvailable && !dismissed.has(updateKey) && (
         <div className="banner info" role="status">

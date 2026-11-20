@@ -123,7 +123,7 @@ and sends `: ping` every 15 s. Each bus event is one `data: <json>` message. Eve
 `schedule.updated`, `loop.updated`, `integration.updated`, `job.updated`, `snippets.updated`, `devices.updated`,
 `browsers.updated`, `restart.updated`, `awake.updated`, `helper.updated`, `helper.message`, `messages.updated`,
 `learned.updated`, `huddle.updated`, `huddle.message`, `huddle.activity`, `huddle.session`, `chat.updated`,
-`chat.draft`, `chat.activity`, `context.updated`, `disk.freeup` (`{status}`: Free up space moved on, the same object
+`chat.draft`, `chat.activity`, `context.updated`, `claude-signin.updated`, `disk.freeup` (`{status}`: Free up space moved on, the same object
 as `GET /api/disk/free-up`), `disk.space` (`{space}`: the same object as `GET /api/disk`, sent when the free space
 moves by a tenth of a GB at the minute check, or after Free up space finishes).
 - `ticket.updated`: `ticket` is replaced by its `TicketView`.
@@ -388,6 +388,10 @@ from a board sets `frontDesk` to that board.
 | GET | `/api/agents` | | 200 `AgentRegistry.status()` (agents.ts) | |
 | POST | `/api/agents/:id/install` | `:id` in `AGENT_IDS` | 200 status | 404 unknown id, `AgentError` |
 | POST | `/api/agents/:id/uninstall` | same | 200 status | same |
+| GET | `/api/claude-signin` | | 200 `{status, login}` (`claude_signin.rs`) | |
+| POST | `/api/claude-signin/start` | body ignored | 200 `{status, login}` with `login.url` once Claude printed its link (waits up to 20 s) | 403 not the user |
+| POST | `/api/claude-signin/paste` | `{id, code}` (`CODE#STATE`) | 200 `{status, login}` after Claude's verdict (up to 45 s) | 400 no id, empty or no `#`; 403 not the user; 409 sign-in `id` replaced or not waiting for a code |
+| POST | `/api/claude-signin/cancel` | `{id}` | 200 `{status, login}` (`id` stopped if it is the current one; a newer one is left alone) | 400 no id, 403 not the user |
 | GET | `/api/snippets` | query `profile?` | 200 `Snippet[]` (global plus that board's) | |
 | POST | `/api/snippets` | snippet fields | 201 `Snippet` | `SnippetError` |
 | PATCH | `/api/snippets/:id` | snippet fields | 200 `Snippet` | `SnippetError` |
@@ -407,6 +411,16 @@ from a board sets `frontDesk` to that board.
   transport, command, URL (http/https only) or a value with a line break; 409 name taken (also `ckanban` on a board);
   404 unknown server or board; 400 login/logout for a server without OAuth (stdio); 409 a paste while no sign-in runs.
 - `GET /api/mcp/:name/config` returns the saved settings unmasked (env values, headers), for the edit form.
+- Claude's sign-in (`/api/claude-signin*`): Claude Code's own sign-in on the Mac. `status` is `{checked, checkedAt,
+  loggedIn, expiresAt, daysLeft, warning}` from `claude auth status`, run in the background (at start, every 10
+  minutes, after a sign-in, and soon after a `session.updated` whose last message is a sign-in error); `warning` is
+  `signed-out`, `expiring` (3 days or less) or null. `login` is `{id, state, url, error, startedAt}` with `state`
+  `starting|waiting|checking|done|failed`; `url` only in the start answer. Start, paste and cancel answer for their own
+  `id`: a replaced one shows as `failed` with "This sign-in was replaced...". A past `expiresAt` counts as signed out. Start runs `claude auth login --claudeai`
+  (`BROWSER` is a no-op, Claude session variables removed) and stops any earlier one; 10 minutes, Cancel or a new start
+  stop it. Start, paste and cancel are user only (`userOnly`): a run's or huddle helper's header, the MCP server and the
+  CLI are refused. The code goes to the child's stdin only, never to a log, a file or an answer. Event
+  `claude-signin.updated` `{state}` (without `url`).
 - None of the `/api/mcp` and `/api/agents` routes has a user-only or run check (see Quirks).
 - Pass creation (`AddPassInput`): `{kind: "key", name, secret, envName?, url?, board?}` (`envName` defaults from the
   name, e.g. `LINEAR_KEY`; 409 when taken on the same board or for automations), `{kind: "mcp", url, name?}` (https,

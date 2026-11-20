@@ -8,10 +8,12 @@
 //! - `phone`: phone access on and off (`POST /api/remote`, `tailscale serve`), `GET /api/remote`, the link check;
 //! - `agents_admin`: registering `ckanban mcp` with Claude Code and Codex (`POST /api/agents/:id/install|uninstall`);
 //! - `bugreport`: `POST /api/bug-report` and `/api/bug-report/draft`;
+//! - `claude_signin`: Claude Code's own sign-in from the board (`/api/claude-signin*`), its status and warnings;
 //! - `routes`: the router that hands a request to the right one.
 
 pub mod agents_admin;
 pub mod bugreport;
+pub mod claude_signin;
 pub mod edge;
 pub mod mcp;
 pub mod phone;

@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use super::agents_admin::AgentsAdmin;
 use super::bugreport::BugReports;
+use super::claude_signin::ClaudeSignIn;
 use super::mcp::Mcp;
 use super::phone::Phone;
 use super::signin::SignIn;
@@ -19,12 +20,14 @@ pub struct Outside {
     /// The agents install and uninstall (always set since P4).
     pub agents: Option<Arc<AgentsAdmin>>,
     pub bugs: Arc<BugReports>,
+    /// Claude Code's own sign-in (`/api/claude-signin*`).
+    pub claude: Arc<ClaudeSignIn>,
 }
 
 /// Whether one of the outside services answers this route (`parts`: the path after `/api/`).
 pub fn claims(method: &str, parts: &[String], agents: bool) -> bool {
     match parts.first().map(String::as_str) {
-        Some("mcp") | Some("passes") => true,
+        Some("mcp") | Some("passes") | Some("claude-signin") => true,
         Some("agents") => agents,
         Some("remote") => parts.len() == 1 && (method == "GET" || method == "POST"),
         Some("bug-report") => method == "POST" && parts.len() <= 2,
@@ -34,7 +37,7 @@ pub fn claims(method: &str, parts: &[String], agents: bool) -> bool {
 
 /// Whether the route may ask `userOnly` (so the router checks the caller first; the check runs `lsof`).
 pub fn may_ask_user(method: &str, parts: &[String]) -> bool {
-    parts.first().map(String::as_str) == Some("passes") && method != "GET"
+    matches!(parts.first().map(String::as_str), Some("passes") | Some("claude-signin")) && method != "GET"
 }
 
 impl Outside {
@@ -49,6 +52,7 @@ impl Outside {
             Some("remote") => self.phone.answer(c).await,
             Some("passes") => self.signin.answer(c).await,
             Some("bug-report") => self.bugs.answer(c).await,
+            Some("claude-signin") => self.claude.answer(c).await,
             _ => None,
         }
     }
@@ -80,5 +84,8 @@ mod tests {
         assert!(may_ask_user("POST", &p("passes")));
         assert!(!may_ask_user("GET", &p("passes/x/tools")));
         assert!(!may_ask_user("POST", &p("mcp")));
+        assert!(claims("GET", &p("claude-signin"), true));
+        assert!(may_ask_user("POST", &p("claude-signin/start")));
+        assert!(!may_ask_user("GET", &p("claude-signin")));
     }
 }

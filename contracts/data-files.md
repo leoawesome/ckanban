@@ -108,7 +108,7 @@ it listed).
   board.lock  rust-board  rust-board-status.json                                                  STATE (who owns the board)
   devices.json  browsers.json  board-browsers.json  browsers/<id>/                                CORE
   spend-days.json  telegram-spend.json  telegram-desk-spend.json  helper-spend.jsonl  usage-windows.json   CORE (history)
-  messages.json  waits.json  helper-state.json  telegram-*.json                                   STATE
+  messages.json  waits.json  helper-state.json  telegram-*.json  claude-signin.json                STATE
   session-summaries.json  usage-last.json  mcp-seen.json  claude-ai-connectors.json
   claude-commands.json  model-versions.json  automation-bin/ckanban                               CACHE
   daemon.log(.1,.2)  debug/  share-tmp/  side-calls/  artifact-helper/  signin/
@@ -183,6 +183,7 @@ telegram-desk-spend.json
 helper-spend.jsonl
 usage-windows.json
 messages.json
+claude-signin.json
 waits.json
 waits.json.corrupt-<ms>
 helper-state.json
@@ -720,6 +721,7 @@ Read once and held in memory; the daemon's next save overwrites outside edits.
 | Path | Format | Writer |
 | --- | --- | --- |
 | `messages.json` | compact JSON +nl `{ version: 1, messages: StoredMessage[] }` (helper's sent and held alerts) | `MessageStore.save` (`helper/messages.ts`), fixed-tmp |
+| `claude-signin.json` | compact JSON `{ warnedFor?: string, signedOutTold?: boolean }` (which sign-in notifications were sent) | `claude_signin.rs`, atomic | read at each status check |
 | `waits.json` | JSON (indent 1) +nl `{ version: 1, records, notifyUserAt, firstSummaryPending? }`; unreadable file renamed `waits.json.corrupt-<ms>` | `WaitStore.save` (`helper/waits.ts`), fixed-tmp |
 | `helper-state.json` | JSON (indent 1) +nl `RunnerState` (`helper/runner.ts`) | atomic |
 | `telegram-links.json` | compact JSON +nl `{ version: 1, links }` | `helper/tgstores.ts`, fixed-tmp, `0600` on create |

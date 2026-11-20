@@ -1,6 +1,7 @@
 export * from "./board";
 export * from "./browsers";
 export * from "./chat";
+export * from "./claudeSignin";
 export * from "./connections";
 export * from "./disk";
 export * from "./files";
