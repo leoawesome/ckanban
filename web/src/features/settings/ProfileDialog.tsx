@@ -50,6 +50,7 @@ export function ProfileDialog({ profile, onClose, onSaved, onDeleted, onOpenTeam
   const [ultracode, setUltracode] = useState(!!profile?.ultracode || profile?.effort === "ultracode");
   const [autoHuddles, setAutoHuddles] = useState(profile?.autoHuddles !== false);
   const [keepAwake, setKeepAwake] = useState(profile?.keepAwake !== false);
+  const [folderTurns, setFolderTurns] = useState(!!profile?.folderTurns);
   const [capText, setCapText] = useState(capInputText(profile?.runCapUsd));
   const cap = parseCap(capText);
   const capError = cap === undefined ? "An amount in $, e.g. 5 (empty: no cap)" : null;
@@ -139,14 +140,14 @@ export function ProfileDialog({ profile, onClose, onSaved, onDeleted, onOpenTeam
     try {
       const p = profile
         ? await api.updateProfile(profile.slug, {
-          name, path, model: model || null, effort: effort || null, ultracode, autoHuddles, keepAwake, runCapUsd: cap || null, artifacts, stallMinutes, workspace,
+          name, path, model: model || null, effort: effort || null, ultracode, autoHuddles, keepAwake, folderTurns, runCapUsd: cap || null, artifacts, stallMinutes, workspace,
           mainModel: mainModel || null, taskModels: taskModelsOf(taskPicks), freshChatTokens: freshK === null ? null : Math.round(freshK * 1000),
           claudeAiConnectors: connectorMode === "some" ? keepConnectors : connectorMode,
           // A file typed but not yet added with Enter still counts.
           copyFiles: newFile.trim() && !copyFiles.includes(newFile.trim()) ? [...copyFiles, newFile.trim()] : copyFiles,
           setupCommand: setupCommand.trim(), cleanupCommand: cleanupCommand.trim(), setupDetected: detected,
         })
-        : await api.createProfile({ name, path, model: model || undefined, effort: effort || undefined, ultracode: ultracode || undefined, workspace });
+        : await api.createProfile({ name, path, model: model || undefined, effort: effort || undefined, ultracode: ultracode || undefined, workspace, folderTurns: folderTurns || undefined });
       onSaved(p);
     } catch (e: any) {
       setErr(e.message);
@@ -184,7 +185,7 @@ export function ProfileDialog({ profile, onClose, onSaved, onDeleted, onOpenTeam
   const customModel = model && !MODELS.includes(model) ? model : null;
 
   // Unsaved changes: the form now vs as it opened (× , Esc, swipe, Back and Cancel ask before dropping them).
-  const formNow = JSON.stringify([name, path, model, mainModel, taskPicks, freshText, effort, ultracode, autoHuddles, keepAwake, capText, artifacts,
+  const formNow = JSON.stringify([name, path, model, mainModel, taskPicks, freshText, effort, ultracode, autoHuddles, keepAwake, folderTurns, capText, artifacts,
     connectorMode, keepConnectors, workspace, stallText, copyFiles, newFile, setupCommand, cleanupCommand]);
   const [formOpened] = useState(formNow);
   const dirty = !saving && formNow !== formOpened;
@@ -265,11 +266,21 @@ export function ProfileDialog({ profile, onClose, onSaved, onDeleted, onOpenTeam
             aria-labelledby={`${ids}-ws`} aria-describedby={`${ids}-ws-help`}
             onChange={(e) => setWorkspace(e.target.checked ? "folder" : "worktree")} />
           <span>
-            <span id={`${ids}-ws`}>Work in my folder directly (tickets take turns)</span>
+            <span id={`${ids}-ws`}>Work in my folder directly</span>
             <span id={`${ids}-ws-help`} className="muted small">
               {noHistory
-                ? "Copies need version history: turn it on above, then several tickets can run at once."
-                : `Off: each ticket works on its own copy, so several can run at once.${profile ? " Affects new tickets only." : ""}`}
+                ? "Copies need version history: turn it on above to give each ticket its own copy."
+                : `On: tickets change the files in your folder. Off: each ticket works on its own copy.${profile ? " Affects new tickets only." : ""}`}
+            </span>
+          </span>
+        </label>
+        <label className="check-row board-switch">
+          <input type="checkbox" checked={folderTurns} aria-labelledby={`${ids}-turns`} aria-describedby={`${ids}-turns-help`}
+            onChange={(e) => setFolderTurns(e.target.checked)} />
+          <span>
+            <span id={`${ids}-turns`}>One ticket at a time in my folder</span>
+            <span id={`${ids}-turns-help`} className="muted small">
+              Off: tickets that work in your folder run at the same time, like several Claude Code windows. On: they take turns, so two can never change the same file at once.
             </span>
           </span>
         </label>

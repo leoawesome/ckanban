@@ -490,14 +490,17 @@ impl GitRoutes {
         }
         // A ticket editing the folder in place right now would leave half-done files in the first snapshot.
         let boards: Vec<Value> = self.data().list_profiles().unwrap_or_default().into_iter().map(|p| Value::Object(p.record.0)).filter(|p| p.get("path").and_then(Value::as_str) == Some(path.as_str())).collect();
+        let mut busy: Vec<String> = Vec::new();
         for (slug, id) in self.runs.running_tickets() {
             let Some(p) = boards.iter().find(|p| p.get("slug").and_then(Value::as_str) == Some(slug.as_str())) else { continue };
             let Ok(Some(t)) = self.ticket(&slug, &id) else { continue };
             let kind = repo::repo_kind(&dir, false).await;
             if super::landing::runs_in_folder(&t, Some(p), Some(kind)) != Some(false) {
-                let title = t.get("title").and_then(Value::as_str).unwrap_or("");
-                return Out::Err(409, format!("Wait until \"{title}\" finishes: Claude is changing files in this folder right now."));
+                busy.push(t.get("title").and_then(Value::as_str).unwrap_or("").to_string());
             }
+        }
+        if !busy.is_empty() {
+            return Out::Err(409, folder_in_use(&busy));
         }
         let r = match repo::enable_version_history(&dir).await {
             Ok(r) => r,
@@ -515,6 +518,16 @@ impl GitRoutes {
         v["repo"] = json!(kind.as_str());
         Out::Json(200, v)
     }
+}
+
+/// Why version history can't be turned on now: tickets are changing files in the folder (a first snapshot would
+/// catch their files half done).
+fn folder_in_use(titles: &[String]) -> String {
+    let quoted: Vec<String> = titles.iter().take(3).map(|t| format!("\"{t}\"")).collect();
+    let more = titles.len().saturating_sub(3);
+    let list = if more > 0 { format!("{} and {more} more", quoted.join(", ")) } else { quoted.join(" and ") };
+    let are = if titles.len() == 1 { "is" } else { "are" };
+    format!("Not yet: {list} {are} changing files in this folder right now. Try again when {} finished.", if titles.len() == 1 { "it has" } else { "they have" })
 }
 
 /// A route's JSON body (`await body(req)`): 400 "invalid JSON body" when it doesn't parse.
@@ -596,6 +609,14 @@ async fn raw_file(file: &Path, download: bool) -> Response<Body> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn folder_in_use_names_the_tickets_in_plain_words() {
+        let t = |v: &[&str]| folder_in_use(&v.iter().map(|s| s.to_string()).collect::<Vec<_>>());
+        assert_eq!(t(&["A"]), "Not yet: \"A\" is changing files in this folder right now. Try again when it has finished.");
+        assert_eq!(t(&["A", "B"]), "Not yet: \"A\" and \"B\" are changing files in this folder right now. Try again when they have finished.");
+        assert_eq!(t(&["A", "B", "C", "D"]), "Not yet: \"A\", \"B\", \"C\" and 1 more are changing files in this folder right now. Try again when they have finished.");
+    }
 
     #[test]
     fn routes() {

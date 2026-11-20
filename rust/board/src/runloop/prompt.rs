@@ -77,6 +77,20 @@ pub fn comment(v: &Value) -> Comment {
     serde_json::from_value(v.clone()).unwrap_or_default()
 }
 
+/// `folderTurns`: tickets that edit the board's folder in place take turns. Missing: off (they run together).
+pub fn folder_turns_on(p: Option<&Map<String, Value>>) -> bool {
+    p.and_then(|p| p.get("folderTurns")) == Some(&Value::Bool(true))
+}
+
+/// Adds the shared folder rule inside the prompt's last board context (or in a context of its own).
+pub fn shared_folder_note(prompt: String) -> String {
+    let text = format!("# Shared folder\n{}", crate::prompts::rules::SHARED_FOLDER_RULE);
+    match prompt.rfind("\n</ckanban-context>") {
+        Some(at) => format!("{}\n\n{text}{}", &prompt[..at], &prompt[at..]),
+        None => crate::git::setup::with_board_text(&prompt, &text, "Shared folder"),
+    }
+}
+
 /// `autoHuddlesOn`.
 pub fn auto_huddles_on(p: Option<&Map<String, Value>>) -> bool {
     p.and_then(|p| p.get("autoHuddles")) != Some(&Value::Bool(false))
@@ -410,6 +424,16 @@ impl RunLoop {
         crate::git::setup::with_board_text(&prompt, &crate::prompts::chat::setup_note(slug, &t.id), "Setup")
     }
 
+    /// A run that may edit the board's folder in place, on a board where tickets share it (no "One ticket at a time
+    /// in my folder"), learns that others may change the same files meanwhile.
+    pub(super) fn with_shared_folder_note(&self, t: &Tk, profile: &Map<String, Value>, in_place: bool, refine: bool, role: Option<&RunRole>, prompt: String) -> String {
+        let edits = !t.main && !matches!(role, Some(RunRole::Main(_))) && (!refine || t.tool);
+        if !in_place || !edits || folder_turns_on(Some(profile)) {
+            return prompt;
+        }
+        shared_folder_note(prompt)
+    }
+
     /// `scheduleContext`: which schedule a schedule's ticket comes from (R10's scheduler: for a quiet one, also what
     /// it raised that is still open).
     pub(super) fn schedule_context(&self, slug: &str, t: &Tk) -> Option<pt::ScheduleRef> {
@@ -605,6 +629,17 @@ impl RunLoop {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_shared_folder_rule_goes_inside_the_board_context() {
+        let p = shared_folder_note("Hi\n\n<ckanban-context note=\"x\">\n# Rules\n- a\n</ckanban-context>".into());
+        assert!(p.ends_with(&format!("- a\n\n# Shared folder\n{}\n</ckanban-context>", crate::prompts::rules::SHARED_FOLDER_RULE)), "{p}");
+        let raw = shared_folder_note("just text".into());
+        assert!(raw.starts_with("just text\n\n<ckanban-context note=\"Shared folder\">\n# Shared folder\n"), "{raw}");
+        assert!(folder_turns_on(json!({ "folderTurns": true }).as_object()));
+        assert!(!folder_turns_on(json!({}).as_object()));
+        assert!(!folder_turns_on(None));
+    }
 
     #[test]
     fn planning_fresh_decides_by_size_unless_the_user_chose() {

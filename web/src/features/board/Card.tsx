@@ -18,7 +18,8 @@ import { costText } from "../usage/usage";
 import { useNow } from "../../hooks/useNow";
 import { clearArrival, useArrival } from "./arrivals";
 import { watchMotion } from "./cardMotion";
-import { attentionLabel, cardFamily, familyLineText, partChip, cardHuddleLine, HUDDLE_WORKING, huddleLineText, familyWorkingNames, finishMark, foldChips, openedAt, overCap, previewShown, shouldPulse, signInError, stepAge, stepsShown, stepsText, type FinishMark } from "./cardState";
+import { FolderShareNote } from "./FolderShareNote";
+import { attentionLabel, cardFamily, folderShareText, familyLineText, partChip, cardHuddleLine, HUDDLE_WORKING, huddleLineText, familyWorkingNames, finishMark, foldChips, openedAt, overCap, previewShown, shouldPulse, signInError, stepAge, stepsShown, stepsText, type FinishMark } from "./cardState";
 import { boardColumnOf } from "./columns";
 import { usePhone } from "../../hooks/usePhone";
 import { ClaudeFace } from "../chat/ConvTurn";
@@ -214,7 +215,7 @@ export const Card = memo(function Card({ a11yId, ticket, onClick, dragging, queu
   // One status pill, and only when it says something the card doesn't: its own huddle working on it hides a stale
   // Blocked or Failed, and a running card's spinner and time sit in the muted line instead of a Running pill.
   const badge = att || ticket.huddleBusy || familyBusy ? null
-    : ticket.folderWait ? <span className="badge wait" title="Tickets on a folder without version history run one at a time; this one starts when the other finishes">waiting: another ticket is using the folder</span>
+    : ticket.folderWait ? <span className="badge wait" title="This board's setting “One ticket at a time in my folder” is on: this ticket starts when the other one finishes">waiting: another ticket is using the folder</span>
     : queued && !working ? (held
       ? <span className="badge queued" title="A daemon restart is pending; queued tickets start right after it">Waits for restart</span>
       : <span className="badge queued" title="Starts as soon as nothing else holds it back (another ticket editing the folder, or a restart)">Queued · #{queued}</span>)
@@ -296,7 +297,14 @@ export const Card = memo(function Card({ a11yId, ticket, onClick, dragging, queu
   // At most one pill: Sign-in needed, then the end-of-run mark, then what needs the user, then its auto huddle or a stopped plan.
   // A sub-feature's "Part of …" or a shown task's "Task of …" chip on top.
   const part = partChip(ticket);
-  const pill = signInChip || (finish ? finishBadge(finish) : badge) || (ticket.autoHuddle && ownWorking && autoHuddleChip(ticket.autoHuddle)) || planPill || null;
+  // Running in the board's folder together with other tickets (board setting "One ticket at a time in my folder" off).
+  const share = ticket.running && !done ? ticket.folderShare : null;
+  const shareChip = share && share.others > 0 && (
+    <span className="badge share" title="These tickets change files in the same folder at the same time. To make them take turns, turn on “One ticket at a time in my folder” in Board settings.">
+      {folderShareText(share.others)}
+    </span>
+  );
+  const pill = signInChip || (finish ? finishBadge(finish) : badge) || (ticket.autoHuddle && ownWorking && autoHuddleChip(ticket.autoHuddle)) || shareChip || planPill || null;
   // Something on this card moves (a face, spinner, pulse, the running edge, the arrival ring): watched so its motion
   // pauses while it is off screen or under the open ticket (cardMotion.ts). Generous on purpose: a card left out
   // only keeps moving where nobody sees it, as before.
@@ -378,6 +386,7 @@ export const Card = memo(function Card({ a11yId, ticket, onClick, dragging, queu
           )}
         </div>
       )}
+      {share?.offer && share.path && !dragging && <FolderShareNote path={share.path} />}
       {limit && !dragging && limitWait(ticket) && <LimitActions slug={limit.slug} ticket={ticket} onError={limit.onError} small secondary={false} />}
       {limit && !dragging && capWait(ticket) && <CapActions slug={limit.slug} ticket={ticket} onError={limit.onError} small />}
       {limit && !dragging && stallWait(ticket) && <StallActions slug={limit.slug} ticket={ticket} onError={limit.onError} small secondary={false} />}

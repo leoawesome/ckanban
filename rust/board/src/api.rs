@@ -49,6 +49,11 @@ pub trait RunControl: Send + Sync {
     fn folder_wait(&self, _slug: &str, _ticket: &Value) -> bool {
         false
     }
+    /// The card's `folderShare` (`{others, offer}` or null): its run edits the board's folder in place together with
+    /// `others` other running tickets; `offer`: this card shows the offer to turn version history on.
+    fn folder_share(&self, _slug: &str, _ticket: &Value) -> Value {
+        Value::Null
+    }
 }
 
 /// Claude session transcripts (`SessionCache` in `src/runs/session-cache.ts`).

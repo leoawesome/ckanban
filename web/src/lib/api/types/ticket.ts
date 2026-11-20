@@ -208,8 +208,14 @@ export interface Ticket {
   suggestedTags?: string[];
   /** Shared devices its run uses now (since when) and the ones it waits for; null when neither. */
   devices?: TicketDevices | null;
-  /** It would start now, but another ticket is editing the board's folder in place (no version history). */
+  /** It would start now, but another ticket is editing the board's folder in place (board setting "One ticket at a time in my folder" on). */
   folderWait?: boolean;
+  /**
+   * Its run changes the board's folder in place while `others` other running tickets do too (board setting "One ticket
+   * at a time in my folder" off). `offer`: the folder has no version history and this is the newest of those cards,
+   * so it offers to turn version history on for `path`.
+   */
+  folderShare?: { others: number; offer: boolean; path?: string } | null;
   /** A plan child waiting on the user (questions, a proposal to apply, in Planning); the plan won't start it. */
   userWait?: string | null;
   /** Set once this ticket's plan was started: the board runs its children unattended. */

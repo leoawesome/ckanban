@@ -46,6 +46,7 @@
     },
     "autoHuddles": { "type": "boolean", "description": "Missing: on." },
     "keepAwake": { "type": "boolean", "description": "Missing: on." },
+    "folderTurns": { "type": "boolean", "description": "Tickets that edit the board's folder in place take turns (one at a time). Missing: off (they run at the same time)." },
     "runCapUsd": { "type": ["number", "null"] },
     "artifacts": { "type": "boolean" },
     "checkinOfferDismissed": { "type": "boolean" },

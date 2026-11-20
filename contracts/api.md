@@ -108,7 +108,7 @@ ticket PATCH.
 
 Most ticket routes return a `TicketView`: a `Ticket` plus these fields (built by `view()` in http.ts): `running`,
 `holdsSlot`, `resumeCommand`, `session` (`SessionSummary`, session.ts, or null), `links`, `outputDir`, `shareJobs`,
-`canCopyFile`, `terminalOpen`, `recovery`, `devices`, `chromeAbove`, `browsersAbove`, `folderWait`, `userWait`,
+`canCopyFile`, `terminalOpen`, `recovery`, `devices`, `chromeAbove`, `browsersAbove`, `folderWait`, `folderShare`, `userWait`,
 `attention`, `snoozed`, `huddleBusy`, `huddleLine`, `costUsd`, `runCap`; for a main ticket also `familyWorking`,
 `stepsRunning`, `familyCard`; for a sub-feature `subFeatureOf`; for a tool ticket `mainTicket`. Board listings add
 `feature: true` on open features. `links` is `{url, label, at, source}[]` newest first (`board/links.ts`): claude.ai
@@ -422,9 +422,9 @@ for an unknown board.
 | Method | Path | Request | Success | Errors |
 |---|---|---|---|---|
 | GET | `/api/profiles` | | 200 `(Profile & {pathExists, running})[]` | |
-| POST | `/api/profiles` | `{name, path, baseBranch?, model?, effort?, ultracode?, workspace?: "worktree"\|"folder"}`; `~` expands | 201 `Profile` | 400 name, 400 not a directory, 400 effort, 400 folder used by another board, 400 workspace |
+| POST | `/api/profiles` | `{name, path, baseBranch?, model?, effort?, ultracode?, folderTurns?, workspace?: "worktree"\|"folder"}`; `~` expands | 201 `Profile` | 400 name, 400 not a directory, 400 effort, 400 folder used by another board, 400 workspace |
 | GET | `/api/profiles/:slug` | | 200 `Profile` | 404 |
-| PATCH | `/api/profiles/:slug` | any of `name, path, baseBranch, model, mainModel, taskModels, freshChatTokens, chrome, browsers, checkinOfferDismissed, effort, ultracode, copyFiles, setupCommand, cleanupCommand, autoHuddles, keepAwake, runCapUsd, artifacts, workspace, claudeAiConnectors, stallMinutes, setupDetected` | 200 `Profile` | 400 validation; 403 `chrome`/`browsers` from a run or huddle, `browsers` user only; 403 `runCapUsd` from a run |
+| PATCH | `/api/profiles/:slug` | any of `name, path, baseBranch, model, mainModel, taskModels, freshChatTokens, chrome, browsers, checkinOfferDismissed, effort, ultracode, copyFiles, setupCommand, cleanupCommand, autoHuddles, keepAwake, folderTurns, runCapUsd, artifacts, workspace, claudeAiConnectors, stallMinutes, setupDetected` | 200 `Profile` | 400 validation; 403 `chrome`/`browsers` from a run or huddle, `browsers` user only; 403 `runCapUsd` from a run |
 | DELETE | `/api/profiles/:slug` | | 204 | 409 board has running tickets |
 | POST | `/api/profiles/:slug/detect-setup` | body ignored | 200 `SetupDetection` | |
 | GET | `/api/profiles/:slug/commands` | | 200 skills and commands in the board folder | |
@@ -745,7 +745,7 @@ Run facts the contract tests pin down (`test/contract/runs-*.test.ts`):
   in `error`; Stop, or a move out of In Progress, `stopped`; the usage limit `limit` (with `limit.resetAt`, `message`).
 - The result's `summary` becomes an `ai` comment for `done` and `blocked`; for `questions` the comment is the final
   text without the result line. Chat messages are not comments.
-- On a plain folder, runs that edit wait for each other (`folderWait`): one at a time per folder.
+- Runs that edit the board's folder in place (a plain folder, or `workspace: "folder"`) run at the same time; a running card has `folderShare: {others, offer, path?}` (null when alone or not in the folder; missing on cards that aren't running). With the profile's `folderTurns: true` they wait for each other instead (`folderWait`): one at a time per folder.
 - Messages sent while Claude runs reach it at its next step; those a Stop left unread stay in `queued` as `unsent`.
 - Every run is a new `claude -p` process: the ticket's first run uses `--session-id`, later ones `--resume` the same
   session (fresh chat and fresh session start a new id).

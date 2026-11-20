@@ -113,7 +113,7 @@ export const api = {
   reportBug: (input: { title: string; description: string; include: BugBlockId[]; profile?: string; ticketId?: string }) =>
     req<BugReportResult>("POST", "/api/bug-report", { ...input, source: "ui" }),
   profiles: () => req<Profile[]>("GET", "/api/profiles"),
-  createProfile: (p: { name: string; path: string; model?: string; effort?: string; ultracode?: boolean; baseBranch?: string; workspace?: Workspace }) =>
+  createProfile: (p: { name: string; path: string; model?: string; effort?: string; ultracode?: boolean; baseBranch?: string; workspace?: Workspace; folderTurns?: boolean }) =>
     req<Profile>("POST", "/api/profiles", p),
   updateProfile: (slug: string, p: Partial<Profile>) => req<Profile>("PATCH", `/api/profiles/${slug}`, p),
   deleteProfile: (slug: string) => req<void>("DELETE", `/api/profiles/${slug}`),
