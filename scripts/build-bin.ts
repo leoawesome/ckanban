@@ -12,7 +12,8 @@ const root = join(import.meta.dir, "..");
 const args = process.argv.slice(2);
 const archFlag = args.indexOf("--arch");
 const only = archFlag >= 0 ? args[archFlag + 1] : undefined;
-const positional = args.filter((_, i) => i !== archFlag && i !== archFlag + 1);
+// Only drop --arch and its value when the flag is there (archFlag + 1 would be 0, the version, otherwise).
+const positional = archFlag >= 0 ? args.filter((_, i) => i !== archFlag && i !== archFlag + 1) : args;
 const version = (positional[0] ?? process.env.CKANBAN_VERSION ?? "dev").replace(/^v/, "");
 
 const TARGETS: Record<string, string> = { arm64: "aarch64-apple-darwin", x64: "x86_64-apple-darwin" };
