@@ -5,11 +5,16 @@ export interface ClaudeSignInStatus {
   checked: boolean;
   checkedAt: string | null;
   loggedIn: boolean | null;
+  /** `authMethod` from `claude auth status`: "claude.ai" (a Claude account, which runs out), "api_key", "third_party"... */
+  authMethod?: string | null;
+  /** Only for a Claude account sign-in (other ways in don't run out here). */
   expiresAt: string | null;
   /** Whole days until it runs out (rounded up, 0 once it has). */
   daysLeft: number | null;
-  /** What the strip at the top of the board shows. */
-  warning: "signed-out" | "expiring" | null;
+  /** What the strip at the top of the board shows; "missing": the board can't find Claude Code on the Mac. */
+  warning: "missing" | "signed-out" | "expiring" | null;
+  /** With "missing" only: the full path of the board's own program, for when `ckanban` isn't found in Terminal. */
+  ckanbanPath?: string | null;
 }
 
 /**

@@ -1,12 +1,17 @@
 //! Claude Code's own sign-in, from the board (`/api/claude-signin*`): the strip at the top of the board and its
 //! three-step sheet.
-//! - The status: `claude auth status` (JSON `loggedIn`, `loginExpiresAt`, about 1 s, no network) runs in the
-//!   background, at start, every 10 minutes, right after a sign-in and soon after a run shows a sign-in error; the
-//!   answer is cached and requests only read the cache.
+//! - The status: `claude auth status` (JSON `loggedIn`, `authMethod`, `loginExpiresAt`, about 1 s, no network) runs in
+//!   the background, at start, every 10 minutes, right after a sign-in and soon after a run shows a sign-in error; the
+//!   answer is cached and requests only read the cache. The expiry warnings are only for a Claude account sign-in
+//!   (`authMethod` "claude.ai"): with an API key, a token or a cloud provider runs work without one, so no strip. No
+//!   `claude` at all is its own red strip ("missing").
 //! - The sign-in: `claude auth login --claudeai` on plain pipes. It prints `visit: <link>` and `Paste code here if
 //!   prompted >`, reads one `CODE#STATE` line, then prints `Login successful.` (exit 0) or `Couldn't log in: ...`
-//!   (exit 1). One at a time: a new start, Cancel or 10 minutes kill the old one. The Mac's browser is kept shut
-//!   (`BROWSER` is a no-op). Start, paste and cancel are for the user only.
+//!   (exit 1). One at a time: a new start, Cancel or 10 minutes kill the old one, with its whole process group. The
+//!   Mac's browser is kept shut (`BROWSER` is a no-op). Start, paste and cancel are for the user only.
+//! - A sign-in left behind by a daemon that was killed hard: its pid and start time are in `claude-signin-child.json`
+//!   while it runs; the next daemon stops it, only if that pid is still a `claude auth login` group leader that
+//!   started at the recorded time (a reused pid is left alone).
 //! - The pasted code is written to the child's stdin and nowhere else: never logged, stored or sent back; the child's
 //!   output is only matched, never shown.
 //! - One phone notification when the sign-in will run out within 3 days (once per expiry date), and one when Claude is
@@ -93,7 +98,36 @@ struct Status {
     checked_at: Option<f64>,
     logged_in: Option<bool>,
     expires_at: Option<String>,
+    /// `authMethod` from `claude auth status`: "claude.ai" (a Claude account, which runs out), "api_key",
+    /// "api_key_helper", "oauth_token", "third_party" or "none". None from a Claude Code too old to say.
+    auth_method: Option<String>,
+    /// The board couldn't find `claude` at all.
+    missing: bool,
 }
+
+/// What one `claude auth status` said.
+enum Read {
+    Answer { logged_in: bool, expires_at: Option<String>, auth_method: Option<String> },
+    /// `claude` isn't there (not installed, or not on the daemon's PATH).
+    Missing,
+}
+
+/// The file that holds the running sign-in's pid while it runs.
+const CHILD_FILE: &str = "claude-signin-child.json";
+
+/// Markers a board run passes down (as `PARENT_MARKERS` in `artifact.rs`): the status check drops only these, so it
+/// sees the same API key, token or cloud provider settings as the runs.
+const PARENT_MARKERS: [&str; 9] = [
+    "CLAUDE_CODE_ENTRYPOINT",
+    "CLAUDECODE",
+    "CLAUDE_CODE_CHILD_SESSION",
+    "CLAUDE_CODE_SESSION_ID",
+    "CLAUDE_CODE_SESSION_ATTENDED",
+    "CLAUDE_PID",
+    "CLAUDE_CODE_MESSAGING_SOCKET",
+    "CLAUDE_CODE_MESSAGING_TOKEN",
+    "CLAUDE_CODE_EXECPATH",
+];
 
 struct Login {
     id: u64,
@@ -136,14 +170,22 @@ pub struct ClaudeSignIn {
     asked_at: Mutex<f64>,
 }
 
+/// Whether the child goes without the daemon's variable `k`.
+fn dropped(k: &str, login: bool) -> bool {
+    PARENT_MARKERS.contains(&k) || (login && k.starts_with("CLAUDE_CODE_"))
+}
+
 /// The child's environment: the daemon's own (as `claude -p` runs get it, so the sign-in lands where the runs read
 /// it) without the markers of a Claude session, which can make Claude take a fake code; the Mac's browser kept shut.
+/// The status check keeps every other `CLAUDE_CODE_*` setting (`CLAUDE_CODE_OAUTH_TOKEN`, `CLAUDE_CODE_USE_BEDROCK`...)
+/// so it answers for the runs; the sign-in drops them all.
 fn command(bin: &str, args: &[&str]) -> Command {
     let mut cmd = Command::new(bin);
     cmd.args(args);
+    let login = args.get(1) == Some(&"login");
     for (k, _) in std::env::vars_os() {
         let k = k.to_string_lossy();
-        if k == "CLAUDECODE" || k.starts_with("CLAUDE_CODE_") {
+        if dropped(&k, login) {
             cmd.env_remove(k.as_ref());
         }
     }
@@ -152,6 +194,126 @@ fn command(bin: &str, args: &[&str]) -> Command {
     cmd.current_dir(ckanban_core::home::home_dir());
     cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped()).kill_on_drop(true);
     cmd
+}
+
+/// The sign-in child, leader of its own process group. `kill` stops the whole group while the child is still ours (not
+/// yet waited for, so its pid can't have been reused); dropped unwaited (the daemon stopping), it does the same.
+struct Group {
+    child: tokio::process::Child,
+    pid: Option<u32>,
+}
+
+impl Group {
+    fn new(child: tokio::process::Child) -> Self {
+        let pid = child.id();
+        Group { child, pid }
+    }
+
+    /// Not reaped yet (running, or exited but not waited for): the pid, and so the group id, can't have been reused.
+    /// `WNOWAIT` only looks; it reaps nothing.
+    fn unreaped(pid: u32) -> bool {
+        // SAFETY: waitid fills `info`, a plain C struct; WNOWAIT leaves the child as it is.
+        unsafe {
+            let mut info: libc::siginfo_t = std::mem::zeroed();
+            libc::waitid(libc::P_PID, pid as libc::id_t, &mut info, libc::WEXITED | libc::WNOHANG | libc::WNOWAIT) == 0
+        }
+    }
+
+    /// Exited (a zombie, still holding its pid) or gone; never reaps.
+    fn exited(pid: u32) -> bool {
+        // SAFETY: as in `unreaped`.
+        unsafe {
+            let mut info: libc::siginfo_t = std::mem::zeroed();
+            let r = libc::waitid(libc::P_PID, pid as libc::id_t, &mut info, libc::WEXITED | libc::WNOHANG | libc::WNOWAIT);
+            r != 0 || info.si_pid != 0
+        }
+    }
+
+    /// Waits for the child to exit without reaping it, so its group can still be stopped safely.
+    async fn exit(&self) {
+        let Some(pid) = self.pid else { return std::future::pending().await };
+        while !Self::exited(pid) {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    }
+
+    /// After the exit: stops what it left in its group, then reaps it for its exit code.
+    async fn finish(&mut self) -> i32 {
+        self.kill_now();
+        let code = self.child.wait().await.ok().and_then(|s| s.code()).unwrap_or(-1);
+        self.pid = None;
+        code
+    }
+
+    fn kill_now(&mut self) {
+        // The child may already have exited (its stdin closed) and left helpers in its group: they go too.
+        if let Some(pid) = self.pid.filter(|p| Self::unreaped(*p)) {
+            // SAFETY: a plain signal to the child's own process group.
+            unsafe { libc::killpg(pid as libc::pid_t, libc::SIGKILL) };
+        }
+        let _ = self.child.start_kill();
+    }
+
+    async fn kill(&mut self) {
+        self.kill_now();
+        let _ = self.child.wait().await;
+        self.pid = None;
+    }
+}
+
+impl Drop for Group {
+    fn drop(&mut self) {
+        if self.pid.is_some() {
+            self.kill_now();
+        }
+    }
+}
+
+/// `[[dd-]hh:]mm:ss` from `ps -o etime=`, in seconds.
+fn etime_secs(t: &str) -> Option<f64> {
+    let (days, rest) = match t.split_once('-') {
+        Some((d, r)) => (d.parse::<f64>().ok()?, r),
+        None => (0.0, t),
+    };
+    let mut secs = 0.0;
+    for part in rest.split(':') {
+        secs = secs * 60.0 + part.parse::<f64>().ok()?;
+    }
+    Some(days * 86_400.0 + secs)
+}
+
+/// At daemon start: stops a sign-in an earlier daemon left running (killed hard, it couldn't). Only when the recorded
+/// pid is still a `claude auth login --claudeai` that leads its own group and started within 10 s of the recorded
+/// time; a pid reused by anything else is left alone. The record is removed either way. Blocking (`ps`).
+fn stop_left_behind(file: &std::path::Path) -> bool {
+    let Some(rec) = std::fs::read(file).ok().and_then(|b| serde_json::from_slice::<Value>(&b).ok()) else { return false };
+    let _ = std::fs::remove_file(file);
+    let (Some(pid), Some(started)) = (rec["pid"].as_u64(), rec["startedAt"].as_f64()) else { return false };
+    // Written by this daemon (a sign-in started already): it is live, not left behind.
+    if pid <= 1 || pid > i32::MAX as u64 || rec["daemon"].as_u64() == Some(std::process::id() as u64) {
+        return false;
+    }
+    let Ok(out) = std::process::Command::new("/bin/ps").args(["-o", "pgid=,etime=,command=", "-p", &pid.to_string()]).output() else { return false };
+    let line = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    let mut it = line.split_whitespace();
+    let (Some(pgid), Some(etime)) = (it.next(), it.next()) else { return false };
+    let command = it.collect::<Vec<_>>().join(" ");
+    let leader = pgid.parse::<u64>().ok() == Some(pid);
+    let same_start = etime_secs(etime).is_some_and(|e| ((now_ms() - e * 1000.0) - started).abs() <= 10_000.0);
+    if !(leader && same_start && command.ends_with(" auth login --claudeai")) {
+        return false;
+    }
+    // SAFETY: a plain signal to that sign-in's own process group.
+    unsafe { libc::killpg(pid as libc::pid_t, libc::SIGKILL) == 0 }
+}
+
+/// Removes the sign-in record only while it still holds `pid`: a replaced sign-in's cleanup runs while the new one
+/// writes its own, and must not take that away. Blocking.
+fn remove_record(file: &std::path::Path, pid: u32) {
+    let rec = std::fs::read(file).ok().and_then(|b| serde_json::from_slice::<Value>(&b).ok());
+    if rec.is_some_and(|r| r["pid"].as_u64() == Some(pid as u64)) {
+        let _ = std::fs::remove_file(file);
+    }
 }
 
 /// The days left, rounded up (0 once it has run out).
@@ -188,6 +350,8 @@ impl ClaudeSignIn {
     pub fn start(self: &Arc<Self>) {
         let me = self.clone();
         tokio::spawn(async move {
+            let file = me.root.join(CHILD_FILE);
+            let _ = tokio::task::spawn_blocking(move || stop_left_behind(&file)).await;
             tokio::time::sleep(Duration::from_secs(3)).await;
             loop {
                 me.check().await;
@@ -218,13 +382,17 @@ impl ClaudeSignIn {
         tokio::spawn(async move { me.check().await });
     }
 
-    /// What the strip shows: `warning` is "signed-out", "expiring" or null.
+    /// What the strip shows: `warning` is "missing" (no `claude`), "signed-out", "expiring" or null. The expiry counts
+    /// only for a Claude account sign-in; other ways in (API key, token, cloud provider) have no strip while signed in.
     fn status_json(&self) -> Value {
         let s = self.status.lock().clone();
         let now = now_ms();
-        let days = days_left(s.expires_at.as_deref(), now);
-        let past = s.expires_at.as_deref().and_then(parse_date).is_some_and(|at| at <= now);
+        let account = s.auth_method.as_deref().is_none_or(|m| m == "claude.ai");
+        let expires_at = s.expires_at.clone().filter(|_| account);
+        let days = days_left(expires_at.as_deref(), now);
+        let past = expires_at.as_deref().and_then(parse_date).is_some_and(|at| at <= now);
         let warning = match (s.logged_in, days) {
+            _ if s.missing => Some("missing"),
             (Some(false), _) => Some("signed-out"),
             (Some(true), _) if past => Some("signed-out"),
             (Some(true), Some(d)) if d <= self.o.warn_days => Some("expiring"),
@@ -234,9 +402,13 @@ impl ClaudeSignIn {
             "checked": s.checked_at.is_some(),
             "checkedAt": s.checked_at.map(iso),
             "loggedIn": s.logged_in,
-            "expiresAt": s.expires_at,
+            "authMethod": s.auth_method,
+            "expiresAt": expires_at,
             "daysLeft": days.map(|d| d as i64),
             "warning": warning,
+            // For the help sheet's fallback when `ckanban` isn't on the Terminal's PATH (a source install has no
+            // ~/.local/bin/ckanban): this daemon's own program, which takes every `ckanban` command.
+            "ckanbanPath": (warning == Some("missing")).then(|| std::env::current_exe().ok()).flatten().map(|p| p.to_string_lossy().into_owned()),
         })
     }
 
@@ -260,8 +432,12 @@ impl ClaudeSignIn {
         }
         loop {
             self.again.store(false, Ordering::SeqCst);
-            if let Some((logged_in, expires_at)) = self.read_status().await {
-                *self.status.lock() = Status { checked_at: Some(now_ms()), logged_in: Some(logged_in), expires_at };
+            if let Some(read) = self.read_status().await {
+                let checked_at = Some(now_ms());
+                *self.status.lock() = match read {
+                    Read::Answer { logged_in, expires_at, auth_method } => Status { checked_at, logged_in: Some(logged_in), expires_at, auth_method, missing: false },
+                    Read::Missing => Status { checked_at, missing: true, ..Status::default() },
+                };
                 self.changed();
                 self.maybe_tell().await;
             }
@@ -276,16 +452,22 @@ impl ClaudeSignIn {
         }
     }
 
-    async fn read_status(&self) -> Option<(bool, Option<String>)> {
+    /// None when the answer couldn't be read (a slow or odd `claude`): the last answer stays.
+    async fn read_status(&self) -> Option<Read> {
         let mut cmd = command(&self.o.bin, &["auth", "status"]);
-        let child = cmd.spawn().ok()?;
+        let child = match cmd.spawn() {
+            Ok(c) => c,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Some(Read::Missing),
+            Err(_) => return None,
+        };
         let out = tokio::time::timeout(self.o.status_timeout, child.wait_with_output()).await.ok()?.ok()?;
         let text = String::from_utf8_lossy(&out.stdout);
         let start = text.find('{')?;
         let v: Value = serde_json::from_str(text[start..].trim_end()).ok()?;
         let logged_in = v.get("loggedIn")?.as_bool()?;
-        let expires = v.get("loginExpiresAt").and_then(Value::as_str).filter(|s| parse_date(s).is_some()).map(str::to_string);
-        Some((logged_in, expires))
+        let expires_at = v.get("loginExpiresAt").and_then(Value::as_str).filter(|s| parse_date(s).is_some()).map(str::to_string);
+        let auth_method = v.get("authMethod").and_then(Value::as_str).map(str::to_string);
+        Some(Read::Answer { logged_in, expires_at, auth_method })
     }
 
     /// The two notifications, each once: the coming expiry (per expiry date) and being signed out (until signed in).
@@ -301,7 +483,16 @@ impl ClaudeSignIn {
             .unwrap_or_else(|| json!({}));
         let before = told.clone();
         let mut say: Option<(String, String)> = None;
+        if st["warning"] != json!("missing") {
+            told["missingTold"] = false.into();
+        }
         match st["warning"].as_str() {
+            Some("missing") => {
+                if told["missingTold"] != json!(true) {
+                    told["missingTold"] = true.into();
+                    say = Some(("The board can't find Claude Code".into(), "Tasks can't run until it does. Open the board and tap How to fix.".into()));
+                }
+            }
             Some("signed-out") => {
                 if told["signedOutTold"] != json!(true) {
                     told["signedOutTold"] = true.into();
@@ -430,25 +621,41 @@ impl ClaudeSignIn {
         self.state_of(id, true)
     }
 
-    async fn run(self: Arc<Self>, id: u64, mut stop: oneshot::Receiver<()>) {
+    async fn run(self: Arc<Self>, id: u64, stop: oneshot::Receiver<()>) {
         let mut cmd = command(&self.o.bin, &["auth", "login", "--claudeai"]);
-        cmd.stdin(Stdio::piped());
-        let mut child = match cmd.spawn() {
+        // Its own process group, so a stop takes whatever it started with it.
+        cmd.stdin(Stdio::piped()).process_group(0);
+        let child = match cmd.spawn() {
             Ok(c) => c,
             Err(e) => {
                 return self.fail(id, if e.kind() == std::io::ErrorKind::NotFound { missing() } else { unexpected() });
             }
         };
-        let stdin = child.stdin.take();
+        let mut child = Group::new(child);
+        let (file, pid) = (self.root.join(CHILD_FILE), child.pid);
+        if let Some(pid) = pid {
+            let (f, rec) = (file.clone(), json!({ "pid": pid, "startedAt": now_ms(), "daemon": std::process::id() }).to_string());
+            let _ = tokio::task::spawn_blocking(move || ckanban_core::atomic::atomic_write(&f, rec)).await;
+        }
+        self.clone().watch(id, stop, &mut child).await;
+        child.kill().await;
+        if let Some(pid) = pid {
+            let _ = tokio::task::spawn_blocking(move || remove_record(&file, pid)).await;
+        }
+    }
+
+    /// The sign-in's life once started: its link, then Claude's verdict, or a stop or the timeout (the caller kills
+    /// what is left).
+    async fn watch(self: Arc<Self>, id: u64, mut stop: oneshot::Receiver<()>, group: &mut Group) {
+        let stdin = group.child.stdin.take();
         if !self.update(id, |l| l.stdin = stdin) {
-            let _ = child.start_kill();
-            let _ = child.wait().await;
             return;
         }
         // Both streams into one text (only matched, never shown or logged), a note on each chunk.
         let text = Arc::new(Mutex::new(String::new()));
         let (tx, mut rx) = mpsc::unbounded_channel::<()>();
         let mut readers = Vec::new();
+        let child = &mut group.child;
         for s in [child.stdout.take().map(|s| Box::new(s) as Box<dyn tokio::io::AsyncRead + Unpin + Send>), child.stderr.take().map(|s| Box::new(s) as _)].into_iter().flatten() {
             let (text, tx) = (text.clone(), tx.clone());
             readers.push(tokio::spawn(async move {
@@ -473,19 +680,12 @@ impl ClaudeSignIn {
         let deadline = tokio::time::sleep(self.o.timeout);
         tokio::pin!(deadline);
         let mut reading = true;
-        let code = loop {
+        // None: the 10 minutes ran out.
+        let ended = loop {
             tokio::select! {
-                _ = &mut stop => {
-                    let _ = child.start_kill();
-                    let _ = child.wait().await;
-                    return;
-                }
-                _ = &mut deadline => {
-                    let _ = child.start_kill();
-                    let _ = child.wait().await;
-                    return self.fail(id, TIMED_OUT.into());
-                }
-                st = child.wait() => break st.ok().and_then(|s| s.code()).unwrap_or(-1),
+                _ = &mut stop => return,
+                _ = &mut deadline => break false,
+                _ = group.exit() => break true,
                 got = rx.recv(), if reading => {
                     if got.is_none() {
                         reading = false;
@@ -512,6 +712,11 @@ impl ClaudeSignIn {
                 }
             }
         };
+        if !ended {
+            group.kill().await;
+            return self.fail(id, TIMED_OUT.into());
+        }
+        let code = group.finish().await;
         // The last words can arrive just after the exit.
         for r in readers {
             let _ = tokio::time::timeout(Duration::from_secs(1), r).await;
@@ -800,6 +1005,190 @@ exit 1
         let v = s.begin().await;
         assert_eq!(v["login"]["url"], "https://claude.com/cai/oauth/authorize?code=true&state=whole", "{v}");
         s.cancel(v["login"]["id"].as_u64().unwrap());
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[tokio::test]
+    async fn no_claude_shows_its_own_strip_and_tells_once() {
+        let d = tmp("missing");
+        let o = Options { bin: d.join("nope").to_string_lossy().into_owned(), ..Options::new() };
+        let s = ClaudeSignIn::new(o, d.clone(), Arc::new(|_| {}));
+        let told = Arc::new(Mutex::new(Vec::<String>::new()));
+        let t2 = told.clone();
+        s.set_tell(Arc::new(move |title, _| t2.lock().push(title)));
+        s.check().await;
+        s.check().await;
+        let st = s.status_json();
+        assert_eq!((st["checked"].as_bool(), st["warning"].as_str()), (Some(true), Some("missing")), "{st}");
+        // The help sheet's fallback: the board's own program.
+        assert!(st["ckanbanPath"].as_str().is_some_and(|p| p.starts_with('/')), "{st}");
+        assert_eq!(*told.lock(), vec!["The board can't find Claude Code".to_string()]);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[tokio::test]
+    async fn api_keys_and_other_ways_in_have_no_strip() {
+        let d = tmp("apikey");
+        let (s, _) = sign(&d, "#!/bin/sh\ncat \"$(dirname \"$0\")/status\"\n");
+        let past = iso(now_ms() - 1000.0);
+        let soon = iso(now_ms() + DAY_MS);
+        // What Claude Code 2.1.328 answers with ANTHROPIC_API_KEY, an apiKeyHelper, CLAUDE_CODE_OAUTH_TOKEN or a cloud
+        // provider: loggedIn true, its authMethod, and maybe the expiry of an old Claude account sign-in still stored.
+        for m in ["api_key", "api_key_helper", "oauth_token", "third_party"] {
+            for at in [&past, &soon] {
+                std::fs::write(d.join("status"), format!(r#"{{"loggedIn": true, "authMethod": "{m}", "loginExpiresAt": "{at}"}}"#)).unwrap();
+                s.check().await;
+                let st = s.status_json();
+                assert!(st["warning"].is_null(), "{m}: {st}");
+                assert_eq!(st["authMethod"], m);
+            }
+        }
+        std::fs::write(d.join("status"), format!(r#"{{"loggedIn": true, "authMethod": "claude.ai", "loginExpiresAt": "{soon}"}}"#)).unwrap();
+        s.check().await;
+        assert_eq!(s.status_json()["warning"], "expiring");
+        std::fs::write(d.join("status"), r#"{"loggedIn": false, "authMethod": "none"}"#).unwrap();
+        s.check().await;
+        assert_eq!(s.status_json()["warning"], "signed-out");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn the_status_check_sees_the_runs_settings_and_the_sign_in_does_not() {
+        for k in ["CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY"] {
+            assert!(!dropped(k, false), "{k}");
+        }
+        assert!(dropped("CLAUDE_CODE_USE_BEDROCK", true));
+        assert!(!dropped("ANTHROPIC_API_KEY", true));
+        for k in ["CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_SESSION_ID"] {
+            assert!(dropped(k, false) && dropped(k, true), "{k}");
+        }
+    }
+
+    fn alive(pid: &str) -> bool {
+        std::process::Command::new("/bin/kill").args(["-0", pid.trim()]).status().unwrap().success()
+    }
+
+    async fn gone(pid: &str) -> bool {
+        for _ in 0..50 {
+            if !alive(pid) {
+                return true;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        false
+    }
+
+    /// A sign-in that starts a helper of its own (written to `kid`), as a real one could.
+    const WITH_KID: &str = "#!/bin/sh\nsleep 60 &\necho $! > \"$(dirname \"$0\")/kid\"\necho 'visit: https://x/oauth/authorize?a=1'\nread line\n";
+
+    #[tokio::test]
+    async fn cancel_a_new_start_and_the_timeout_stop_what_the_sign_in_started() {
+        let d = tmp("group");
+        let (s, _) = sign(&d, WITH_KID);
+        let v = s.begin().await;
+        let kid = std::fs::read_to_string(d.join("kid")).unwrap();
+        assert!(alive(&kid));
+        // The record of the running sign-in is there while it runs and gone after.
+        assert!(d.join(CHILD_FILE).exists());
+        s.cancel(v["login"]["id"].as_u64().unwrap());
+        assert!(gone(&kid).await, "cancel left {kid}");
+        for _ in 0..50 {
+            if !d.join(CHILD_FILE).exists() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        assert!(!d.join(CHILD_FILE).exists());
+        s.begin().await;
+        let kid = std::fs::read_to_string(d.join("kid")).unwrap();
+        let v = s.begin().await;
+        assert!(gone(&kid).await, "a new start left {kid}");
+        s.cancel(v["login"]["id"].as_u64().unwrap());
+        let o = Options { bin: d.join("claude").to_string_lossy().into_owned(), link_wait: Duration::from_secs(5), timeout: Duration::from_secs(2), ..Options::new() };
+        let s = ClaudeSignIn::new(o, d.clone(), Arc::new(|_| {}));
+        s.begin().await;
+        let kid2 = std::fs::read_to_string(d.join("kid")).unwrap();
+        assert!(gone(&kid2).await, "the timeout left {kid2}");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// Starts the fake sign-in the way the board does (its own group), as if a daemon that is gone now had.
+    fn orphan(dir: &std::path::Path, args: &[&str]) -> std::process::Child {
+        use std::os::unix::process::CommandExt;
+        let bin = fake(dir, "#!/bin/sh\nsleep 60\n");
+        std::process::Command::new(bin).args(args).process_group(0).spawn().unwrap()
+    }
+
+    fn record(dir: &std::path::Path, pid: u32, started: f64) {
+        std::fs::write(dir.join(CHILD_FILE), json!({ "pid": pid, "startedAt": started, "daemon": 1 }).to_string()).unwrap();
+    }
+
+    #[test]
+    fn a_replaced_sign_in_leaves_the_new_ones_record() {
+        let d = tmp("record");
+        let file = d.join(CHILD_FILE);
+        // The new sign-in already wrote its record: the old one's cleanup keeps it.
+        record(&d, 222, now_ms());
+        remove_record(&file, 111);
+        assert!(file.exists());
+        // Its own record: removed. No record or a broken one: nothing happens.
+        remove_record(&file, 222);
+        assert!(!file.exists());
+        remove_record(&file, 222);
+        std::fs::write(&file, "not json").unwrap();
+        remove_record(&file, 222);
+        assert!(file.exists());
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn a_sign_in_left_by_a_killed_daemon_is_stopped_and_nothing_else() {
+        let d = tmp("left");
+        let file = d.join(CHILD_FILE);
+        // Its own sign-in, started at the recorded time: stopped, the record gone.
+        let mut c = orphan(&d, &["auth", "login", "--claudeai"]);
+        std::thread::sleep(Duration::from_millis(300));
+        record(&d, c.id(), now_ms());
+        assert!(stop_left_behind(&file));
+        assert!(c.wait().unwrap().code().is_none());
+        assert!(!file.exists());
+        // The pid now belongs to something that started at another time (a reused pid): left alone.
+        let mut c = orphan(&d, &["auth", "login", "--claudeai"]);
+        record(&d, c.id(), now_ms() - 3_600_000.0);
+        assert!(!stop_left_behind(&file));
+        assert!(c.try_wait().unwrap().is_none());
+        let _ = c.kill();
+        let _ = c.wait();
+        // Something else entirely with that pid: left alone.
+        let mut c = orphan(&d, &["mcp", "serve"]);
+        record(&d, c.id(), now_ms());
+        assert!(!stop_left_behind(&file));
+        assert!(c.try_wait().unwrap().is_none());
+        let _ = c.kill();
+        let _ = c.wait();
+        // A sign-in that isn't its group's leader (not one the board started): left alone.
+        let bin = fake(&d, "#!/bin/sh\nsleep 60\n");
+        let mut c = std::process::Command::new(bin).args(["auth", "login", "--claudeai"]).spawn().unwrap();
+        record(&d, c.id(), now_ms());
+        assert!(!stop_left_behind(&file));
+        assert!(c.try_wait().unwrap().is_none());
+        let _ = c.kill();
+        let _ = c.wait();
+        // This daemon's own live sign-in: left alone.
+        let mut c = orphan(&d, &["auth", "login", "--claudeai"]);
+        std::fs::write(&file, json!({ "pid": c.id(), "startedAt": now_ms(), "daemon": std::process::id() }).to_string()).unwrap();
+        assert!(!stop_left_behind(&file));
+        assert!(c.try_wait().unwrap().is_none());
+        let _ = c.kill();
+        let _ = c.wait();
+        // No record, a gone pid, junk: nothing to do.
+        assert!(!stop_left_behind(&file));
+        record(&d, 999_999, now_ms());
+        assert!(!stop_left_behind(&file));
+        std::fs::write(&file, "junk").unwrap();
+        assert!(!stop_left_behind(&file));
+        assert_eq!(etime_secs("01:02"), Some(62.0));
+        assert_eq!(etime_secs("1-02:03:04"), Some(93_784.0));
         let _ = std::fs::remove_dir_all(&d);
     }
 

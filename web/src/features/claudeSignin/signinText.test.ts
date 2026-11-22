@@ -11,6 +11,9 @@ test("the strip: nothing while fine or unchecked, yellow before it runs out, red
   expect(stripOf({ ...base, warning: "expiring", daysLeft: 1 })?.text).toBe("Claude's sign-in on your Mac runs out in 1 day.");
   expect(stripOf({ ...base, warning: "expiring", daysLeft: 0 })?.text).toBe("Claude's sign-in on your Mac runs out today.");
   expect(stripOf({ ...base, loggedIn: false, warning: "signed-out" })).toEqual({ tone: "err", text: "Claude is signed out, so tasks can't run." });
+  expect(stripOf({ ...base, loggedIn: null, expiresAt: null, daysLeft: null, warning: "missing" })).toEqual({ tone: "err", text: "The board can't find Claude Code on this Mac, so tasks can't run.", fix: true });
+  // An API key or a cloud provider: signed in, no expiry to warn about, no strip.
+  expect(stripOf({ ...base, authMethod: "api_key", expiresAt: null, daysLeft: null })).toBeNull();
 });
 
 test("a pasted code needs its # and no spaces", () => {

@@ -371,6 +371,8 @@ body.show-hints .sortable-card:not(:focus) .key-hint.card-keys { display: none; 
 .cs-done b { display: block; margin-bottom: var(--sp-2); }
 .banner.inline.cs-alert { margin: 0 0 var(--sp-4); border-radius: var(--r-md); background: var(--err-soft); color: var(--err); cursor: default; font-size: var(--fs-md); }
 .cs-actions { display: flex; gap: var(--sp-3); justify-content: flex-end; margin-top: var(--sp-5); }
+.cs-cmd { background: var(--surface-2); padding: var(--sp-1) var(--sp-2); border-radius: var(--r-sm); overflow-wrap: anywhere; user-select: all; }
+.cs-later { margin-top: var(--sp-5); }
 @media (max-width: 720px) {
   .cs-strip > .btn, .cs-sheet .btn { min-height: var(--tap); }
   .cs-body > input { min-height: var(--tap); }

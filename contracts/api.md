@@ -412,13 +412,17 @@ from a board sets `frontDesk` to that board.
   404 unknown server or board; 400 login/logout for a server without OAuth (stdio); 409 a paste while no sign-in runs.
 - `GET /api/mcp/:name/config` returns the saved settings unmasked (env values, headers), for the edit form.
 - Claude's sign-in (`/api/claude-signin*`): Claude Code's own sign-in on the Mac. `status` is `{checked, checkedAt,
-  loggedIn, expiresAt, daysLeft, warning}` from `claude auth status`, run in the background (at start, every 10
-  minutes, after a sign-in, and soon after a `session.updated` whose last message is a sign-in error); `warning` is
-  `signed-out`, `expiring` (3 days or less) or null. `login` is `{id, state, url, error, startedAt}` with `state`
+  loggedIn, authMethod, expiresAt, daysLeft, warning}` from `claude auth status`, run in the background (at start, every
+  10 minutes, after a sign-in, and soon after a `session.updated` whose last message is a sign-in error); `warning` is
+  `missing` (no `claude` found), `signed-out`, `expiring` (3 days or less) or null. `expiresAt`, `daysLeft` and the two
+  expiry warnings are only for a Claude account (`authMethod` "claude.ai" or absent): an API key, token or cloud
+  provider has no strip while `loggedIn`. With `missing`, `ckanbanPath` is the daemon's own program (the help sheet's
+  fallback for `ckanban install`), otherwise null. The status check keeps the runs' `CLAUDE_CODE_*` settings (only the Claude
+  session markers are removed). `login` is `{id, state, url, error, startedAt}` with `state`
   `starting|waiting|checking|done|failed`; `url` only in the start answer. Start, paste and cancel answer for their own
   `id`: a replaced one shows as `failed` with "This sign-in was replaced...". A past `expiresAt` counts as signed out. Start runs `claude auth login --claudeai`
-  (`BROWSER` is a no-op, Claude session variables removed) and stops any earlier one; 10 minutes, Cancel or a new start
-  stop it. Start, paste and cancel are user only (`userOnly`): a run's or huddle helper's header, the MCP server and the
+  (`BROWSER` is a no-op, `CLAUDE_CODE_*` variables removed, its own process group) and stops any earlier one; 10 minutes,
+  Cancel or a new start stop its whole process group. Start, paste and cancel are user only (`userOnly`): a run's or huddle helper's header, the MCP server and the
   CLI are refused. The code goes to the child's stdin only, never to a log, a file or an answer. Event
   `claude-signin.updated` `{state}` (without `url`).
 - None of the `/api/mcp` and `/api/agents` routes has a user-only or run check (see Quirks).

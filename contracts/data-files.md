@@ -184,6 +184,7 @@ helper-spend.jsonl
 usage-windows.json
 messages.json
 claude-signin.json
+claude-signin-child.json
 waits.json
 waits.json.corrupt-<ms>
 helper-state.json
@@ -723,7 +724,8 @@ Read once and held in memory; the daemon's next save overwrites outside edits.
 | Path | Format | Writer |
 | --- | --- | --- |
 | `messages.json` | compact JSON +nl `{ version: 1, messages: StoredMessage[] }` (helper's sent and held alerts) | `MessageStore.save` (`helper/messages.ts`), fixed-tmp |
-| `claude-signin.json` | compact JSON `{ warnedFor?: string, signedOutTold?: boolean }` (which sign-in notifications were sent) | `claude_signin.rs`, atomic | read at each status check |
+| `claude-signin.json` | compact JSON `{ warnedFor?: string, signedOutTold?: boolean, missingTold?: boolean }` (which sign-in notifications were sent) | `claude_signin.rs`, atomic | read at each status check |
+| `claude-signin-child.json` | compact JSON `{ pid, startedAt, daemon }`, only while a sign-in from the board runs | `claude_signin.rs`, atomic | read at daemon start: a sign-in left by a daemon killed hard is stopped if that pid is still a `claude auth login --claudeai` group leader started at `startedAt` (±10 s); removed |
 | `waits.json` | JSON (indent 1) +nl `{ version: 1, records, notifyUserAt, firstSummaryPending? }`; unreadable file renamed `waits.json.corrupt-<ms>` | `WaitStore.save` (`helper/waits.ts`), fixed-tmp |
 | `helper-state.json` | JSON (indent 1) +nl `RunnerState` (`helper/runner.ts`) | atomic |
 | `version-history-pending.json` | pretty JSON +nl `{ <folder path>: { at, tickets: [{ board, id }] } }`: "Turn on version history" asked while tickets edit the folder; removed when empty | `git/pending.rs`, atomic |

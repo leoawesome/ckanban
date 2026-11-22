@@ -691,7 +691,8 @@ export function App() {
 
   const mcpAttention = mcp?.servers.filter((s) => s.attention).length ?? 0;
   const scheduleFails = schedules?.filter((s) => s.lastError).length ?? 0;
-  const missing = health ? (["claude", "git", "gh"] as const).filter((k) => !health[k]) : [];
+  // A missing Claude Code has its own red strip (ClaudeSignInStrip: checked every 10 minutes, How to fix), not this banner.
+  const missing = health ? (["git", "gh"] as const).filter((k) => !health[k]) : [];
   // Every active ticket run (chat replies and Planning too); slots: the working runs, as the server counts them.
   const running = useMemo(() => runCounts(tickets, huddles), [tickets, huddles]);
   // A huddle that has sat finished-looking for hours asks "Finished?" and stops counting as live.
@@ -968,15 +969,8 @@ export function App() {
         </div>
       )}
       {missing.length > 0 && !dismissed.has(pathKey) && (
-        <div className={`banner ${missing.includes("claude") ? "warn" : "info"}`} role="status">
+        <div className="banner info" role="status">
           <span>
-            {missing.includes("claude") && (
-              <>
-                <b>Claude Code</b> isn't installed, or the board can't find it, so tickets can't run. Install it from{" "}
-                <a href="https://claude.com/claude-code" target="_blank" rel="noreferrer">claude.com/claude-code</a>, sign in, then reload this page.
-                {" "}If this message stays, run <code>ckanban install</code> in Terminal.{" "}
-              </>
-            )}
             {missing.includes("git") && <><b>git</b> isn't installed: tickets still run, editing the board folder directly instead of a copy per ticket. </>}
             {missing.includes("gh") && (
               <>
