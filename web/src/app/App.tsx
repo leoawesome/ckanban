@@ -1,5 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { afterBackSteps } from "./backEntry";
+import { GUARD_MS, GUARD_NOTE, startExitGuard } from "./exitGuard";
+import { anyLayerOpen } from "../lib/layers";
 import { useViewportFit } from "../lib/sheet";
 import { markOpened } from "../features/board/cardState";
 import { setLearnedVersions } from "../lib/models";
@@ -305,6 +307,13 @@ export function App() {
       window.removeEventListener("popstate", onPop);
     };
   }, []);
+
+  // Installed app (Android's back swipe): Back on the main screen shows a note first; a second Back closes the app.
+  useEffect(() => startExitGuard({
+    enabled: () => window.matchMedia("(display-mode: standalone)").matches,
+    atMain: () => !location.hash.startsWith("#/~") && !parseHash().ticket && !anyLayerOpen(),
+    warn: () => { toast(GUARD_NOTE, { ms: GUARD_MS }); },
+  }), []);
 
   // Keep the URL in step with the board shown (replace, so switching boards doesn't pile up history).
   useEffect(() => {
