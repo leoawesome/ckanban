@@ -4,6 +4,38 @@ What changed in each ckanban release. Get the latest with `ckanban update`.
 
 ## Unreleased
 
+## [0.19.0] - 2026-11-23
+
+### Faster, steadier board
+- The board's server now runs as one native Mac program instead of on Bun. It starts faster, stays responsive on boards with thousands of tickets, and `ckanban update` swaps in the new program for you. Your data folder stays exactly as it was.
+- Mac downloads are signed with an Apple Developer ID and notarized.
+
+### Tickets and folders
+- Tickets that work straight in a board's folder (no version history) now run at the same time. Cards that share a folder say so, and offer to turn on version history once those tickets finish. If you'd rather they take turns, turn on *One ticket at a time in my folder* in the board settings.
+- When a planning chat gets long, work can start in a fresh chat from the final ticket (a tick box on the proposal card).
+- Old planned tickets became main tickets with tasks, the one way to split work.
+
+### Claude sign-in
+- A strip warns you 3 days before Claude's sign-in runs out and turns red once it has. You can sign Claude back in from the board, also from your phone, in three steps. If Claude Code isn't installed, the strip says so and helps.
+
+### Disk space and clean-up
+- Copies of finished tickets are cleaned up in the background. Kept copies older than 3 days drop their installed packages (reopening the ticket installs them again), and a banner with *Free up space* shows when the disk is nearly full.
+- Leftover copies from finished review huddles are removed, and each run gets its own temporary folder that is deleted when it ends.
+
+### Browsers and phone
+- A board browser is held only while a task is actually using it, and the Browsers window says who is using it.
+- On a phone, a back swipe on the main screen asks you to swipe again before it closes the app.
+- The ticket's tab bar stays visible while you scroll.
+
+### Fixed
+- With phone access on, a board run can no longer pretend to be you on the phone connection.
+- Saved keys are masked in bug reports and in ticket text, and changing Claude's tools is limited to you.
+- Setting up a ticket no longer freezes the board: setups show progress and stop after 15 minutes with no output.
+- The key box stays open when you send a chat message.
+- Board tabs keep getting live updates when the tab that relays them goes quiet.
+- A pending restart no longer holds up your chat and waits at most 2 minutes.
+- On a phone, the ticket header's status pill is no longer squeezed.
+
 ## [0.18.1] - 2026-11-15
 
 ### Fixed
@@ -433,6 +465,7 @@ First release.
 - Terminal & file explorer panel, Connections panel for MCP servers, scheduled tickets on a cron, claude.ai artifacts from runs.
 - Standalone binary, installer, `ckanban update` and a background service that starts at login.
 
+[0.19.0]: https://github.com/leoawesome/ckanban/compare/v0.18.1...v0.19.0
 [0.18.1]: https://github.com/leoawesome/ckanban/compare/v0.18.0...v0.18.1
 [0.18.0]: https://github.com/leoawesome/ckanban/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/leoawesome/ckanban/compare/v0.16.0...v0.17.0
