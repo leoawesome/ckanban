@@ -4,7 +4,9 @@ What changed in each ckanban release. Get the latest with `ckanban update`.
 
 ## Unreleased
 
-## [0.19.0] - 2026-11-23
+## [0.19.1] - 2026-11-23
+
+Version 0.19.0 was never published (its build failed); 0.19.1 is the same release.
 
 ### Faster, steadier board
 - The board's server now runs as one native Mac program instead of on Bun. It starts faster, stays responsive on boards with thousands of tickets, and `ckanban update` swaps in the new program for you. Your data folder stays exactly as it was.
@@ -465,7 +467,7 @@ First release.
 - Terminal & file explorer panel, Connections panel for MCP servers, scheduled tickets on a cron, claude.ai artifacts from runs.
 - Standalone binary, installer, `ckanban update` and a background service that starts at login.
 
-[0.19.0]: https://github.com/leoawesome/ckanban/compare/v0.18.1...v0.19.0
+[0.19.1]: https://github.com/leoawesome/ckanban/compare/v0.18.1...v0.19.1
 [0.18.1]: https://github.com/leoawesome/ckanban/compare/v0.18.0...v0.18.1
 [0.18.0]: https://github.com/leoawesome/ckanban/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/leoawesome/ckanban/compare/v0.16.0...v0.17.0
