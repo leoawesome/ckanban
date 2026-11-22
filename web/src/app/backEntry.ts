@@ -156,6 +156,11 @@ export function useBackEntry(active: boolean, onBack: () => void) {
   }, [active, gen]);
 }
 
+/** Whether any layer has a history entry now (exitGuard.ts adds its guard only with none). */
+export function backLayersOpen(): boolean {
+  return live.length > 0 || queued || ignore > 0;
+}
+
 /** For tests: forget every layer. */
 export function resetBackEntries() {
   live.length = 0;
