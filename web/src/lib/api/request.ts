@@ -1,4 +1,4 @@
-import { type ChannelLike, LIVE_NAME, type LocksLike, type SourceLike, createLive } from "../../app/liveEvents";
+import { type ChannelLike, LIVE_NAME, type LocksLike, type PageLike, type SourceLike, createLive } from "../../app/liveEvents";
 import type { BusEvent } from "./types/board";
 import type { Ticket } from "./types/ticket";
 
@@ -41,7 +41,21 @@ const live = createLive<BusEvent>({
   makeSource: () => new EventSource("/api/events") as unknown as SourceLike,
   locks: typeof navigator !== "undefined" && navigator.locks ? (navigator.locks as unknown as LocksLike) : null,
   makeChannel: typeof BroadcastChannel !== "undefined" ? () => new BroadcastChannel(LIVE_NAME) as unknown as ChannelLike : null,
+  page: typeof document !== "undefined" ? pageEvents() : null,
+  makeAbort: typeof AbortController !== "undefined" ? () => new AbortController() : null,
 });
+
+/** The page's state for the live connection: on screen or not, frozen by Chrome or put in the back/forward cache. */
+function pageEvents(): PageLike {
+  return {
+    visible: () => document.visibilityState === "visible",
+    on(event, fn) {
+      if (event === "visible") document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") fn(); });
+      else if (event === "freeze") { document.addEventListener("freeze", fn); window.addEventListener("pagehide", fn); }
+      else { document.addEventListener("resume", fn); window.addEventListener("pageshow", fn); }
+    },
+  };
+}
 
 export function subscribe(fn: (e: BusEvent) => void): () => void {
   return live.subscribe(fn);
