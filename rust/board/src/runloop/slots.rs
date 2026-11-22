@@ -79,6 +79,10 @@ impl RunLoop {
     /// `folderBusy`: another ticket on the board edits the folder `t` would edit in place. Only on a board with
     /// "One ticket at a time in my folder" on: otherwise tickets share the folder, like several Claude Code windows.
     pub fn folder_busy(&self, slug: &str, t: &Tk) -> bool {
+        // Version history is being turned on there: every ticket that would edit it in place waits a moment.
+        if self.held_by_switch(slug, t) {
+            return true;
+        }
         if t.main || !self.folder_turns(slug) {
             return false;
         }
@@ -124,10 +128,15 @@ impl RunLoop {
         let Some(others) = self.folder_sharers(slug, t) else { return Value::Null };
         let no_history = matches!(self.git.repo_state(slug), Some(crate::git::repo::RepoKind::Plain | crate::git::repo::RepoKind::Empty));
         let offer = no_history && newest(t, &others);
-        let mut v = json!({ "others": others.len(), "offer": offer });
-        // The folder the offer turns version history on for (`POST /api/version-history` takes its path).
-        if offer && let Some(p) = self.profile(slug).and_then(|p| p.get("path").cloned()) {
-            v["path"] = p;
+        let path = self.board_path(slug);
+        // The board turns version history on by itself once these tickets have finished (the link was clicked).
+        let pending = path.as_deref().is_some_and(|p| crate::git::pending::is_pending(&self.root, p));
+        let mut v = json!({ "others": others.len(), "offer": offer, "pending": pending });
+        // The folder the offer (or its Cancel) is for (`POST /api/version-history` takes its path).
+        if (offer || pending)
+            && let Some(p) = path
+        {
+            v["path"] = p.into();
         }
         v
     }
@@ -393,6 +402,133 @@ mod tests {
         b.core.tickets.patch("b", &three, json!({ "worktree": "/tmp/copy" }).as_object().unwrap().clone()).unwrap();
         assert_eq!(b.runs.folder_share("b", &b.core.tickets.get("b", &one).unwrap())["others"], json!(1));
         assert!(b.runs.folder_share("b", &b.core.tickets.get("b", &three).unwrap()).is_null());
+    }
+
+    fn project(b: &Board) -> String {
+        b._d.path().join("project").to_string_lossy().to_string()
+    }
+
+    /// Waits (up to 20 s) until the board's request for the project folder is gone.
+    async fn request_settled(b: &Board) -> bool {
+        for _ in 0..200 {
+            if !crate::git::pending::is_pending(&b.runs.root, &project(b)) && !b.runs.switching("b") {
+                return true;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+        false
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_request_waits_while_a_ticket_still_edits_the_folder_and_turns_on_after_the_last_run() {
+        if !crate::git::repo::git_installed().await {
+            return;
+        }
+        let b = board(None);
+        let one = running(&b, "One");
+        let two = running(&b, "Two");
+        let path = project(&b);
+        crate::git::pending::set(&b.runs.root, &path, "2026-11-22T00:00:00.000Z", &[("b".into(), one.clone()), ("b".into(), two.clone())]);
+        let card = b.runs.folder_share("b", &b.core.tickets.get("b", &one).unwrap());
+        assert_eq!(card["pending"], json!(true), "{card}");
+        assert_eq!(card["path"], json!(path), "the Cancel link needs the folder: {card}");
+        let r = b.runs.clone();
+        assert!(!tokio::task::spawn_blocking(move || end_run_of(&r, &one)).await.unwrap(), "started while Two still edits the folder");
+        assert!(crate::git::pending::is_pending(&b.runs.root, &path), "the request should still wait");
+        assert!(!b._d.path().join("project/.git").exists());
+        let r = b.runs.clone();
+        let t = two.clone();
+        assert!(tokio::task::spawn_blocking(move || end_run_of(&r, &t)).await.unwrap(), "didn't start once the folder was free");
+        assert!(request_settled(&b).await, "the request never finished");
+        assert!(b._d.path().join("project/.git").exists(), "version history wasn't turned on");
+        assert!(b.core.tickets.comments("b", &two).is_empty(), "no comment when it worked");
+    }
+
+    fn project_of(r: &RunLoop) -> String {
+        r.root.join("project").to_string_lossy().to_string()
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn the_end_of_a_real_run_turns_version_history_on() {
+        if !crate::git::repo::git_installed().await {
+            return;
+        }
+        let b = board(None);
+        // Its run ends at once (no claude): `after_run` checks the request.
+        let one = ticket(&b, "One", json!({ "status": "ready", "order": 1 }));
+        crate::git::pending::set(&b.runs.root, &project(&b), "2026-11-22T00:00:00.000Z", &[("b".into(), one.clone())]);
+        let r = b.runs.clone();
+        tokio::task::spawn_blocking(move || r.dispatch("b")).await.unwrap();
+        assert!(started(&b, &one));
+        assert!(request_settled(&b).await, "the request never finished");
+        assert!(b._d.path().join("project/.git").exists(), "version history wasn't turned on after the run ended");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn while_it_is_turned_on_tickets_in_the_folder_wait() {
+        let b = board(None);
+        let next = ticket(&b, "Next", json!({ "status": "ready", "order": 1 }));
+        let path = project(&b);
+        assert!(b.runs.hold_folder(&path));
+        assert!(!b.runs.hold_folder(&path), "a second hold must be refused");
+        let r = b.runs.clone();
+        tokio::task::spawn_blocking(move || r.dispatch("b")).await.unwrap();
+        assert!(!started(&b, &next), "dispatch started a ticket during the switch");
+        let r = b.runs.clone();
+        let n = next.clone();
+        let refused = tokio::task::spawn_blocking(move || r.start("b", &n, None, None)).await.unwrap();
+        assert_eq!(refused.as_deref(), Some(super::super::history::SWITCHING));
+        assert!(!b.runs.is_running("b", &next));
+        let r = b.runs.clone();
+        tokio::task::spawn_blocking(move || r.release_folder(&project_of(&r))).await.unwrap();
+        assert!(started(&b, &next), "the held ticket didn't start after the switch");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn cancel_clears_the_request_and_nothing_turns_on() {
+        let b = board(None);
+        let one = running(&b, "One");
+        let path = project(&b);
+        crate::git::pending::set(&b.runs.root, &path, "2026-11-22T00:00:00.000Z", &[("b".into(), one.clone())]);
+        assert!(crate::git::pending::clear(&b.runs.root, &path));
+        assert_eq!(b.runs.folder_share("b", &b.core.tickets.get("b", &one).unwrap()), Value::Null, "alone: no pill");
+        let r = b.runs.clone();
+        assert!(!tokio::task::spawn_blocking(move || end_run_of(&r, &one)).await.unwrap());
+        assert!(!b._d.path().join("project/.git").exists());
+    }
+
+    fn end_run_of(r: &RunLoop, id: &str) -> bool {
+        r.state.lock().runs.remove(&RunLoop::key("b", id));
+        r.turn_on_when_free(&project_of(r))
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_failed_turn_on_clears_the_request_and_tells_the_newest_ticket() {
+        let b = board(None);
+        let older = running(&b, "Older");
+        let newer = running(&b, "Newer");
+        b.core.tickets.patch("b", &older, json!({ "createdAt": "2026-11-20T01:00:00.000Z" }).as_object().unwrap().clone()).unwrap();
+        b.core.tickets.patch("b", &newer, json!({ "createdAt": "2026-11-20T02:00:00.000Z" }).as_object().unwrap().clone()).unwrap();
+        let path = project(&b);
+        crate::git::pending::set(&b.runs.root, &path, "2026-11-22T00:00:00.000Z", &[("b".into(), older.clone()), ("b".into(), newer.clone())]);
+        // The folder is gone (a file in its place): turning it on fails.
+        std::fs::remove_dir_all(&path).unwrap();
+        std::fs::write(&path, "not a folder").unwrap();
+        let r = b.runs.clone();
+        let (o, n) = (older.clone(), newer.clone());
+        assert!(tokio::task::spawn_blocking(move || {
+            r.state.lock().runs.remove(&RunLoop::key("b", &o));
+            end_run_of(&r, &n)
+        })
+        .await
+        .unwrap());
+        assert!(request_settled(&b).await, "the request wasn't cleared");
+        let c = b.core.tickets.comments("b", &newer);
+        assert_eq!(c.len(), 1, "{c:?}");
+        let text = c[0]["text"].as_str().unwrap();
+        assert!(text.starts_with("Couldn't turn on version history for this folder after these tickets finished:"), "{text}");
+        assert!(!text.contains("git"), "plain words: {text}");
+        assert!(b.core.tickets.comments("b", &older).is_empty());
     }
 
     #[test]

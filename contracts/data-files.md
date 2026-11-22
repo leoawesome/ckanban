@@ -186,6 +186,7 @@ messages.json
 waits.json
 waits.json.corrupt-<ms>
 helper-state.json
+version-history-pending.json
 telegram-*.json
 session-summaries.json
 usage-last.json
@@ -240,6 +241,7 @@ usage), then checks every one against its schema and its write style (pretty or 
 | `telegram-spend.json`, `telegram-desk-spend.json` | `spend-by-day.schema.json` | no: needs a Telegram bot |
 | `usage-windows.json`, `usage-last.json` | `usage-windows.schema.json`, `usage-last.schema.json` | yes (a local fake of Anthropic) |
 | `waits.json` | `waits.schema.json` | yes |
+| `version-history-pending.json` | `version-history-pending.schema.json` | yes (`runs-git.test.ts`) |
 
 Checked without a JSON Schema: the attachment's bytes and name, the automation's `.sh` script, and both
 `huddle-notes/_all.md` files (exact Markdown layout).
@@ -722,6 +724,7 @@ Read once and held in memory; the daemon's next save overwrites outside edits.
 | `messages.json` | compact JSON +nl `{ version: 1, messages: StoredMessage[] }` (helper's sent and held alerts) | `MessageStore.save` (`helper/messages.ts`), fixed-tmp |
 | `waits.json` | JSON (indent 1) +nl `{ version: 1, records, notifyUserAt, firstSummaryPending? }`; unreadable file renamed `waits.json.corrupt-<ms>` | `WaitStore.save` (`helper/waits.ts`), fixed-tmp |
 | `helper-state.json` | JSON (indent 1) +nl `RunnerState` (`helper/runner.ts`) | atomic |
+| `version-history-pending.json` | pretty JSON +nl `{ <folder path>: { at, tickets: [{ board, id }] } }`: "Turn on version history" asked while tickets edit the folder; removed when empty | `git/pending.rs`, atomic |
 | `telegram-links.json` | compact JSON +nl `{ version: 1, links }` | `helper/tgstores.ts`, fixed-tmp, `0600` on create |
 | `telegram-pending.json` | compact JSON +nl `{ version: 1, actions }` | same |
 | `telegram-updates.json` | compact JSON +nl `{ bot, items, seen }` | same |

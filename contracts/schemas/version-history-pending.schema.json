@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ckanban.dev/contracts/schemas/version-history-pending.schema.json",
+  "title": "Version history requests",
+  "description": "version-history-pending.json (data folder root): folders where the user clicked \"Turn on version history\" on a card while tickets were changing files there. The board turns it on once the last of those runs ends (or at start, after recovery, when the folder is free), then drops the entry. Keyed by the folder's absolute path. Written by rust/board/src/git/pending.rs (pretty JSON, final newline, atomic); removed when the last request is cleared; read once per daemon and held in memory.",
+  "type": "object",
+  "additionalProperties": { "$ref": "#/$defs/Request" },
+  "$defs": {
+    "Request": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["at", "tickets"],
+      "properties": {
+        "at": { "type": "string", "description": "When it was asked (ISO time)." },
+        "tickets": {
+          "type": "array",
+          "description": "The runs editing the folder when it was asked; if turning it on fails, the newest one still on the board gets a comment saying why.",
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["board", "id"],
+            "properties": { "board": { "type": "string" }, "id": { "type": "string" } }
+          }
+        }
+      }
+    }
+  }
+}

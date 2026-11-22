@@ -136,6 +136,8 @@ pub struct State {
     pub workflow_live: HashMap<String, Value>,
     /// Tickets with a rewind, undo or fork under way (R7b fills it).
     pub rewinding: HashSet<String>,
+    /// Folders (by path) where version history is being turned on: no ticket starts editing them in place meanwhile.
+    pub switching: HashSet<String>,
 }
 
 /// The board's saved keys as a run's environment.
@@ -624,6 +626,14 @@ impl RunLoop {
             return Some("Claude is already working on this ticket".into());
         }
         let no_edit = self.get(slug, id).is_some_and(|t| t.main);
+        // Version history is being turned on for the folder this run would edit in place: not now (dispatch and
+        // queued replies wait through `folder_busy`; this catches the direct starts).
+        if let Some(t) = self.get(slug, id)
+            && self.held_by_switch(slug, &t)
+            && chat.as_ref().is_none_or(|c| c.act() || t.tool)
+        {
+            return Some(super::history::SWITCHING.into());
+        }
         let (done, _) = watch::channel(false);
         let run = Arc::new(ActiveRun {
             slug: slug.to_string(),
@@ -696,6 +706,10 @@ impl RunLoop {
                 if me.restart_pending() {
                     me.emit_restart();
                 }
+                // A request to turn version history on goes first once the folder is free (then Ready tickets wait).
+                if let Some(path) = me.board_path(&slug) {
+                    me.turn_on_when_free(&path);
+                }
                 me.dispatch(&slug);
             })
             .await;
@@ -726,6 +740,10 @@ impl RunLoop {
             }
             if down {
                 return;
+            }
+            // A request to turn version history on goes first once the folder is free (then Ready tickets wait).
+            if let Some(path) = me.board_path(&r.slug) {
+                me.turn_on_when_free(&path);
             }
             let target = r.st.lock().target_status.clone();
             if target.is_none() {

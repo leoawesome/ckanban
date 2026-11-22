@@ -54,6 +54,15 @@ pub trait RunControl: Send + Sync {
     fn folder_share(&self, _slug: &str, _ticket: &Value) -> Value {
         Value::Null
     }
+    /// Holds every start of a ticket that would edit the folder at `path` in place, while version history is turned
+    /// on there. False when it is already held (being turned on now).
+    fn hold_folder(&self, _path: &str) -> bool {
+        true
+    }
+    /// Ends `hold_folder`: a waiting request to turn version history on is checked again, then held tickets start.
+    fn release_folder(&self, _path: &str) {}
+    /// A request to turn version history on for `path` was made or cancelled: the running cards there show it now.
+    fn folder_cards_changed(&self, _path: &str) {}
 }
 
 /// Claude session transcripts (`SessionCache` in `src/runs/session-cache.ts`).

@@ -369,6 +369,8 @@ impl RunLoop {
                 }
             }
         }
+        // Requests to turn version history on saved before the restart, once their folder is free.
+        self.check_version_history_requests();
     }
 
     // ---- One-click recovery from a lost or busy session ----

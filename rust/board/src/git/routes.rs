@@ -465,11 +465,12 @@ impl GitRoutes {
     /// `GET/POST /api/version-history`: a folder's version history, and turning it on.
     async fn version_history(&self, query: Option<&str>, body: Option<Result<Value, ()>>) -> Out {
         let post = body.is_some();
+        let b = match need(body) {
+            Ok(b) => b,
+            Err(o) => return o,
+        };
         let path = if post {
-            match need(body) {
-                Ok(b) => js_string(b.get("path")),
-                Err(o) => return o,
-            }
+            js_string(b.get("path"))
         } else {
             query_param(query, "path").unwrap_or_default()
         };
@@ -482,31 +483,62 @@ impl GitRoutes {
             let kind = if git && dir.exists() { json!(repo::repo_kind(&dir, true).await.as_str()) } else { Value::Null };
             return Out::Json(200, json!({ "git": git, "repo": kind }));
         }
+        // "Cancel" under the card's pending line: the board no longer turns it on by itself.
+        if b.get("cancel") == Some(&Value::Bool(true)) {
+            if super::pending::clear(&self.root, &path) {
+                self.blocking(move |r| r.folder_cards_changed(&path)).await;
+            }
+            return Out::Json(200, json!({ "pending": false }));
+        }
         if !git {
             return Out::Err(400, "git isn't installed on this computer".into());
         }
         if !dir.exists() {
             return Out::Err(404, format!("folder does not exist: {path}"));
         }
-        // A ticket editing the folder in place right now would leave half-done files in the first snapshot.
-        let boards: Vec<Value> = self.data().list_profiles().unwrap_or_default().into_iter().map(|p| Value::Object(p.record.0)).filter(|p| p.get("path").and_then(Value::as_str) == Some(path.as_str())).collect();
-        let mut busy: Vec<String> = Vec::new();
+        // No ticket may start editing the folder from here until it is on (or the request is saved): a ticket that
+        // starts while the first snapshot is taken would leave half-done files in it.
+        let p = path.clone();
+        if !self.blocking(move |r| r.hold_folder(&p)).await {
+            return Out::Err(409, "Version history is being turned on for this folder right now.".into());
+        }
+        let out = self.turn_on_or_wait(&path, &dir).await;
+        self.blocking(move |r| r.release_folder(&path)).await;
+        out
+    }
+
+    /// A run loop call that may wait for its lock or start runs, off the async threads.
+    async fn blocking<R: Send + 'static>(&self, f: impl FnOnce(&dyn RunControl) -> R + Send + 'static) -> R
+    where
+        R: Default,
+    {
+        let runs = self.runs.clone();
+        tokio::task::spawn_blocking(move || f(runs.as_ref())).await.unwrap_or_default()
+    }
+
+    /// The held part of `POST /api/version-history`: tickets editing the folder in place right now would leave
+    /// half-done files in the first snapshot, so the board saves the request and turns it on once they have finished
+    /// (`{pending: true}`); otherwise it is turned on now.
+    async fn turn_on_or_wait(&self, path: &str, dir: &Path) -> Out {
+        let boards: Vec<Value> = self.data().list_profiles().unwrap_or_default().into_iter().map(|p| Value::Object(p.record.0)).filter(|p| p.get("path").and_then(Value::as_str) == Some(path)).collect();
+        let mut busy: Vec<(String, String)> = Vec::new();
         for (slug, id) in self.runs.running_tickets() {
             let Some(p) = boards.iter().find(|p| p.get("slug").and_then(Value::as_str) == Some(slug.as_str())) else { continue };
             let Ok(Some(t)) = self.ticket(&slug, &id) else { continue };
-            let kind = repo::repo_kind(&dir, false).await;
+            let kind = repo::repo_kind(dir, false).await;
             if super::landing::runs_in_folder(&t, Some(p), Some(kind)) != Some(false) {
-                busy.push(t.get("title").and_then(Value::as_str).unwrap_or("").to_string());
+                busy.push((slug, id));
             }
         }
         if !busy.is_empty() {
-            return Out::Err(409, folder_in_use(&busy));
+            super::pending::set(&self.root, path, &crate::runloop::board::now_iso(), &busy);
+            return Out::Json(202, json!({ "pending": true }));
         }
-        let r = match repo::enable_version_history(&dir).await {
-            Ok(r) => r,
-            Err(e) => return Out::Err(500, format!("Couldn't turn on version history: {e}")),
+        let (r, kind) = match repo::turn_on_checked(dir).await {
+            Ok(x) => x,
+            Err((status, e)) => return Out::Err(status, e),
         };
-        let kind = repo::repo_kind(&dir, true).await;
+        super::pending::clear(&self.root, path);
         if let Some(note) = &self.note_repo {
             for p in &boards {
                 if let Some(slug) = p.get("slug").and_then(Value::as_str) {
@@ -518,16 +550,6 @@ impl GitRoutes {
         v["repo"] = json!(kind.as_str());
         Out::Json(200, v)
     }
-}
-
-/// Why version history can't be turned on now: tickets are changing files in the folder (a first snapshot would
-/// catch their files half done).
-fn folder_in_use(titles: &[String]) -> String {
-    let quoted: Vec<String> = titles.iter().take(3).map(|t| format!("\"{t}\"")).collect();
-    let more = titles.len().saturating_sub(3);
-    let list = if more > 0 { format!("{} and {more} more", quoted.join(", ")) } else { quoted.join(" and ") };
-    let are = if titles.len() == 1 { "is" } else { "are" };
-    format!("Not yet: {list} {are} changing files in this folder right now. Try again when {} finished.", if titles.len() == 1 { "it has" } else { "they have" })
 }
 
 /// A route's JSON body (`await body(req)`): 400 "invalid JSON body" when it doesn't parse.
@@ -610,12 +632,87 @@ async fn raw_file(file: &Path, download: bool) -> Response<Body> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn folder_in_use_names_the_tickets_in_plain_words() {
-        let t = |v: &[&str]| folder_in_use(&v.iter().map(|s| s.to_string()).collect::<Vec<_>>());
-        assert_eq!(t(&["A"]), "Not yet: \"A\" is changing files in this folder right now. Try again when it has finished.");
-        assert_eq!(t(&["A", "B"]), "Not yet: \"A\" and \"B\" are changing files in this folder right now. Try again when they have finished.");
-        assert_eq!(t(&["A", "B", "C", "D"]), "Not yet: \"A\", \"B\", \"C\" and 1 more are changing files in this folder right now. Try again when they have finished.");
+    /// Runs as the route sees them: `running` edit the board folder; records holds and releases.
+    struct FakeRuns {
+        running: Vec<(String, String)>,
+        log: parking_lot::Mutex<Vec<String>>,
+    }
+
+    impl RunControl for FakeRuns {
+        fn is_running(&self, s: &str, i: &str) -> bool {
+            self.running.iter().any(|(a, b)| a == s && b == i)
+        }
+        fn running_key(&self, _: &str, _: &str) -> Option<String> {
+            None
+        }
+        fn holds_slot(&self, _: &str, _: &str) -> bool {
+            false
+        }
+        fn start(&self, _: &str, _: &str) -> futures_util::future::BoxFuture<'_, Result<(), String>> {
+            Box::pin(async { Ok(()) })
+        }
+        fn stop(&self, _: &str, _: &str) -> futures_util::future::BoxFuture<'_, Result<(), String>> {
+            Box::pin(async { Ok(()) })
+        }
+        fn chat(&self, _: &str, _: &str, _: &str) -> futures_util::future::BoxFuture<'_, Result<(), String>> {
+            Box::pin(async { Ok(()) })
+        }
+        fn active_work(&self) -> Vec<String> {
+            Vec::new()
+        }
+        fn busy_boards(&self) -> Vec<String> {
+            Vec::new()
+        }
+        fn running_tickets(&self) -> Vec<(String, String)> {
+            self.running.clone()
+        }
+        fn hold_folder(&self, p: &str) -> bool {
+            self.log.lock().push(format!("hold {p}"));
+            true
+        }
+        fn release_folder(&self, p: &str) {
+            self.log.lock().push(format!("release {p}"));
+        }
+        fn folder_cards_changed(&self, p: &str) {
+            self.log.lock().push(format!("cards {p}"));
+        }
+    }
+
+    #[tokio::test]
+    async fn a_click_while_tickets_edit_the_folder_saves_a_request_and_cancel_clears_it() {
+        if !repo::git_installed().await {
+            return;
+        }
+        let d = tempfile::tempdir().unwrap();
+        let root = d.path();
+        let project = root.join("project");
+        std::fs::create_dir_all(&project).unwrap();
+        let path = project.to_string_lossy().to_string();
+        std::fs::create_dir_all(root.join("profiles/b/tickets")).unwrap();
+        std::fs::write(root.join("profiles/b/profile.json"), json!({ "name": "B", "slug": "b", "path": path, "workspace": "folder", "createdAt": "2026-11-01T00:00:00.000Z" }).to_string()).unwrap();
+        let core = crate::core::Core::new(root, crate::core::Services::stand_ins());
+        let mut m = serde_json::Map::new();
+        m.insert("title".into(), "One".into());
+        m.insert("body".into(), "".into());
+        let id = core.tickets.create("b", m).unwrap().id.clone();
+        let runs = Arc::new(FakeRuns { running: vec![("b".into(), id.clone())], log: Default::default() });
+        let g = GitRoutes::new(root, 0, Arc::new(|s: &str| s.to_string()), runs.clone());
+        let h = HeaderMap::new();
+        let post = |v: Value| g.handle(&Route::VersionHistory, &h, None, Some(Ok(v)));
+        match post(json!({ "path": path })).await {
+            Out::Json(202, v) => assert_eq!(v, json!({ "pending": true })),
+            _ => panic!("expected the request to be saved"),
+        }
+        assert!(super::super::pending::is_pending(root, &path));
+        assert_eq!(super::super::pending::tickets_of(&super::super::pending::get(root, &path).unwrap()), vec![("b".to_string(), id.clone())]);
+        assert!(!project.join(".git").exists(), "turned on while a ticket edits the folder");
+        assert_eq!(*runs.log.lock(), vec![format!("hold {path}"), format!("release {path}")]);
+        match post(json!({ "path": path, "cancel": true })).await {
+            Out::Json(200, v) => assert_eq!(v, json!({ "pending": false })),
+            _ => panic!("expected cancel to answer"),
+        }
+        assert!(!super::super::pending::is_pending(root, &path));
+        assert_eq!(runs.log.lock().last().unwrap(), &format!("cards {path}"));
     }
 
     #[test]

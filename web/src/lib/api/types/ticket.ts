@@ -215,7 +215,7 @@ export interface Ticket {
    * at a time in my folder" off). `offer`: the folder has no version history and this is the newest of those cards,
    * so it offers to turn version history on for `path`.
    */
-  folderShare?: { others: number; offer: boolean; path?: string } | null;
+  folderShare?: { others: number; offer: boolean; /** The board turns version history on once these tickets finish. */ pending?: boolean; path?: string } | null;
   /** A plan child waiting on the user (questions, a proposal to apply, in Planning); the plan won't start it. */
   userWait?: string | null;
   /** Set once this ticket's plan was started: the board runs its children unattended. */

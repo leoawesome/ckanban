@@ -10,12 +10,15 @@ export function VersionHistoryOffer({ path, onRepo }: { path: string; /** What t
   const [dismissed, setDismissed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
+  // Tickets change files in the folder now: the board turns it on once they finish.
+  const [later, setLater] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
     setInfo(null);
     setDismissed(false);
     setDone(false);
+    setLater(false);
     setErr(null);
     onRepo?.(null);
     const p = path.trim();
@@ -40,6 +43,10 @@ export function VersionHistoryOffer({ path, onRepo }: { path: string; /** What t
     setErr(null);
     try {
       const r = await api.enableVersionHistory(path.trim());
+      if ("pending" in r) {
+        setLater(true);
+        return;
+      }
       setDone(true);
       onRepo?.(r.repo);
     } catch (e: any) {
@@ -49,6 +56,7 @@ export function VersionHistoryOffer({ path, onRepo }: { path: string; /** What t
     }
   };
 
+  if (later) return <div className="vh-ok" role="status">Version history will turn on when the tickets working in this folder finish.</div>;
   if (done) return <div className="vh-ok" role="status">✓ Version history is on (first snapshot saved).</div>;
   if (!info?.git || dismissed || (info.repo !== "plain" && info.repo !== "empty")) return null;
   return (

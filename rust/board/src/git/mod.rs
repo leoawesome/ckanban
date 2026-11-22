@@ -19,6 +19,7 @@ pub mod publish;
 pub mod trim;
 pub mod disk;
 pub mod huddle_sweep;
+pub mod pending;
 
 use std::sync::Arc;
 

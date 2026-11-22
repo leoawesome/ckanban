@@ -386,7 +386,7 @@ export const Card = memo(function Card({ a11yId, ticket, onClick, dragging, queu
           )}
         </div>
       )}
-      {share?.offer && share.path && !dragging && <FolderShareNote path={share.path} />}
+      {(share?.offer || share?.pending) && share.path && !dragging && <FolderShareNote path={share.path} offer={share.offer} pending={!!share.pending} />}
       {limit && !dragging && limitWait(ticket) && <LimitActions slug={limit.slug} ticket={ticket} onError={limit.onError} small secondary={false} />}
       {limit && !dragging && capWait(ticket) && <CapActions slug={limit.slug} ticket={ticket} onError={limit.onError} small />}
       {limit && !dragging && stallWait(ticket) && <StallActions slug={limit.slug} ticket={ticket} onError={limit.onError} small secondary={false} />}

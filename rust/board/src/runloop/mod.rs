@@ -20,6 +20,7 @@ pub mod prompt;
 mod queue;
 mod recovery;
 mod slots;
+mod history;
 pub mod text;
 pub mod wiring;
 

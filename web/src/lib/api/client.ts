@@ -52,7 +52,9 @@ export const api = {
   claudeDefaults: () => req<{ model: string | null; effort?: string | null; versions?: Record<string, string> }>("GET", "/api/claude/defaults"),
   pickFolder: () => req<{ path: string | null }>("POST", "/api/pick-folder"),
   versionHistory: (path: string) => req<VersionHistory>("GET", `/api/version-history?path=${encodeURIComponent(path)}`),
-  enableVersionHistory: (path: string) => req<{ changed: boolean; sha: string | null; ignored: string[]; repo: RepoKind }>("POST", "/api/version-history", { path }),
+  /** Turned on now, or `{pending: true}` while tickets change files in the folder: the board turns it on once they finish. */
+  enableVersionHistory: (path: string) => req<{ changed: boolean; sha: string | null; ignored: string[]; repo: RepoKind } | { pending: true }>("POST", "/api/version-history", { path }),
+  cancelVersionHistory: (path: string) => req<{ pending: false }>("POST", "/api/version-history", { path, cancel: true }),
   /** Claude plan usage (5h / weekly windows) or a plain-words error. */
   usage: (fresh = false) => req<UsageResult>("GET", `/api/usage${fresh ? "?fresh=1" : ""}`),
   /** What every board spent today (local day). */
