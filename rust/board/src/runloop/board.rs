@@ -656,6 +656,8 @@ impl RunLoop {
             return None;
         }
         run.st.lock().started = true;
+        // Other cards in the folder may share it now: their pill appears or counts one more.
+        self.share_changed(slug, id);
         let me = self.arc();
         let r = run.clone();
         self.rt.spawn(async move {
@@ -692,6 +694,8 @@ impl RunLoop {
                 crate::git::repo::forget_repo_kind(Some(&path));
             }
             me.devices.release_all(&r.slug, &r.id);
+            // The cards that shared the folder with it count one fewer, or lose the pill.
+            me.share_changed(&r.slug, &r.id);
             r.st.lock().quiet_end.clone()
         })
         .await
@@ -768,6 +772,7 @@ impl RunLoop {
             }
         }
         self.devices.release_all(slug, id);
+        self.share_changed(slug, id);
         if self.get(slug, id).is_some()
             && let Err((_, e)) = self.tickets.patch(slug, id, patch)
         {

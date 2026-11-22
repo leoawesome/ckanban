@@ -291,11 +291,11 @@ impl Viewer {
         m.insert("chromeAbove".into(), legacy_chrome(&above));
         m.insert("browsersAbove".into(), above);
         m.insert("folderWait".into(), live.folder_wait(slug, t).into());
-        // On running cards only (null when it doesn't share the folder): the board merges each update into the card it
-        // has, so a running card always says it, and a stopped one hides the pill by `running`.
-        if running {
-            m.insert("folderShare".into(), live.folder_share(slug, t));
-        }
+        // On every card, null when it doesn't share the folder: the board merges each update into the card it has, so
+        // the pill goes once its sharing ends. A main ticket shares through its tasks' runs too, while not running
+        // itself. A finished ticket with no run is skipped at once (most of a big board).
+        let share = if t.status == "done" && !running { Value::Null } else { live.folder_share(slug, t) };
+        m.insert("folderShare".into(), share);
         let user_wait = if t.parent_id.is_some() && !is_complete(t) { user_wait_reason(t, session.as_ref()).map(Value::String).unwrap_or(Value::Null) } else { Value::Null };
         m.insert("userWait".into(), user_wait);
         m.insert("attention".into(), attention);

@@ -69,16 +69,12 @@ impl RunLoop {
         self.folder_cards_changed(path);
     }
 
-    /// The running cards of the boards on `path` are sent again (their `folderShare.pending` changed).
+    /// The cards working in the folder at `path` are sent again (their `folderShare.pending` changed): each running
+    /// ticket's card, and the cards above it (a user's ticket whose hidden task runs isn't running itself, but its
+    /// card shows the pill). Only the live runs, a handful.
     pub fn folder_cards_changed(&self, path: &str) {
         for slug in self.boards_on(path) {
-            for (s, id) in self.running_tickets() {
-                if s == slug
-                    && let Some(t) = self.get(&s, &id)
-                {
-                    self.tickets.emit(&s, &t);
-                }
-            }
+            self.send_working_cards(&slug, None);
         }
     }
 

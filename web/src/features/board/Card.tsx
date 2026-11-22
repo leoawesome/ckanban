@@ -297,8 +297,9 @@ export const Card = memo(function Card({ a11yId, ticket, onClick, dragging, queu
   // At most one pill: Sign-in needed, then the end-of-run mark, then what needs the user, then its auto huddle or a stopped plan.
   // A sub-feature's "Part of …" or a shown task's "Task of …" chip on top.
   const part = partChip(ticket);
-  // Running in the board's folder together with other tickets (board setting "One ticket at a time in my folder" off).
-  const share = ticket.running && !done ? ticket.folderShare : null;
+  // Its work (its own run or its tasks') runs in the board's folder together with other tickets' (board setting "One
+  // ticket at a time in my folder" off). A main ticket shares through its tasks while not running itself.
+  const share = !done ? ticket.folderShare : null;
   const shareChip = share && share.others > 0 && (
     <span className="badge share" title="These tickets change files in the same folder at the same time. To make them take turns, turn on “One ticket at a time in my folder” in Board settings.">
       {folderShareText(share.others)}
