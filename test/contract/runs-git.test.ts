@@ -10,7 +10,8 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { type Daemon, startDaemon, until } from "./daemon";
 import { parseTicketFile, readJsonl } from "./files";
-import { events, Scripts, scriptDir, settled, sh, view } from "./runs";
+import { events, running, Scripts, scriptDir, settled, sh, view } from "./runs";
+import { schemaProblems } from "./schema";
 
 let d: Daemon;
 let s: Scripts;
@@ -379,6 +380,54 @@ describe("files the chat mentions, and version history", () => {
     const t = await create("turn-on", "After turning on", `x ${s.set("turnon", [{}])}`);
     const v = await settled(d, "turn-on", t.id, (x) => x.status === "review");
     expect(v.worktree).toBe(join(root, ".ckanban-worktrees", "turn-on", t.id));
+  }, 60_000);
+
+  test("version-history: a click while tickets change files in the folder saves a request; the board turns it on after the last one ends", async () => {
+    const folder = join(root, "later");
+    mkdirSync(folder, { recursive: true });
+    writeFileSync(join(folder, "notes.txt"), "hello\n");
+    expect((await d.api("POST", "/api/profiles", { name: "Later", path: folder })).status).toBe(201);
+    const [g1, g2] = [s.gate("later1"), s.gate("later2")];
+    // Two tool tickets, made by their main ticket's run (the user's own tickets are main tickets, which never edit
+    // files).
+    const t1 = s.set("later1", [{ waitFile: g1.file }]);
+    const t2 = s.set("later2", [{ waitFile: g2.file }]);
+    const mainTag = s.set("latermain", [{
+      calls: [
+        { method: "POST", path: T("later"), body: { title: "Later one", body: `## Objective\nOne. ${t1}`, kind: "build" } },
+        { method: "POST", path: T("later"), body: { title: "Later two", body: `## Objective\nTwo. ${t2}`, kind: "build" } },
+      ],
+      summary: "Started both.",
+    }]);
+    const main = await create("later", "Later feature", `Plan it. ${mainTag}`);
+    await until(() => (s.out("latermain").length === 2 ? true : null), 30_000, "main run's create calls");
+    const [one, two] = s.out("latermain").map((o) => o.data);
+    expect([one.tool, two.tool]).toEqual([true, true]);
+    await running(d, "later", one.id);
+    await running(d, "later", two.id);
+    // The main ticket's own run must have ended first, or it is still among the running tickets on a busy machine.
+    await until(async () => ((await view(d, "later", main.id)).running ? null : true), 30_000, "main run to end");
+    const asked = await d.api("POST", "/api/version-history", { path: folder });
+    expect(asked).toMatchObject({ status: 202, data: { pending: true } });
+    const file = join(d.home, "version-history-pending.json");
+    const saved = JSON.parse(readFileSync(file, "utf8"));
+    expect(schemaProblems("version-history-pending.schema.json", saved)).toEqual([]);
+    expect(saved[folder].tickets.map((t: any) => t.id).sort()).toEqual([one.id, two.id].sort());
+    // Every sharing card shows it, with the folder its Cancel needs.
+    for (const t of [one, two]) expect((await view(d, "later", t.id)).folderShare).toMatchObject({ others: 1, pending: true, path: folder });
+    // Cancel clears it; a second click saves it again.
+    expect(await d.api("POST", "/api/version-history", { path: folder, cancel: true })).toMatchObject({ status: 200, data: { pending: false } });
+    expect(existsSync(file)).toBe(false);
+    expect((await view(d, "later", one.id)).folderShare).toMatchObject({ pending: false });
+    expect((await d.api("POST", "/api/version-history", { path: folder })).status).toBe(202);
+    g1.release();
+    await settled(d, "later", one.id);
+    expect(existsSync(join(folder, ".git"))).toBe(false);
+    expect(existsSync(file)).toBe(true);
+    g2.release();
+    await settled(d, "later", two.id);
+    await until(async () => (existsSync(join(folder, ".git")) && !existsSync(file) ? true : null), 20_000, "version history to turn on");
+    expect(sh(["git", "log", "--oneline"], folder)).toContain("Initial snapshot");
   }, 60_000);
 });
 

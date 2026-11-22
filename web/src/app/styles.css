@@ -542,6 +542,12 @@ body.show-hints .sortable-card:not(:focus) .key-hint.card-keys { display: none; 
   border-radius: var(--r-pill); text-decoration: none; white-space: nowrap;
 }
 .badge.running { background: var(--info-soft); color: var(--info); }
+/* Runs in the board's folder together with other tickets (no turns). */
+.badge.share { background: var(--warn-soft); color: var(--warn); white-space: normal; }
+.card-share-note { margin-top: var(--sp-2); font-size: var(--fs-xs); color: var(--muted); overflow-wrap: anywhere; }
+.card-share-note .link-btn { font-size: var(--fs-xs); }
+@media (pointer: coarse) { .card-share-note .link-btn { min-height: var(--tap); } }
+.card-share-note .field-error { margin-top: var(--sp-1); }
 /* The moment a run ends: the spinner becomes ✓, ✕ or ! and the chip flashes once. */
 .badge.finish { animation: finish-flash 400ms var(--ease-out); }
 .badge.finish.ok { background: var(--ok-soft); color: var(--ok); }

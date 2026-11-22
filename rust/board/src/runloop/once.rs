@@ -346,6 +346,7 @@ impl RunLoop {
                     body
                 };
                 let body = localize_attachments(&body, &attachments);
+                let body = self.with_shared_folder_note(&t, &profile, session.in_place, refine, role.as_ref(), body);
                 self.with_setup_note(slug, &t, &profile, &session.dir, refine, body)
             }
         };

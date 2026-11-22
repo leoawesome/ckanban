@@ -114,6 +114,9 @@ pub fn create(w: &Writes, req: &Req) -> Result<Reply, Refusal> {
     if b.get("ultracode") == Some(&Value::Bool(true)) {
         p.insert("ultracode".into(), true.into());
     }
+    if b.get("folderTurns") == Some(&Value::Bool(true)) {
+        p.insert("folderTurns".into(), true.into());
+    }
     p.insert("createdAt".into(), now().into());
     if let Some(ws) = b.get("workspace") {
         p.insert("workspace".into(), workspace_value(ws)?);
@@ -262,7 +265,7 @@ pub fn routes(w: &Writes, req: &Req, slug: &str) -> Result<Reply, Refusal> {
             set(&mut next, k, js_trim(&js_string(Some(v), "")).into());
         }
     }
-    for k in ["autoHuddles", "keepAwake"] {
+    for k in ["autoHuddles", "keepAwake", "folderTurns"] {
         if let Some(v) = b.get(k) {
             set(&mut next, k, truthy(Some(v)).into());
         }
@@ -304,6 +307,16 @@ pub fn routes(w: &Writes, req: &Req, slug: &str) -> Result<Reply, Refusal> {
         w.tickets.hooks().kill_shells(slug);
     }
     save(w, slug, next.clone())?;
+    // "One ticket at a time in my folder" changed: the running cards' "Shares the folder" pill comes or goes now.
+    if profile.get("folderTurns") != next.get("folderTurns") {
+        for (s, id) in w.tickets.runs.running_tickets() {
+            if s == slug
+                && let Some(t) = w.tickets.get(slug, &id)
+            {
+                w.tickets.emit(slug, &t);
+            }
+        }
+    }
     w.tickets.hooks().board_changed(slug);
     Ok(Reply::Json(200, Value::Object(next)))
 }

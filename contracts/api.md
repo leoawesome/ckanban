@@ -108,7 +108,7 @@ ticket PATCH.
 
 Most ticket routes return a `TicketView`: a `Ticket` plus these fields (built by `view()` in http.ts): `running`,
 `holdsSlot`, `resumeCommand`, `session` (`SessionSummary`, session.ts, or null), `links`, `outputDir`, `shareJobs`,
-`canCopyFile`, `terminalOpen`, `recovery`, `devices`, `chromeAbove`, `browsersAbove`, `folderWait`, `userWait`,
+`canCopyFile`, `terminalOpen`, `recovery`, `devices`, `chromeAbove`, `browsersAbove`, `folderWait`, `folderShare`, `userWait`,
 `attention`, `snoozed`, `huddleBusy`, `huddleLine`, `costUsd`, `runCap`; for a main ticket also `familyWorking`,
 `stepsRunning`, `familyCard`; for a sub-feature `subFeatureOf`; for a tool ticket `mainTicket`. Board listings add
 `feature: true` on open features. `links` is `{url, label, at, source}[]` newest first (`board/links.ts`): claude.ai
@@ -166,7 +166,7 @@ The upgrade needs an `Origin` equal to the board's own origin (local) or the tai
 | GET | `/api/claude/defaults` | | 200 `claudeDefaults()` plus `versions` (learned model versions) | |
 | POST | `/api/pick-folder` | body ignored | 200 `{path}` from the native folder picker | |
 | GET | `/api/version-history` | query `path` (absolute) | 200 `{git, repo}`: `git` true when git is installed (else false); `repo` is `repoKind()` (`plain`, `empty`, `local` or `remote`) or null when git is missing or the folder doesn't exist | 400 path missing or not absolute |
-| POST | `/api/version-history` | `{path}` (absolute) | 200 `enableVersionHistory()` result plus `repo` | 400 path, 400 git not installed, 404 folder missing, 409 a run is editing that folder, 500 git failed |
+| POST | `/api/version-history` | `{path}` (absolute), or `{path, cancel: true}` | 200 `enableVersionHistory()` result plus `repo`; 202 `{pending: true}` while runs edit that folder in place: the request is saved in `version-history-pending.json` and the board turns it on by itself (same checks again) once the last of them ends, then drops it (a failure is a comment on the newest of those tickets); `cancel: true` drops the request, 200 `{pending: false}`. From the hold until it is on, tickets that would edit that folder in place wait (a direct start is refused with a plain message) | 400 path, 400 git not installed, 404 folder missing, 409 version history is being turned on there right now, 500 git failed |
 | GET | `/api/cron/preview` | query `expr` | 200 `{valid, error, summary, next: ISO[3]}`; invalid gives `valid:false` with `error` | |
 | POST | `/api/bug-report/draft` | `{profile?, ticketId?}` | 200 `draftReport()` (bugreport.ts) | `BugReportError` status |
 | POST | `/api/bug-report` | `{title, description, include?: string[], source?: "ui"\|"ai"\|"cli", profile?, ticketId?}` | 201 when an issue URL came back, else 200; `submitReport()` result | `BugReportError` status |
@@ -436,9 +436,9 @@ for an unknown board.
 | Method | Path | Request | Success | Errors |
 |---|---|---|---|---|
 | GET | `/api/profiles` | | 200 `(Profile & {pathExists, running})[]` | |
-| POST | `/api/profiles` | `{name, path, baseBranch?, model?, effort?, ultracode?, workspace?: "worktree"\|"folder"}`; `~` expands | 201 `Profile` | 400 name, 400 not a directory, 400 effort, 400 folder used by another board, 400 workspace |
+| POST | `/api/profiles` | `{name, path, baseBranch?, model?, effort?, ultracode?, folderTurns?, workspace?: "worktree"\|"folder"}`; `~` expands | 201 `Profile` | 400 name, 400 not a directory, 400 effort, 400 folder used by another board, 400 workspace |
 | GET | `/api/profiles/:slug` | | 200 `Profile` | 404 |
-| PATCH | `/api/profiles/:slug` | any of `name, path, baseBranch, model, mainModel, taskModels, freshChatTokens, chrome, browsers, checkinOfferDismissed, effort, ultracode, copyFiles, setupCommand, cleanupCommand, autoHuddles, keepAwake, runCapUsd, artifacts, workspace, claudeAiConnectors, stallMinutes, setupDetected` | 200 `Profile` | 400 validation; 403 `chrome`/`browsers` from a run or huddle, `browsers` user only; 403 `runCapUsd` from a run |
+| PATCH | `/api/profiles/:slug` | any of `name, path, baseBranch, model, mainModel, taskModels, freshChatTokens, chrome, browsers, checkinOfferDismissed, effort, ultracode, copyFiles, setupCommand, cleanupCommand, autoHuddles, keepAwake, folderTurns, runCapUsd, artifacts, workspace, claudeAiConnectors, stallMinutes, setupDetected` | 200 `Profile` | 400 validation; 403 `chrome`/`browsers` from a run or huddle, `browsers` user only; 403 `runCapUsd` from a run |
 | DELETE | `/api/profiles/:slug` | | 204 | 409 board has running tickets |
 | POST | `/api/profiles/:slug/detect-setup` | body ignored | 200 `SetupDetection` | |
 | GET | `/api/profiles/:slug/commands` | | 200 skills and commands in the board folder | |
@@ -759,7 +759,7 @@ Run facts the contract tests pin down (`test/contract/runs-*.test.ts`):
   in `error`; Stop, or a move out of In Progress, `stopped`; the usage limit `limit` (with `limit.resetAt`, `message`).
 - The result's `summary` becomes an `ai` comment for `done` and `blocked`; for `questions` the comment is the final
   text without the result line. Chat messages are not comments.
-- On a plain folder, runs that edit wait for each other (`folderWait`): one at a time per folder.
+- Runs that edit the board's folder in place (a plain folder, or `workspace: "folder"`) run at the same time; a running card has `folderShare: {others, offer, pending, path?}` (`pending`: a request to turn version history on waits for these runs to end; `path` is set when `offer` or `pending`) (null when alone or not in the folder; missing on cards that aren't running). With the profile's `folderTurns: true` they wait for each other instead (`folderWait`): one at a time per folder.
 - Messages sent while Claude runs reach it at its next step; those a Stop left unread stay in `queued` as `unsent`.
 - Every run is a new `claude -p` process: the ticket's first run uses `--session-id`, later ones `--resume` the same
   session (fresh chat and fresh session start a new id).

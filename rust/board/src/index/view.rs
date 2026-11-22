@@ -35,6 +35,10 @@ pub trait Live: Send + Sync {
     fn share_jobs(&self, slug: &str, id: &str) -> Vec<Value>;
     fn terminal_open(&self, slug: &str, id: &str) -> bool;
     fn folder_wait(&self, slug: &str, ticket: &Tk) -> bool;
+    /// `folderShare`: `{others, offer}` while its run shares the folder with other running tickets, else null.
+    fn folder_share(&self, _slug: &str, _ticket: &Tk) -> Value {
+        Value::Null
+    }
     /// The ticket's own runs and side calls so far (`spend.ticketSoon`).
     fn cost(&self, slug: &str, id: &str) -> f64;
     /// Its huddles' teammates' spend (`huddles.ticketSpend`).
@@ -83,6 +87,9 @@ impl Live for ServicesLive {
     }
     fn folder_wait(&self, slug: &str, ticket: &Tk) -> bool {
         self.services.runs.folder_wait(slug, &Value::Object(ticket.json.clone()))
+    }
+    fn folder_share(&self, slug: &str, ticket: &Tk) -> Value {
+        self.services.runs.folder_share(slug, &Value::Object(ticket.json.clone()))
     }
     fn cost(&self, slug: &str, id: &str) -> f64 {
         self.spend.ticket(slug, id).cost_usd
@@ -284,6 +291,11 @@ impl Viewer {
         m.insert("chromeAbove".into(), legacy_chrome(&above));
         m.insert("browsersAbove".into(), above);
         m.insert("folderWait".into(), live.folder_wait(slug, t).into());
+        // On running cards only (null when it doesn't share the folder): the board merges each update into the card it
+        // has, so a running card always says it, and a stopped one hides the pill by `running`.
+        if running {
+            m.insert("folderShare".into(), live.folder_share(slug, t));
+        }
         let user_wait = if t.parent_id.is_some() && !is_complete(t) { user_wait_reason(t, session.as_ref()).map(Value::String).unwrap_or(Value::Null) } else { Value::Null };
         m.insert("userWait".into(), user_wait);
         m.insert("attention".into(), attention);

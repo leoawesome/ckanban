@@ -171,6 +171,17 @@ describe("board PATCH and DELETE", () => {
     expect((await d.api("PATCH", "/api/profiles/nope", { model: "opus" })).status).toBe(404);
   });
 
+  test("folderTurns (One ticket at a time in my folder): missing is off, PATCH saves it as true or false", async () => {
+    const before = JSON.parse(readFileSync(join(d.home, "profiles", SLUG, "profile.json"), "utf8"));
+    expect(before.folderTurns).toBeUndefined();
+    const on = await d.api("PATCH", P, { folderTurns: true });
+    expect(on).toMatchObject({ status: 200, data: { folderTurns: true } });
+    const file = JSON.parse(readFileSync(join(d.home, "profiles", SLUG, "profile.json"), "utf8"));
+    expect(file.folderTurns).toBe(true);
+    expect(schemaProblems("profile.schema.json", file, "profile.json")).toEqual([]);
+    expect(await d.api("PATCH", P, { folderTurns: false })).toMatchObject({ status: 200, data: { folderTurns: false } });
+  });
+
   test("DELETE removes the board and its folder; then it is 404", async () => {
     const del = await d.api("DELETE", P);
     expect(del.status).toBe(204);

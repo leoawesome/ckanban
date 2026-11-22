@@ -363,6 +363,10 @@ fn local_land(home: Option<&Home>) -> String {
 
 const FOLDER_LAND: &str = "Before you start, run `git status`: if the folder already has uncommitted changes you didn't make, leave them exactly as they are (don't stash, reset, check out, commit or delete them) and mention them in your summary. If it changes files: commit only the files you changed (`git add <paths>`, never `git add -A` or `git commit -a`) to the current branch with a clear message. Don't push or open a pull request unless the project's CLAUDE.md says to; prUrl is null otherwise.";
 
+/// A run that edits the board's folder in place while other tickets may do the same (the board's "One ticket at a
+/// time in my folder" is off): how to share it, like several Claude Code windows in one folder.
+pub const SHARED_FOLDER_RULE: &str = "Other tickets on this board may change files in this same folder at the same time as you. Re-read a file right before you edit it, never undo or overwrite changes you didn't make, and don't run commands that reset, clean or reformat the whole folder (such as `git checkout .`, `git stash`, `git reset --hard`, `git clean` or a formatter over every file).";
+
 /// What a run does with changed files, by the folder's version history (`landRule`).
 pub fn land_rule(repo: &str, in_place: bool, existing: bool, home: Option<&Home>) -> String {
     let list = "End with status \"done\" and list every file you created, changed or deleted in your summary.";

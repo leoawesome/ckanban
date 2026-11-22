@@ -1,6 +1,6 @@
 // Card state rules (web/src/features/board/cardState.ts): which "Your turn" dots pulse, sign-in errors, finish marks, chip folding.
 import { expect, test } from "bun:test";
-import { cardHuddleLine, finishMark, foldChips, huddleLineText, overCap, previewShown, shouldPulse, signInError, stepAge, stepsShown } from "./cardState";
+import { cardHuddleLine, finishMark, folderShareText, foldChips, huddleLineText, overCap, previewShown, shouldPulse, signInError, stepAge, stepsShown } from "./cardState";
 
 const now = Date.parse("2026-11-01T12:00:00Z");
 const ago = (min: number) => new Date(now - min * 60_000).toISOString();
@@ -113,4 +113,9 @@ test("huddle line on the card: only while the huddle works, its own run doesn't 
   expect(cardHuddleLine({}, { working: false, needsYou: false })).toBeNull();
   // An older server without the counts still shows a line.
   expect(cardHuddleLine({ huddleBusy: true }, { working: false, needsYou: false })).toBe("Huddle: 1 helper working");
+});
+
+test("shared folder pill: singular and plural", () => {
+  expect(folderShareText(1)).toBe("Shares the folder with 1 other ticket");
+  expect(folderShareText(2)).toBe("Shares the folder with 2 other tickets");
 });

@@ -360,6 +360,20 @@ pub async fn enable_version_history(dir: &Path) -> Result<Enabled, String> {
     r
 }
 
+/// Turning version history on with every check the `POST /api/version-history` route runs, other than tickets editing
+/// the folder (the caller checks those): Err is (HTTP status, message). Shared by the route and by the board turning it
+/// on once the folder is free.
+pub async fn turn_on_checked(dir: &Path) -> Result<(Enabled, RepoKind), (u16, String)> {
+    if !git_installed().await {
+        return Err((400, "git isn't installed on this computer".into()));
+    }
+    if !dir.exists() {
+        return Err((404, format!("folder does not exist: {}", dir.display())));
+    }
+    let r = enable_version_history(dir).await.map_err(|e| (500, format!("Couldn't turn on version history: {e}")))?;
+    Ok((r, repo_kind(dir, true).await))
+}
+
 async fn must(args: &[&str], dir: &Path) -> Result<String, String> {
     let r = git(args, dir).await;
     if !r.ok() {

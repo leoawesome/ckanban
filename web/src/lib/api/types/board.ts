@@ -64,6 +64,8 @@ export interface Profile {
   autoHuddles?: boolean;
   /** While this board has work going, the daemon keeps the Mac from idle sleep. Missing: on. */
   keepAwake?: boolean;
+  /** Tickets that change the board's folder in place take turns (one at a time). Missing: off, they run at the same time. */
+  folderTurns?: boolean;
   /** Spending cap per run in USD for its tickets' work runs; missing/null: none. */
   runCapUsd?: number | null;
   artifacts?: boolean;

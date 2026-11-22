@@ -204,3 +204,8 @@ export function familyLineText(line: { text: string; tone: string }, f: { subFea
   if (line.tone === "work" && (f.working ?? f.running).length <= subs) return subFeatureWords(subs);
   return `${line.text} · ${subFeatureWords(subs)}`;
 }
+
+/** The card's amber pill while its run shares the board's folder with other running tickets. */
+export function folderShareText(others: number): string {
+  return `Shares the folder with ${others} other ticket${others === 1 ? "" : "s"}`;
+}

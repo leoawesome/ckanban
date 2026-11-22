@@ -53,7 +53,9 @@ export const api = {
   claudeDefaults: () => req<{ model: string | null; effort?: string | null; versions?: Record<string, string> }>("GET", "/api/claude/defaults"),
   pickFolder: () => req<{ path: string | null }>("POST", "/api/pick-folder"),
   versionHistory: (path: string) => req<VersionHistory>("GET", `/api/version-history?path=${encodeURIComponent(path)}`),
-  enableVersionHistory: (path: string) => req<{ changed: boolean; sha: string | null; ignored: string[]; repo: RepoKind }>("POST", "/api/version-history", { path }),
+  /** Turned on now, or `{pending: true}` while tickets change files in the folder: the board turns it on once they finish. */
+  enableVersionHistory: (path: string) => req<{ changed: boolean; sha: string | null; ignored: string[]; repo: RepoKind } | { pending: true }>("POST", "/api/version-history", { path }),
+  cancelVersionHistory: (path: string) => req<{ pending: false }>("POST", "/api/version-history", { path, cancel: true }),
   /** Claude plan usage (5h / weekly windows) or a plain-words error. */
   usage: (fresh = false) => req<UsageResult>("GET", `/api/usage${fresh ? "?fresh=1" : ""}`),
   /** What every board spent today (local day). */
@@ -119,7 +121,7 @@ export const api = {
   reportBug: (input: { title: string; description: string; include: BugBlockId[]; profile?: string; ticketId?: string }) =>
     req<BugReportResult>("POST", "/api/bug-report", { ...input, source: "ui" }),
   profiles: () => req<Profile[]>("GET", "/api/profiles"),
-  createProfile: (p: { name: string; path: string; model?: string; effort?: string; ultracode?: boolean; baseBranch?: string; workspace?: Workspace }) =>
+  createProfile: (p: { name: string; path: string; model?: string; effort?: string; ultracode?: boolean; baseBranch?: string; workspace?: Workspace; folderTurns?: boolean }) =>
     req<Profile>("POST", "/api/profiles", p),
   updateProfile: (slug: string, p: Partial<Profile>) => req<Profile>("PATCH", `/api/profiles/${slug}`, p),
   deleteProfile: (slug: string) => req<void>("DELETE", `/api/profiles/${slug}`),

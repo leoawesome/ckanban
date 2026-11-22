@@ -91,6 +91,24 @@ impl RunControl for LateRuns {
         let Value::Object(m) = ticket else { return false };
         r.folder_wait(slug, &crate::index::ticket::Tk::from_json(m.clone(), false))
     }
+    fn folder_share(&self, slug: &str, ticket: &Value) -> Value {
+        let Some(r) = self.get() else { return Value::Null };
+        let Value::Object(m) = ticket else { return Value::Null };
+        r.folder_share(slug, &crate::index::ticket::Tk::from_json(m.clone(), false))
+    }
+    fn hold_folder(&self, path: &str) -> bool {
+        self.get().is_none_or(|r| r.hold_folder(path))
+    }
+    fn release_folder(&self, path: &str) {
+        if let Some(r) = self.get() {
+            r.release_folder(path);
+        }
+    }
+    fn folder_cards_changed(&self, path: &str) {
+        if let Some(r) = self.get() {
+            r.folder_cards_changed(path);
+        }
+    }
 }
 
 /// R2b's plans call the loop through this. Each call runs on the caller's thread (a blocking one) unless it says
