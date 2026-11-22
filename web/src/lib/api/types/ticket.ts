@@ -210,6 +210,8 @@ export interface Ticket {
   devices?: TicketDevices | null;
   /** It would start now, but another ticket is editing the board's folder in place (board setting "One ticket at a time in my folder" on). */
   folderWait?: boolean;
+  /** A main ticket's card: a task of it with no card of its own waits for the folder (same setting). */
+  taskFolderWait?: boolean;
   /**
    * Its run changes the board's folder in place while `others` other running tickets do too (board setting "One ticket
    * at a time in my folder" off). `offer`: the folder has no version history and this is the newest of those cards,

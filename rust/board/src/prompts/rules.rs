@@ -321,6 +321,15 @@ pub fn can_commit(repo: &str) -> bool {
     repo == "local" || repo == "remote"
 }
 
+/// The run is allowed to change the project's files, as its prompt tells it: a main ticket's never is (its rules hand
+/// every change to tool tickets: `main_ticket_rules`, `main_where`), nor a Planning chat's (it shapes the ticket before
+/// any work starts), except a tool ticket's. With the ticket working in the board's folder (no copy of its own), this
+/// is the board's one rule for "this run edits the folder in place" (`RunLoop::edits_in_place`): the shared-folder
+/// pill, "One ticket at a time in my folder", version history's wait and the prompt's shared-folder note all use it.
+pub fn run_changes_files(main: bool, tool: bool, refine: bool) -> bool {
+    !main && (!refine || tool)
+}
+
 /// Where a work run edits files (`whereRule`).
 pub fn where_rule(t: &Ticket, repo: &str, linked: bool, in_place: bool) -> String {
     if linked {

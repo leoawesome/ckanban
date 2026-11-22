@@ -1,6 +1,6 @@
 // Card state rules (web/src/features/board/cardState.ts): which "Your turn" dots pulse, sign-in errors, finish marks, chip folding.
 import { expect, test } from "bun:test";
-import { cardHuddleLine, finishMark, folderShareText, foldChips, huddleLineText, overCap, previewShown, shouldPulse, signInError, stepAge, stepsShown } from "./cardState";
+import { cardHuddleLine, finishMark, folderShareText, folderWaitPill, foldChips, huddleLineText, overCap, previewShown, shouldPulse, signInError, stepAge, stepsShown } from "./cardState";
 
 const now = Date.parse("2026-11-01T12:00:00Z");
 const ago = (min: number) => new Date(now - min * 60_000).toISOString();
@@ -118,4 +118,13 @@ test("huddle line on the card: only while the huddle works, its own run doesn't 
 test("shared folder pill: singular and plural", () => {
   expect(folderShareText(1)).toBe("Shares the folder with 1 other ticket");
   expect(folderShareText(2)).toBe("Shares the folder with 2 other tickets");
+});
+
+test("waiting for the folder: the card's own wait, else its hidden task's, naming the setting", () => {
+  expect(folderWaitPill({})).toBeNull();
+  expect(folderWaitPill({ folderWait: true })?.text).toBe("waiting: another ticket is using the folder");
+  const task = folderWaitPill({ taskFolderWait: true });
+  expect(task?.text).toBe("a task is waiting for the folder");
+  expect(task?.title).toContain("One ticket at a time in my folder");
+  expect(folderWaitPill({ folderWait: true, taskFolderWait: true })?.text).toBe("waiting: another ticket is using the folder");
 });

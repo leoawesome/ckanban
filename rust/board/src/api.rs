@@ -63,6 +63,11 @@ pub trait RunControl: Send + Sync {
     fn release_folder(&self, _path: &str) {}
     /// A request to turn version history on for `path` was made or cancelled: the running cards there show it now.
     fn folder_cards_changed(&self, _path: &str) {}
+    /// The running tickets editing the folder at `path` in place now, as (board, id): the rule of the shared-folder
+    /// pill and "One ticket at a time in my folder" (a main ticket's own run doesn't count: it can't change files).
+    fn folder_editors(&self, _path: &str) -> Vec<(String, String)> {
+        Vec::new()
+    }
 }
 
 /// Claude session transcripts (`SessionCache` in `src/runs/session-cache.ts`).

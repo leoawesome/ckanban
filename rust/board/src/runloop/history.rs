@@ -36,17 +36,21 @@ impl RunLoop {
 
     /// `t`'s run would edit a folder being switched in place: it waits (`folder_busy`) or isn't started (`start`).
     pub(super) fn held_by_switch(&self, slug: &str, t: &Tk) -> bool {
-        !t.main && self.switching(slug) && self.runs_in_folder(slug, t) != Some(false)
+        self.switching(slug) && self.edits_in_place(slug, t, false)
     }
 
-    /// The running tickets editing the folder at `path` in place, as (board, id): the rule of
-    /// `POST /api/version-history` (any run of a ticket that doesn't have its own copy). Only the live runs.
+    /// The running tickets editing the folder at `path` in place, as (board, id), by the rule the pill and
+    /// `folder_busy` use (`run_edits_in_place`): `POST /api/version-history` and the request's check wait for these.
+    /// Only the live runs.
     pub fn folder_editors(&self, path: &str) -> Vec<(String, String)> {
-        self.running_tickets()
+        let mut v: Vec<(String, String)> = self
+            .runs_list()
             .into_iter()
-            .filter(|(slug, _)| self.board_path(slug).as_deref() == Some(path))
-            .filter(|(slug, id)| self.get(slug, id).is_some_and(|t| self.runs_in_folder(slug, &t) != Some(false)))
-            .collect()
+            .filter(|r| self.board_path(&r.slug).as_deref() == Some(path) && self.run_edits_in_place(r).is_some())
+            .map(|r| (r.slug.clone(), r.id.clone()))
+            .collect();
+        v.sort();
+        v
     }
 
     /// Holds starts in the folder at `path`; false when it is held already.

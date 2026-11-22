@@ -15,7 +15,7 @@ use serde_json::{Map, Value, json};
 
 use super::attention::{huddle_ask, huddle_busy, is_complete, ticket_attention, user_wait_reason, with_snooze};
 use super::card::{family_card, family_working, steps_running};
-use super::family::{family_below, feature_root, main_of};
+use super::family::{family_below, feature_root, feature_rows, main_of, parent_in};
 use super::links::{Comments, collect_links};
 use super::store::{BoardList, Index};
 use super::ticket::Tk;
@@ -232,6 +232,28 @@ pub fn schedule_ids(root: &Path, slug: &str) -> HashSet<String> {
         .unwrap_or_default()
 }
 
+/// A task of main ticket `t` that has no card of its own (and no card between it and `t`) would start now but waits
+/// for the folder ("One ticket at a time in my folder"). Walks `t`'s own feature only (a sub-feature is its own card);
+/// `folder_wait` answers at once for a task that isn't about to start, so a big family costs index lookups.
+fn task_waits_for_folder(slug: &str, list: &BoardList, t: &Tk, live: &dyn Live) -> bool {
+    feature_rows(list, &t.id).iter().any(|r| {
+        let x = list.at(r.idx);
+        if x.id == t.id || x.on_board() || x.status == "done" || !live.folder_wait(slug, x) {
+            return false;
+        }
+        // Its card is `t`: no shown ticket between them.
+        let mut cur = x;
+        for _ in 0..8 {
+            match parent_in(list, cur) {
+                Some((p, _)) if list.at(p).id == t.id => return true,
+                Some((p, _)) if !list.at(p).on_board() => cur = list.at(p),
+                _ => return false,
+            }
+        }
+        false
+    })
+}
+
 /// What a ticket waits on the user for, before and after its snooze: (attention, snoozed).
 pub fn attention_of(root: &Path, slug: &str, list: &BoardList, t: &Tk, live: &dyn Live, session: Option<&Value>) -> (Value, Value) {
     let running = live.running(slug, &t.id);
@@ -318,6 +340,9 @@ impl Viewer {
         m.insert("runCap".into(), run_cap(t, profile));
         let run = |x: &str| live.running(slug, x);
         if t.main {
+            // A hidden task of this card waits for the folder: the card the user sees says so.
+            let wait = t.status != "done" && t.on_board() && task_waits_for_folder(slug, list, t, live);
+            m.insert("taskFolderWait".into(), wait.into());
             m.insert("familyWorking".into(), family_working(list, id, &run).into());
             m.insert("stepsRunning".into(), steps_running(list, id, &run).into());
             let card = if list.get(id).is_some_and(|x| x.main) { family_card(list, id, &run, self.family_cost(slug, list, id, live)) } else { None };

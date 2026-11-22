@@ -22,7 +22,7 @@ impl RunLoop {
         }
     }
 
-    fn runs_list(&self) -> Vec<Arc<ActiveRun>> {
+    pub(super) fn runs_list(&self) -> Vec<Arc<ActiveRun>> {
         self.state.lock().runs.values().cloned().collect()
     }
 
@@ -60,15 +60,19 @@ impl RunLoop {
         self.git.runs_in_folder(slug, &Value::Object(t.json.clone()))
     }
 
-    /// `runMayEdit`: not a main ticket's run, and not a Planning chat's (except a tool ticket's).
-    fn run_may_edit(&self, r: &ActiveRun) -> bool {
-        if r.no_edit {
-            return false;
-        }
-        if !r.st.lock().chat.as_ref().is_some_and(|c| c.refine()) {
-            return true;
-        }
-        self.get(&r.slug, &r.id).is_some_and(|t| t.tool)
+    /// `t`'s run edits the board's folder in place: it works in the folder (no copy of its own) and its prompt lets it
+    /// change the project's files (`rules::run_changes_files`: not a main ticket, not a Planning chat except a tool
+    /// ticket's). The one rule of the shared-folder pill, "One ticket at a time in my folder", the version history
+    /// route's wait and the prompt's shared-folder note. refine: the run is (or would be) a Planning chat.
+    pub fn edits_in_place(&self, slug: &str, t: &Tk, refine: bool) -> bool {
+        crate::prompts::rules::run_changes_files(t.main, t.tool, refine) && self.runs_in_folder(slug, t) != Some(false)
+    }
+
+    /// The ticket of a live run that edits the board's folder in place now (`edits_in_place` with the run's own chat).
+    pub(super) fn run_edits_in_place(&self, r: &ActiveRun) -> Option<Arc<Tk>> {
+        let refine = r.st.lock().chat.as_ref().is_some_and(|c| c.refine());
+        let t = self.get(&r.slug, &r.id)?;
+        (!r.no_edit && self.edits_in_place(&r.slug, &t, refine)).then_some(t)
     }
 
     /// The board's "One ticket at a time in my folder" setting (`folderTurns`, off unless the user turned it on).
@@ -83,21 +87,12 @@ impl RunLoop {
         if self.held_by_switch(slug, t) {
             return true;
         }
-        if t.main || !self.folder_turns(slug) {
+        // A work run (callers only ask for one): a main ticket's never changes files, so it never waits.
+        if !self.folder_turns(slug) || !self.edits_in_place(slug, t, false) {
             return false;
         }
-        if self.runs_in_folder(slug, t) == Some(false) {
-            return false;
-        }
-        for r in self.runs_list() {
-            if r.slug != slug || r.id == t.id || !self.run_may_edit(&r) {
-                continue;
-            }
-            if let Some(o) = self.get(slug, &r.id)
-                && self.runs_in_folder(slug, &o) != Some(false)
-            {
-                return true;
-            }
+        if self.runs_list().iter().any(|r| r.slug == slug && r.id != t.id && self.run_edits_in_place(r).is_some()) {
+            return true;
         }
         let list = self.tickets.list(slug);
         list.tickets.iter().any(|o| o.id != t.id && o.is("autoHuddle") && !self.is_running(slug, &o.id) && self.runs_in_folder(slug, o) != Some(false))
@@ -107,6 +102,11 @@ impl RunLoop {
     /// folder or setting is read here, so a card that no run works for costs a few index lookups.
     fn run_chains(&self, slug: &str) -> Vec<Vec<Arc<Tk>>> {
         self.runs_list().into_iter().filter(|r| r.slug == slug).filter_map(|r| self.get(slug, &r.id)).map(|t| self.chain_of(slug, t)).collect()
+    }
+
+    /// The live runs editing the board's folder in place (`run_edits_in_place`), each with the tickets above it.
+    fn edit_chains(&self, slug: &str) -> Vec<Vec<Arc<Tk>>> {
+        self.runs_list().into_iter().filter(|r| r.slug == slug).filter_map(|r| self.run_edits_in_place(&r)).map(|t| self.chain_of(slug, t)).collect()
     }
 
     /// `t` and the tickets above it (its main ticket, a feature above that...), nearest first.
@@ -123,13 +123,12 @@ impl RunLoop {
     }
 
     /// The runs editing the board's folder in place now, as pieces of work: each run's chain and the card it works
-    /// for (the nearest ticket in its chain the board shows). The rule of `POST /api/version-history` and
-    /// `folder_editors`: any run of a ticket without its own copy, a main ticket's too (its runs can change files).
+    /// for (the nearest ticket in its chain the board shows). `chains`: `edit_chains`, the rule `folder_busy` and
+    /// `folder_editors` use too (a main ticket's own run doesn't count: it can't change files; its tasks' runs do).
     /// None on a board with "One ticket at a time in my folder" on, or when nothing above 1 run edits it.
     fn folder_work(&self, slug: &str, chains: Vec<Vec<Arc<Tk>>>) -> Option<Vec<(Vec<Arc<Tk>>, String)>> {
         let work: Vec<(Vec<Arc<Tk>>, String)> = chains
             .into_iter()
-            .filter(|c| self.runs_in_folder(slug, &c[0]) != Some(false))
             .map(|c| {
                 let card = c.iter().find(|x| x.on_board()).unwrap_or(&c[c.len() - 1]).id.clone();
                 (c, card)
@@ -150,7 +149,7 @@ impl RunLoop {
         if !t.on_board() {
             return Value::Null;
         }
-        let chains = self.run_chains(slug);
+        let chains = self.edit_chains(slug);
         if !chains.iter().any(|c| c.iter().any(|x| x.id == t.id)) {
             return Value::Null;
         }
@@ -183,11 +182,12 @@ impl RunLoop {
     /// Nothing is sent when `id` doesn't edit the folder in place or no other run does.
     pub(super) fn share_changed(&self, slug: &str, id: &str) {
         let Some(t) = self.get(slug, id) else { return };
-        if self.runs_in_folder(slug, &t) == Some(false) {
+        // The run may be gone already (its chat with it): a work run's rule, so a Planning chat at most sends extra.
+        if !self.edits_in_place(slug, &t, false) {
             return;
         }
         let mine = self.chain_of(slug, t);
-        let others: Vec<Vec<Arc<Tk>>> = self.run_chains(slug).into_iter().filter(|c| c[0].id != id && self.runs_in_folder(slug, &c[0]) != Some(false)).collect();
+        let others: Vec<Vec<Arc<Tk>>> = self.edit_chains(slug).into_iter().filter(|c| c[0].id != id).collect();
         if others.is_empty() || self.folder_turns(slug) {
             return;
         }
@@ -514,18 +514,71 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn a_main_tickets_own_run_in_the_folder_counts() {
+    async fn a_delegating_main_tickets_own_run_does_not_count_as_editing() {
         let b = board(None);
         let main = ticket(&b, "Main", json!({ "main": true, "status": "in_progress", "runCount": 1 }));
         run_for(&b, &main, true);
         let other = running(&b, "Other");
+        // Its rules hand every change to tool tickets: no pill, and the version history route doesn't wait for it.
+        assert!(share(&b, &main).is_null(), "{}", share(&b, &main));
+        assert!(share(&b, &other).is_null(), "{}", share(&b, &other));
+        assert_eq!(b.runs.folder_editors(&project(&b)), vec![("b".to_string(), other.clone())]);
+        // Its task's run does count, for its card.
+        let task = ticket(&b, "Main task", json!({ "tool": true, "partOf": main, "status": "in_progress", "runCount": 1 }));
+        run_for(&b, &task, false);
         assert_eq!(share(&b, &main)["others"], json!(1));
-        assert_eq!(share(&b, &other)["others"], json!(1));
-        // The version history route counts the same runs.
         assert_eq!(b.runs.folder_editors(&project(&b)).len(), 2);
-        // A main ticket working in its own copy doesn't.
-        b.core.tickets.patch("b", &main, json!({ "worktree": "/tmp/copy" }).as_object().unwrap().clone()).unwrap();
-        assert!(share(&b, &other).is_null());
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn with_folder_turns_a_main_tickets_own_run_holds_nobody_and_never_waits() {
+        let b = board(Some(true));
+        let main = ticket(&b, "Main", json!({ "main": true, "status": "in_progress", "runCount": 1 }));
+        run_for(&b, &main, true);
+        let next = ticket(&b, "Next", json!({ "status": "ready", "order": 1 }));
+        assert!(!b.runs.folder_busy("b", &b.core.tickets.get("b", &next).unwrap()), "a main ticket's run held a ticket that edits the folder");
+        let busy = running(&b, "Busy");
+        let other_main = ticket(&b, "Other main", json!({ "main": true, "status": "review" }));
+        assert!(b.runs.folder_busy("b", &b.core.tickets.get("b", &next).unwrap()));
+        assert!(!b.runs.folder_busy("b", &b.core.tickets.get("b", &other_main).unwrap()), "a main ticket's own run waited: it can't change files");
+        let _ = busy;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn with_folder_turns_two_standalone_tickets_in_the_folder_do_not_start_together() {
+        let b = board(Some(true));
+        let one = ticket(&b, "One", json!({ "status": "ready", "order": 1 }));
+        let two = ticket(&b, "Two", json!({ "status": "ready", "order": 2 }));
+        // Hold the first run open: its fake claude would end it at once.
+        let r = b.runs.clone();
+        let o = one.clone();
+        tokio::task::spawn_blocking(move || {
+            let _g = r.decide.lock();
+            r.start("b", &o, None, None);
+            assert!(r.is_running("b", &o));
+            assert!(r.folder_busy("b", &r.get("b", &two).unwrap()), "the second ticket must wait for the folder");
+            assert!(r.folder_wait("b", &r.get("b", &two).unwrap()), "its card says it waits");
+        })
+        .await
+        .unwrap();
+        assert!(started(&b, &one));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn the_users_card_shows_when_its_hidden_task_waits_for_the_folder() {
+        let b = board(Some(true));
+        running(&b, "Busy");
+        let main = ticket(&b, "Mine", json!({ "main": true, "status": "review", "createdAt": "2026-11-20T01:00:00.000Z" }));
+        let task = ticket(&b, "Mine task", json!({ "tool": true, "partOf": main, "status": "ready", "order": 1 }));
+        let view = |id: &str| b.core.services.views.view("b", &Value::Object(b.core.tickets.get("b", id).unwrap().json.clone())).unwrap();
+        assert_eq!(view(&task)["folderWait"], json!(true), "the task waits");
+        assert_eq!(view(&main)["taskFolderWait"], json!(true), "the user's card must say its task waits");
+        // Off: nothing waits.
+        b.core.tickets.patch("b", &task, json!({ "status": "in_progress" }).as_object().unwrap().clone()).unwrap();
+        assert_eq!(view(&main)["taskFolderWait"], json!(false));
+        // A task with its own card on the board shows the badge itself.
+        b.core.tickets.patch("b", &task, json!({ "status": "ready", "showOnBoard": true }).as_object().unwrap().clone()).unwrap();
+        assert_eq!(view(&main)["taskFolderWait"], json!(false));
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

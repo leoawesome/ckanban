@@ -206,6 +206,18 @@ export function familyLineText(line: { text: string; tone: string }, f: { subFea
 }
 
 /** The card's amber pill while its run shares the board's folder with other running tickets. */
+const TURNS = "This board's setting “One ticket at a time in my folder” is on:";
+
+/**
+ * The card's "waiting for the folder" pill: its own start waits (folderWait), or, on a user's card, a hidden task of
+ * it waits (taskFolderWait; a task shown on the board carries its own). Null when nothing waits.
+ */
+export function folderWaitPill(t: { folderWait?: boolean; taskFolderWait?: boolean }): { text: string; title: string } | null {
+  if (t.folderWait) return { text: "waiting: another ticket is using the folder", title: `${TURNS} this ticket starts when the other one finishes` };
+  if (t.taskFolderWait) return { text: "a task is waiting for the folder", title: `${TURNS} a task of this ticket starts when the other ticket finishes` };
+  return null;
+}
+
 export function folderShareText(others: number): string {
   return `Shares the folder with ${others} other ticket${others === 1 ? "" : "s"}`;
 }

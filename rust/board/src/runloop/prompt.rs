@@ -427,7 +427,7 @@ impl RunLoop {
     /// A run that may edit the board's folder in place, on a board where tickets share it (no "One ticket at a time
     /// in my folder"), learns that others may change the same files meanwhile.
     pub(super) fn with_shared_folder_note(&self, t: &Tk, profile: &Map<String, Value>, in_place: bool, refine: bool, role: Option<&RunRole>, prompt: String) -> String {
-        let edits = !t.main && !matches!(role, Some(RunRole::Main(_))) && (!refine || t.tool);
+        let edits = !matches!(role, Some(RunRole::Main(_))) && crate::prompts::rules::run_changes_files(t.main, t.tool, refine);
         if !in_place || !edits || folder_turns_on(Some(profile)) {
             return prompt;
         }

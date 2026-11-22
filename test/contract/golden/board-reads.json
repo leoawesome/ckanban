@@ -115,6 +115,7 @@
      },
      {
       "id": "t_20261101_main",
+      "taskFolderWait": false,
       "title": "Launch kit",
       "status": "review",
       "mode": "interview",
@@ -480,6 +481,7 @@
      },
      {
       "id": "t_20261101_subf",
+      "taskFolderWait": false,
       "title": "Sub feature",
       "status": "planning",
       "mode": "interview",
@@ -1437,6 +1439,7 @@
      },
      {
       "id": "t_20261101_main",
+      "taskFolderWait": false,
       "title": "Launch kit",
       "status": "review",
       "mode": "interview",
@@ -1802,6 +1805,7 @@
      },
      {
       "id": "t_20261101_subf",
+      "taskFolderWait": false,
       "title": "Sub feature",
       "status": "planning",
       "mode": "interview",
@@ -3028,6 +3032,7 @@
      },
      {
       "id": "t_20261101_main",
+      "taskFolderWait": false,
       "title": "Launch kit",
       "status": "review",
       "mode": "interview",
@@ -3393,6 +3398,7 @@
      },
      {
       "id": "t_20261101_subf",
+      "taskFolderWait": false,
       "title": "Sub feature",
       "status": "planning",
       "mode": "interview",
@@ -5226,6 +5232,7 @@
      },
      {
       "id": "t_20261101_main",
+      "taskFolderWait": false,
       "title": "Launch kit",
       "status": "review",
       "mode": "interview",
@@ -5591,6 +5598,7 @@
      },
      {
       "id": "t_20261101_subf",
+      "taskFolderWait": false,
       "title": "Sub feature",
       "status": "planning",
       "mode": "interview",
@@ -10649,6 +10657,7 @@
     "tickets": [
      {
       "id": "t_20261101_main",
+      "taskFolderWait": false,
       "title": "Launch kit",
       "status": "review",
       "mode": "interview",
@@ -11014,6 +11023,7 @@
      },
      {
       "id": "t_20261101_subf",
+      "taskFolderWait": false,
       "title": "Sub feature",
       "status": "planning",
       "mode": "interview",
@@ -11752,6 +11762,7 @@
     "tickets": [
      {
       "id": "t_20261101_main",
+      "taskFolderWait": false,
       "title": "Launch kit",
       "status": "review",
       "mode": "interview",
@@ -12117,6 +12128,7 @@
      },
      {
       "id": "t_20261101_subf",
+      "taskFolderWait": false,
       "title": "Sub feature",
       "status": "planning",
       "mode": "interview",
@@ -12382,6 +12394,7 @@
      },
      {
       "id": "t_20261101_subf",
+      "taskFolderWait": false,
       "title": "Sub feature",
       "status": "planning",
       "mode": "interview",
@@ -12853,6 +12866,7 @@
      },
      {
       "id": "t_20261101_main",
+      "taskFolderWait": false,
       "title": "Launch kit",
       "status": "review",
       "mode": "interview",
@@ -14350,6 +14364,7 @@
      },
      {
       "id": "t_20261101_subf",
+      "taskFolderWait": false,
       "title": "Sub feature",
       "status": "planning",
       "mode": "interview",
@@ -14821,6 +14836,7 @@
      },
      {
       "id": "t_20261101_main",
+      "taskFolderWait": false,
       "title": "Launch kit",
       "status": "review",
       "mode": "interview",
@@ -15737,6 +15753,7 @@
     },
     {
      "id": "t_20261101_main",
+     "taskFolderWait": false,
      "title": "Launch kit",
      "status": "review",
      "mode": "interview",
@@ -16102,6 +16119,7 @@
     },
     {
      "id": "t_20261101_subf",
+     "taskFolderWait": false,
      "title": "Sub feature",
      "status": "planning",
      "mode": "interview",
@@ -19061,6 +19079,7 @@
    "status": 200,
    "data": {
     "id": "t_20261101_main",
+    "taskFolderWait": false,
     "title": "Launch kit",
     "status": "review",
     "mode": "interview",
@@ -19280,6 +19299,7 @@
    "status": 200,
    "data": {
     "id": "t_20261101_subf",
+    "taskFolderWait": false,
     "title": "Sub feature",
     "status": "planning",
     "mode": "interview",

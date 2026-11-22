@@ -109,6 +109,9 @@ impl RunControl for LateRuns {
             r.folder_cards_changed(path);
         }
     }
+    fn folder_editors(&self, path: &str) -> Vec<(String, String)> {
+        self.get().map(|r| r.folder_editors(path)).unwrap_or_default()
+    }
 }
 
 /// R2b's plans call the loop through this. Each call runs on the caller's thread (a blocking one) unless it says

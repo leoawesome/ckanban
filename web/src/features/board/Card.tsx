@@ -19,7 +19,7 @@ import { useNow } from "../../hooks/useNow";
 import { clearArrival, useArrival } from "./arrivals";
 import { watchMotion } from "./cardMotion";
 import { FolderShareNote } from "./FolderShareNote";
-import { attentionLabel, cardFamily, folderShareText, familyLineText, partChip, cardHuddleLine, HUDDLE_WORKING, huddleLineText, familyWorkingNames, finishMark, foldChips, openedAt, overCap, previewShown, shouldPulse, signInError, stepAge, stepsShown, stepsText, type FinishMark } from "./cardState";
+import { attentionLabel, cardFamily, folderShareText, folderWaitPill, familyLineText, partChip, cardHuddleLine, HUDDLE_WORKING, huddleLineText, familyWorkingNames, finishMark, foldChips, openedAt, overCap, previewShown, shouldPulse, signInError, stepAge, stepsShown, stepsText, type FinishMark } from "./cardState";
 import { boardColumnOf } from "./columns";
 import { usePhone } from "../../hooks/usePhone";
 import { ClaudeFace } from "../chat/ConvTurn";
@@ -214,8 +214,11 @@ export const Card = memo(function Card({ a11yId, ticket, onClick, dragging, queu
   const { fc, busy: familyBusy, familyWorks, working, att, doneHint } = cardFamily(ticket, ownWorking);
   // One status pill, and only when it says something the card doesn't: its own huddle working on it hides a stale
   // Blocked or Failed, and a running card's spinner and time sit in the muted line instead of a Running pill.
-  const badge = att || ticket.huddleBusy || familyBusy ? null
-    : ticket.folderWait ? <span className="badge wait" title="This board's setting “One ticket at a time in my folder” is on: this ticket starts when the other one finishes">waiting: another ticket is using the folder</span>
+  // Waiting for the folder wins over the feature's working look: a user's card whose task waits isn't working yet.
+  const folderWait = folderWaitPill(ticket);
+  const badge = att || ticket.huddleBusy ? null
+    : folderWait ? <span className="badge wait" title={folderWait.title}>{folderWait.text}</span>
+    : familyBusy ? null
     : queued && !working ? (held
       ? <span className="badge queued" title="A daemon restart is pending; queued tickets start right after it">Waits for restart</span>
       : <span className="badge queued" title="Starts as soon as nothing else holds it back (another ticket editing the folder, or a restart)">Queued · #{queued}</span>)

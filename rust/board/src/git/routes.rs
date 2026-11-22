@@ -521,15 +521,9 @@ impl GitRoutes {
     /// (`{pending: true}`); otherwise it is turned on now.
     async fn turn_on_or_wait(&self, path: &str, dir: &Path) -> Out {
         let boards: Vec<Value> = self.data().list_profiles().unwrap_or_default().into_iter().map(|p| Value::Object(p.record.0)).filter(|p| p.get("path").and_then(Value::as_str) == Some(path)).collect();
-        let mut busy: Vec<(String, String)> = Vec::new();
-        for (slug, id) in self.runs.running_tickets() {
-            let Some(p) = boards.iter().find(|p| p.get("slug").and_then(Value::as_str) == Some(slug.as_str())) else { continue };
-            let Ok(Some(t)) = self.ticket(&slug, &id) else { continue };
-            let kind = repo::repo_kind(dir, false).await;
-            if super::landing::runs_in_folder(&t, Some(p), Some(kind)) != Some(false) {
-                busy.push((slug, id));
-            }
-        }
+        // The board's one rule for a run editing the folder in place (the pill and "One ticket at a time" use it too).
+        let p = path.to_string();
+        let busy = self.blocking(move |r| r.folder_editors(&p)).await;
         if !busy.is_empty() {
             super::pending::set(&self.root, path, &crate::runloop::board::now_iso(), &busy);
             return Out::Json(202, json!({ "pending": true }));
@@ -675,6 +669,9 @@ mod tests {
         }
         fn folder_cards_changed(&self, p: &str) {
             self.log.lock().push(format!("cards {p}"));
+        }
+        fn folder_editors(&self, _: &str) -> Vec<(String, String)> {
+            self.running.clone()
         }
     }
 
