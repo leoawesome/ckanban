@@ -14,7 +14,7 @@ use ckanban_core::jsnum::truthy;
 use serde_json::{Map, Value, json};
 
 use super::files::{self, js_string};
-use super::hooks::BoardHooks;
+use super::hooks::{BoardHooks, SelfMove};
 use super::norm::{SELF_MOVES, STATUSES, TICKET_KINDS, effort_help, kind_defaults, model_help, strings, valid_effort, valid_model};
 use super::rights::{Rights, Who, is_manager, split_run};
 use super::writer::{Refusal, Tickets, bad, block, now};
@@ -578,12 +578,19 @@ impl Writes {
         let own = req.run.as_deref() == Some(format!("{slug}/{id}").as_str()) && !req.huddle;
         let only_own = !b.is_empty() && b.keys().all(|k| k == "important" || k == "suggestedTags");
         let status_in = b.get("status").and_then(Value::as_str);
-        if own && b.len() == 1 && status_in.is_some_and(|s| SELF_MOVES.contains(&s)) && self.hooks().request_self_move(slug, id, status_in.unwrap_or("")) {
+        let self_move = match own_move(req.run.as_deref(), req.huddle, slug, id, &b) {
+            Some(s) => self.hooks().request_self_move(slug, id, s),
+            None => SelfMove::Refused,
+        };
+        if self_move != SelfMove::Refused {
             let mut v = match self.view(slug, &target) {
                 Value::Object(m) => m,
                 _ => Map::new(),
             };
             v.insert("selfMove".into(), status_in.unwrap_or("").into());
+            if self_move == SelfMove::OnDone {
+                v.insert("selfMoveOnDone".into(), true.into());
+            }
             return Ok(Reply::Json(200, Value::Object(v)));
         }
         let who = self.who();
@@ -1324,6 +1331,14 @@ impl Writes {
 }
 
 /// `?? {}` for a body that is JSON null.
+/// The status a ticket's own run asks to move its card to, when the request can be a self move: only `{status}` with
+/// done, backlog or ready, from the ticket's own run and never from a huddle helper (whose header names the host).
+fn own_move<'a>(run: Option<&str>, huddle: bool, slug: &str, id: &str, b: &'a Map<String, Value>) -> Option<&'a str> {
+    let own = run == Some(format!("{slug}/{id}").as_str()) && !huddle;
+    let status = b.get("status").and_then(Value::as_str)?;
+    (own && b.len() == 1 && SELF_MOVES.contains(&status)).then_some(status)
+}
+
 fn null_obj(v: Value) -> Value {
     if v.is_null() { json!({}) } else { v }
 }
@@ -1419,4 +1434,31 @@ pub fn keys_answer_text(asked: &[(String, Value)], saved: &[String], self_: bool
         s.push_str(&format!(" Left empty, not saved: {}.", list(&skipped)));
     }
     s
+}
+
+#[cfg(test)]
+mod own_move_tests {
+    use super::*;
+
+    fn body(v: Value) -> Map<String, Value> {
+        v.as_object().unwrap().clone()
+    }
+
+    #[test]
+    fn the_tickets_own_run_may_ask_for_done() {
+        assert_eq!(own_move(Some("b/t1"), false, "b", "t1", &body(json!({ "status": "done" }))), Some("done"));
+    }
+
+    #[test]
+    fn a_huddle_helper_never_moves_its_hosts_card() {
+        assert_eq!(own_move(Some("b/t1"), true, "b", "t1", &body(json!({ "status": "done" }))), None);
+    }
+
+    #[test]
+    fn other_tickets_statuses_and_changes_are_no_self_move() {
+        assert_eq!(own_move(Some("b/t2"), false, "b", "t1", &body(json!({ "status": "done" }))), None);
+        assert_eq!(own_move(Some("b/t1"), false, "b", "t1", &body(json!({ "status": "review" }))), None);
+        assert_eq!(own_move(Some("b/t1"), false, "b", "t1", &body(json!({ "status": "done", "title": "x" }))), None);
+        assert_eq!(own_move(None, false, "b", "t1", &body(json!({ "status": "done" }))), None);
+    }
 }

@@ -70,8 +70,8 @@ impl BoardHooks for Wired {
         self.runs.as_ref().map(|r| r.run_state(slug, id)).unwrap_or_default()
     }
 
-    fn request_self_move(&self, slug: &str, id: &str, status: &str) -> bool {
-        self.runs.as_ref().is_some_and(|r| r.request_self_move(slug, id, status))
+    fn request_self_move(&self, slug: &str, id: &str, status: &str) -> super::hooks::SelfMove {
+        self.runs.as_ref().map_or(super::hooks::SelfMove::Refused, |r| r.request_self_move(slug, id, status))
     }
 
     fn stop_run(&self, slug: &str, id: &str, target: Option<&str>) -> BoxFuture<'_, ()> {

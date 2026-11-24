@@ -140,7 +140,7 @@ impl Who<'_> {
             return Err((
                 403,
                 format!(
-                    "{run_id} is this run's own ticket: it may only move it to done, backlog or ready, and only when the user asks for that in a message they typed in this ticket's chat; otherwise ask the user to change it on the board"
+                    "{run_id} is this run's own ticket: it may only move it to done, backlog or ready, and only when the user asks for that in a message they typed in this ticket's chat (a work run that isn't a chat reply, a tool or a main ticket may move it to done on its own: it moves only if the run ends with status done); otherwise ask the user to change it on the board"
                 ),
             ));
         }

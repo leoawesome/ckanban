@@ -13,7 +13,25 @@ use super::rules::TELEGRAM_KEEP;
 use super::types::{Chat, ChatOptions};
 use crate::api::{BoardActions, Failure, RunControl};
 use crate::families::PlanRuns;
-use crate::tickets::hooks::RunState;
+use crate::tickets::hooks::{RunState, SelfMove};
+
+/// Which own move a run may ask for. A message the user typed (or steered the run with) allows done, backlog or
+/// ready, moved once the reply ends. Without one, only a plain work run (no chat reply: a Ready run, a scheduled
+/// run) may move its card to done, and only if it ends with status done. Tool tickets already go to done on their
+/// own after merging and reporting to their main ticket (with checks this move would skip), and main tickets follow
+/// their plan, so both keep needing the user's message. Ready and backlog without the user can restart work and loop.
+pub fn self_move_kind(s: &RunState, status: &str, tool: bool, main: bool) -> SelfMove {
+    if !s.active {
+        return SelfMove::Refused;
+    }
+    if (s.chat_user && !s.chat_slash) || s.user_steered {
+        return SelfMove::Asked;
+    }
+    if status == "done" && s.chat_mode.is_none() && !tool && !main {
+        return SelfMove::OnDone;
+    }
+    SelfMove::Refused
+}
 
 /// `RunControl` for services made before the run loop: answers "nothing running" until `set` is called.
 #[derive(Default)]
@@ -166,15 +184,18 @@ impl RunHooks {
         }
     }
 
-    /// `requestSelfMove`.
-    pub fn request_self_move(&self, slug: &str, id: &str, status: &str) -> bool {
-        let Some(r) = self.runs.run_of(slug, id) else { return false };
+    /// `requestSelfMove`: the run's own move, stored for when the run ends (`apply_self_move`).
+    pub fn request_self_move(&self, slug: &str, id: &str, status: &str) -> SelfMove {
+        let Some(r) = self.runs.run_of(slug, id) else { return SelfMove::Refused };
         let s = self.run_state(slug, id);
-        if !(s.active && ((s.chat_user && !s.chat_slash) || s.user_steered)) {
-            return false;
+        let (tool, main) = self.runs.tickets.get(slug, id).map_or((false, false), |t| (t.tool, t.main));
+        let kind = self_move_kind(&s, status, tool, main);
+        if kind != SelfMove::Refused {
+            let mut st = r.st.lock();
+            st.self_move = Some(status.to_string());
+            st.self_move_on_done = kind == SelfMove::OnDone;
         }
-        r.st.lock().self_move = Some(status.to_string());
-        true
+        kind
     }
 
     /// The user moved a running ticket: its run stops and ends in `target`; waits for its end.
@@ -344,4 +365,49 @@ impl crate::runs::run_log_compress::CompressBoard for RunLoop {
         RunLoop::is_running(self, slug, id)
     }
     fn activity_compressed(&self, _slug: &str, _id: &str) {}
+}
+
+#[cfg(test)]
+mod self_move_tests {
+    use super::*;
+
+    fn work_run() -> RunState {
+        RunState { active: true, ..Default::default() }
+    }
+
+    #[test]
+    fn an_unattended_work_run_may_move_its_own_card_to_done_when_it_ends_done() {
+        assert_eq!(self_move_kind(&work_run(), "done", false, false), SelfMove::OnDone);
+    }
+
+    #[test]
+    fn ready_or_backlog_still_need_the_users_message() {
+        assert_eq!(self_move_kind(&work_run(), "ready", false, false), SelfMove::Refused);
+        assert_eq!(self_move_kind(&work_run(), "backlog", false, false), SelfMove::Refused);
+        let asked = RunState { chat_mode: Some("act".into()), chat_user: true, ..work_run() };
+        assert_eq!(self_move_kind(&asked, "ready", false, false), SelfMove::Asked);
+        let steered = RunState { user_steered: true, ..work_run() };
+        assert_eq!(self_move_kind(&steered, "backlog", false, false), SelfMove::Asked);
+    }
+
+    #[test]
+    fn chat_replies_without_the_users_message_keep_their_limits() {
+        for mode in ["refine", "act"] {
+            let chat = RunState { chat_mode: Some(mode.into()), ..work_run() };
+            assert_eq!(self_move_kind(&chat, "done", false, false), SelfMove::Refused, "{mode}");
+        }
+        let slash = RunState { chat_mode: Some("act".into()), chat_user: true, chat_slash: true, ..work_run() };
+        assert_eq!(self_move_kind(&slash, "done", false, false), SelfMove::Refused);
+    }
+
+    #[test]
+    fn tool_and_main_tickets_keep_needing_the_users_message() {
+        assert_eq!(self_move_kind(&work_run(), "done", true, false), SelfMove::Refused);
+        assert_eq!(self_move_kind(&work_run(), "done", false, true), SelfMove::Refused);
+    }
+
+    #[test]
+    fn a_stopping_run_moves_nothing() {
+        assert_eq!(self_move_kind(&RunState::default(), "done", false, false), SelfMove::Refused);
+    }
 }

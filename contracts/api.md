@@ -711,7 +711,10 @@ else is 400: planned tickets are retired. From a run, an unsuitable
   left as it is.
 - The ticket's own run (header equals `<slug>/<id>`, no huddle header) may set only `important` and `suggestedTags`,
   and may send `{status}` with `done`, `backlog` or `ready` when the user asked in the chat; that answers
-  `TicketView` plus `selfMove` and the move happens after the reply.
+  `TicketView` plus `selfMove` and the move happens after the reply. Without the user's message, a work run that
+  isn't a chat reply (a Ready or scheduled run; not a tool or main ticket) may send `{status: "done"}`: the answer
+  adds `selfMoveOnDone: true`, and the card moves only if the run ends in Review with outcome `done` and no huddle
+  open (blocked, questions, failed, stopped or limit runs stay where the run's end put them). Other own changes: 403.
 - A run moving another ticket to `done` gets 409 while it runs or has unsaved changes.
 - Moving to `ready`/`in_progress` while a user huddle is live: 409 with `confirm: "huddle-open"` (UI source only).
 

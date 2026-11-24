@@ -81,6 +81,8 @@ pub struct RunSt {
     pub target_status: Option<String>,
     /// The user asked this run, in its own chat, to move its card once the reply is over.
     pub self_move: Option<String>,
+    /// The run asked for `self_move` without the user's message: it happens only if the run ends with status done.
+    pub self_move_on_done: bool,
     /// A quiet schedule's run found nothing: (summary, cost) once it is over.
     pub quiet_end: Option<(String, f64)>,
     pub stop_requested: bool,
@@ -283,6 +285,13 @@ pub fn uuid() -> String {
 }
 
 /// A field as text.
+/// A run's own move to done without the user's message goes ahead only from where a run that ended with status done
+/// lands: Review with outcome done, no huddle open on it. Blocked, questions, failed, stopped or limit runs (and an
+/// auto huddle still to run) leave the card where the run end put it.
+pub fn ended_well(t: &Tk, huddle_open: bool) -> bool {
+    t.status == "review" && t.s("outcome") == Some("done") && !huddle_open
+}
+
 pub fn ts<'a>(t: &'a Tk, k: &str) -> Option<&'a str> {
     t.s(k).filter(|s| !s.is_empty())
 }
@@ -786,9 +795,9 @@ impl RunLoop {
 
     /// The move the user asked the run for, now that its reply is over (`applySelfMove`).
     async fn apply_self_move(self: &Arc<Self>, run: &Arc<ActiveRun>) {
-        let (status, stopped, target) = {
+        let (status, on_done, stopped, target) = {
             let st = run.st.lock();
-            (st.self_move.clone(), st.stop_requested, st.target_status.clone())
+            (st.self_move.clone(), st.self_move_on_done, st.stop_requested, st.target_status.clone())
         };
         let Some(status) = status else { return };
         if stopped || target.is_some() || self.shutting_down() || self.is_running(&run.slug, &run.id) {
@@ -801,8 +810,13 @@ impl RunLoop {
             if t.status == status {
                 return;
             }
+            // A move the user didn't ask for: only from where a run that ended well lands (Review, outcome done).
+            if on_done && !ended_well(&t, me.huddle_open(&r.slug, &r.id)) {
+                return;
+            }
             let patch = obj(json!({ "status": status }));
             match me.tickets.update(&r.slug, &r.id, &patch, true) {
+                Ok(_) if on_done => me.note(&r.slug, &r.id, "Moved it to done by its own run (the run ended done)."),
                 Ok(_) => me.note(&r.slug, &r.id, &format!("Moved it to {status} by its own chat (user request).")),
                 Err((_, e)) => me.note(&r.slug, &r.id, &format!("Couldn't move it to {status} as asked in the chat: {e}")),
             }
@@ -960,5 +974,101 @@ impl RunLoop {
     /// `onRunEnd`.
     pub fn on_run_end(&self, f: RunEnded) {
         self.run_ended.lock().push(f);
+    }
+}
+
+#[cfg(test)]
+mod self_move_tests {
+    use super::*;
+    use crate::api::StandIn;
+    use crate::core::{Core, Services};
+    use crate::git::ops::mem::MemBoard;
+
+    struct Board {
+        _d: tempfile::TempDir,
+        core: Arc<Core>,
+        runs: Arc<RunLoop>,
+    }
+
+    fn board() -> Board {
+        let d = tempfile::tempdir().unwrap();
+        let project = d.path().join("project");
+        std::fs::create_dir_all(d.path().join("profiles/b/tickets")).unwrap();
+        std::fs::create_dir_all(&project).unwrap();
+        let profile = json!({ "name": "B", "slug": "b", "path": project, "workspace": "folder", "createdAt": "2026-11-01T00:00:00.000Z" });
+        std::fs::write(d.path().join("profiles/b/profile.json"), profile.to_string()).unwrap();
+        let mem = MemBoard::default();
+        mem.profiles.lock().push(profile);
+        let core = Core::new(d.path(), Services::stand_ins());
+        let git = Git::new(d.path(), Arc::new(mem));
+        let runs = RunLoop::new(RunLoopDeps {
+            root: d.path().to_path_buf(),
+            tickets: core.tickets.clone(),
+            bus: core.bus.clone(),
+            families: Families::new(core.tickets.clone(), core.reads.clone()),
+            git,
+            sessions: Arc::new(StandIn),
+            huddles: Arc::new(StandIn),
+            browsers: None,
+            devices: Arc::new(StandIn),
+            satellite: Arc::new(StandIn),
+            opts: RunLoopOptions::new("/nonexistent/claude-for-tests"),
+        });
+        Board { _d: d, core, runs }
+    }
+
+    /// A ticket as its run's end left it, and that (ended) run with its stored own move.
+    fn ended(b: &Board, fields: Value, on_done: bool) -> (String, Arc<ActiveRun>) {
+        let mut m = Map::new();
+        m.insert("title".into(), "T".into());
+        m.insert("body".into(), "".into());
+        let id = b.core.tickets.create("b", m).unwrap().id.clone();
+        b.core.tickets.patch("b", &id, fields.as_object().unwrap().clone()).unwrap();
+        let st = RunSt { self_move: Some("done".into()), self_move_on_done: on_done, ..Default::default() };
+        let run = Arc::new(ActiveRun { slug: "b".into(), id: id.clone(), no_edit: false, st: Mutex::new(st), done: watch::channel(false).0 });
+        (id, run)
+    }
+
+    fn status(b: &Board, id: &str) -> String {
+        b.core.tickets.get("b", id).unwrap().status.clone()
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_run_that_ended_done_moves_its_card_to_done() {
+        let b = board();
+        let (id, run) = ended(&b, json!({ "status": "review", "outcome": "done" }), true);
+        b.runs.apply_self_move(&run).await;
+        assert_eq!(status(&b, &id), "done");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_run_that_ended_not_done_leaves_its_card_where_the_end_put_it() {
+        let b = board();
+        for outcome in ["blocked", "needs_input", "failed", "stopped", "limit"] {
+            let (id, run) = ended(&b, json!({ "status": "review", "outcome": outcome }), true);
+            b.runs.apply_self_move(&run).await;
+            assert_eq!(status(&b, &id), "review", "outcome {outcome}");
+        }
+        // An auto huddle still to run: the run end kept it In Progress.
+        let (id, run) = ended(&b, json!({ "status": "in_progress", "outcome": null }), true);
+        b.runs.apply_self_move(&run).await;
+        assert_eq!(status(&b, &id), "in_progress");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_move_the_user_asked_for_happens_whatever_the_run_ended_with() {
+        let b = board();
+        let (id, run) = ended(&b, json!({ "status": "review", "outcome": "blocked" }), false);
+        b.runs.apply_self_move(&run).await;
+        assert_eq!(status(&b, &id), "done");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_stopped_run_never_moves_its_card() {
+        let b = board();
+        let (id, run) = ended(&b, json!({ "status": "review", "outcome": "done" }), true);
+        run.st.lock().stop_requested = true;
+        b.runs.apply_self_move(&run).await;
+        assert_eq!(status(&b, &id), "review");
     }
 }

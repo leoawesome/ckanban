@@ -129,6 +129,9 @@ async fn move_ticket(a: &Value, cx: &Ctx) -> R<String> {
     let id = req_str(a, "id")?;
     let status = parse_status(Some(&json!(req_str(a, "status")?)))?;
     let tk = cx.client.update_ticket(&slug, id, &json!({ "status": status }), cx.run_env()).await?;
+    if t(&tk, "selfMoveOnDone") {
+        return Ok(format!("{} moves to done when this run ends, if it ends with status done; otherwise it goes where the run's end puts it.", sh(&tk, "id")));
+    }
     if t(&tk, "selfMove") {
         return Ok(format!("{} moves to {} once this reply ends. Tell the user.", sh(&tk, "id"), sh(&tk, "selfMove")));
     }

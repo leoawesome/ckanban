@@ -27,14 +27,25 @@ pub struct RunState {
     pub user_steered: bool,
 }
 
+/// How the ticket's own run may move its card (`requestSelfMove`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SelfMove {
+    /// Not this way: the run has no such right (the usual run rights decide).
+    Refused,
+    /// The user asked in a message they typed: the card moves once the reply ends.
+    Asked,
+    /// A work run without the user's message moves it to done: only if the run ends with status done.
+    OnDone,
+}
+
 pub trait BoardHooks: Send + Sync {
     /// The ticket's run, if any (R7a).
     fn run_state(&self, _slug: &str, _id: &str) -> RunState {
         RunState::default()
     }
-    /// Asks the ticket's own run to move its card once the reply ends (`requestSelfMove`, R7a). False: no such run.
-    fn request_self_move(&self, _slug: &str, _id: &str, _status: &str) -> bool {
-        false
+    /// Asks the ticket's own run to move its card once the reply ends (`requestSelfMove`, R7a).
+    fn request_self_move(&self, _slug: &str, _id: &str, _status: &str) -> SelfMove {
+        SelfMove::Refused
     }
     /// Stops the ticket's run with `target` as the status it ends in, and waits for it (R7a).
     fn stop_run(&self, _slug: &str, _id: &str, _target: Option<&str>) -> BoxFuture<'_, ()> {
