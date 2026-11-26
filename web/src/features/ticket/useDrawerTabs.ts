@@ -1,4 +1,5 @@
 import { hashIsTicket, withTabLink } from "./tabLink";
+import { afterBackSteps } from "../../app/backEntry";
 import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import type { HuddleState } from "../huddle/huddle";
 import { type Ticket } from "../../lib/api";
@@ -8,6 +9,7 @@ import { drawerTabs, type DrawerTab } from "../../app/keynav";
 import { isFeature, parentLink, runsTasks } from "../family/family";
 import { useShareNotices } from "../../lib/share";
 import { useTicketUsage } from "../usage/UsagePanel";
+import { closeOutput, type FormPreview, openOutput as openOutputState } from "./formPreview";
 
 /** The ticket panel's tabs: which show, the open one, its link, and what they count (moved from TicketDrawer.tsx). */
 export function useDrawerTabs({
@@ -48,8 +50,9 @@ export function useDrawerTabs({
   const [outputCount, setOutputCount] = useState(0);
   const ticketUsage = useTicketUsage(slug, ticket.id);
   const openTab = (t: typeof tabPick) => {
+    setFormRequest(0);
     if (t === "changes") diffState.reload();
-    else if (t === "outputs") setOutputFocus(null);
+    else if (t === "outputs") { setOutputFocus(null); setOutputFrom(null); }
     else if (t === "usage") ticketUsage.reload();
     setTab(t);
   };
@@ -69,14 +72,39 @@ export function useDrawerTabs({
   useShareNotices(ticket);
   // A file to show when the Outputs tab opens (a mockup clicked in the chat).
   const [outputFocus, setOutputFocus] = useState<string | null>(linked0.file);
+  // The questions form the file was previewed from (its Preview link): the reader then goes back to the chat.
+  const [outputFrom, setOutputFrom] = useState<FormPreview | null>(null);
+  // A stamp the chat scrolls to its open form on (set when a form's preview goes back to the chat).
+  const [formRequest, setFormRequest] = useState(0);
+  useEffect(() => { if (tab !== "outputs") setOutputFrom(null); }, [tab]);
+  /** Show a file in the Outputs tab; `form`: previewed from that questions form. */
+  const openOutput = (name: string, form: FormPreview | null = null) => {
+    const s = openOutputState(name, form);
+    setOutputFocus(s.file);
+    setOutputFrom(s.form);
+    setTab("outputs");
+  };
+  /** Leaves a reader opened from a form: back to the Chat tab (the reader's own close handles the rest). */
+  const backToChat = () => {
+    const s = closeOutput({ tab, file: outputFocus, form: outputFrom });
+    setOutputFrom(s.form);
+    setOutputFocus(s.file);
+    if (s.tab === "chat") setFormRequest(Date.now());
+    setTab(s.tab as DrawerTab);
+  };
   // The file open in Outputs, for the link (null: none picked).
   const [linkFile, setLinkFile] = useState<{ id: string; name: string | null }>({ id: ticket.id, name: linked0.file });
   const fileForLink = linkFile.id === ticket.id ? linkFile.name : null;
   // Keep the open tab in the link (replace: switching tabs doesn't add Back steps).
+  // Again once a closing reader's Back entry is gone: going back over it lands on an entry with the older link.
   useEffect(() => {
-    if (!hashIsTicket(location.hash, ticket.id)) return;
-    const next = withTabLink(location.hash, tab, fileForLink);
-    if (next !== location.hash) history.replaceState(history.state, "", next);
+    const sync = () => {
+      if (!hashIsTicket(location.hash, ticket.id)) return;
+      const next = withTabLink(location.hash, tab, fileForLink);
+      if (next !== location.hash) history.replaceState(history.state, "", next);
+    };
+    sync();
+    afterBackSteps(sync);
   }, [tab, fileForLink, ticket.id]);
-  return { diffState, hasUsage, help, onTabKey, openTab, outputCount, outputFocus, setLinkFile, setOutputCount, setOutputFocus, tab, tabs, ticketUsage, usage, whereShown };
+  return { backToChat, diffState, formRequest, hasUsage, help, onTabKey, openOutput, openTab, outputCount, outputFocus, outputFrom, setLinkFile, setOutputCount, setOutputFocus, tab, tabs, ticketUsage, usage, whereShown };
 }

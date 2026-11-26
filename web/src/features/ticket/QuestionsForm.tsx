@@ -4,11 +4,15 @@ import { autoGrow } from "../../lib/autoGrow";
 import { browserStore, forget, loadSaved } from "../../lib/drafts";
 import { type Answer, answersMessage, answerText, fresh, parseAnswers, type Progress, signature, startProgress } from "./questionForms";
 import { CheckIcon } from "../../components/icons";
+import { pickAnswer } from "./formPreview";
 import { usePersistentState } from "../../hooks/usePersistentState";
 import { enterSends } from "../../lib/enterSends";
 import { QuestionText } from "./QuestionText";
 import { useClaudeName } from "../avatar/AvatarFace";
 import { plainMarkdown } from "./miniMarkdown";
+import { usePhone } from "../../hooks/usePhone";
+import { reducedMotion } from "../../lib/motion";
+import { AUTO_NEXT_MS, autoNext, backStep, nextLabel, nextStep, progressText, segments, stepped } from "./formSteps";
 
 /** Descriptions longer than this (characters) may be cut to 3 lines, so they get a "More" toggle. */
 const LONG_DESC = 140;
@@ -63,8 +67,8 @@ export function QuestionsForm({ questions, answered, answer, replaced, closed, d
   onSubmit: (text: string) => void | Promise<unknown>;
   /** Close question: closes the form without sending anything; omit to not offer it. */
   onClose?: () => void | Promise<unknown>;
-  /** Open an option's mockup (file name in outputs/mockups); options with one get a Preview link. */
-  onPreview?: (mockup: string) => void;
+  /** Open an option's mockup (file name in outputs/mockups) of question `step`; options with one get a Preview link. */
+  onPreview?: (mockup: string, step: number) => void;
   /** Where to keep unsent progress so it survives leaving the ticket; omit to not save. */
   storageKey?: string;
 }) {
@@ -79,7 +83,13 @@ export function QuestionsForm({ questions, answered, answer, replaced, closed, d
     (p) => p?.sig === sig && Array.isArray(p.answers) && p.answers.length === questions.length,
   );
   const { answers, step, note } = progress;
-  const setStep = (n: number) => setProgress((p) => ({ ...p, step: n }));
+  // A pick-one tap on the phone moves on after a moment; any other step change cancels that.
+  const autoTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(autoTimer.current), []);
+  const setStep = (n: number) => {
+    clearTimeout(autoTimer.current);
+    setProgress((p) => ({ ...p, step: n }));
+  };
   const setNote = (v: string) => setProgress((p) => ({ ...p, note: v }));
   const setAnswers = (fn: (arr: Answer[]) => Answer[]) => setProgress((p) => ({ ...p, answers: fn(p.answers) }));
 
@@ -89,12 +99,22 @@ export function QuestionsForm({ questions, answered, answer, replaced, closed, d
   }, [answered, closed, storageKey]);
   const root = useRef<HTMLDivElement>(null);
   const total = questions.length;
+  // Phone, two or more questions: one question per step with a progress bar, then "Check your answers".
+  const steps = stepped(usePhone(), total);
   const summary = step >= total;
   const q = questions[Math.min(step, total - 1)];
   const a = answers[Math.min(step, total - 1)];
 
+  const shownStep = useRef(step);
   useEffect(() => {
     if (!answered && !replaced && !closed) root.current?.focus({ preventScroll: true });
+    // A step on the phone can be shorter than the one before: bring the card's top back into view if it went above.
+    const el = root.current;
+    const log = el?.closest(".chat-log");
+    if (steps && el && log && shownStep.current !== step && el.getBoundingClientRect().top < log.getBoundingClientRect().top) {
+      el.scrollIntoView({ block: "start", behavior: reducedMotion() ? "auto" : "smooth" });
+    }
+    shownStep.current = step;
   }, [step, answered, !!replaced, closed]);
 
   // Options whose whole description the user opened ("step:label"); only on screen, not saved.
@@ -107,10 +127,14 @@ export function QuestionsForm({ questions, answered, answer, replaced, closed, d
 
   const update = (i: number, fn: (a: Answer) => Answer) => setAnswers((arr) => arr.map((x, j) => (j === i ? fn(x) : x)));
 
-  const pick = (label: string) =>
-    update(step, (x) => q.multiSelect
-      ? { ...x, picked: x.picked.includes(label) ? x.picked.filter((l) => l !== label) : [...x.picked, label] }
-      : { ...x, picked: [label], otherOn: false });
+  const pick = (label: string) => {
+    update(step, (x) => pickAnswer(x, label, q.multiSelect));
+    if (!steps) return;
+    const to = autoNext(step, total, q.multiSelect, pickAnswer(a, label, q.multiSelect), label);
+    if (to === null) return;
+    clearTimeout(autoTimer.current);
+    autoTimer.current = setTimeout(() => setProgress((p) => ({ ...p, step: to })), reducedMotion() ? 0 : AUTO_NEXT_MS);
+  };
 
   // "Or type your own" is a text field: typing in it (or going back into it with text) makes it the answer; on a
   // one-answer question that clears the picked option, and picking an option sets the typed text aside.
@@ -183,10 +207,11 @@ export function QuestionsForm({ questions, answered, answer, replaced, closed, d
   };
 
   return (
-    <div className="qcard" ref={root} tabIndex={-1} onKeyDown={onKey}>
+    <div className={`qcard${steps ? " stepped" : ""}`} ref={root} tabIndex={-1} onKeyDown={onKey}>
       <div className="qcard-head">
         <span className="qcard-title">{claude} has {total} question{total > 1 ? "s" : ""}</span>
-        {total > 1 && <span className="qsteps" aria-label={`Step ${Math.min(step + 1, total)} of ${total}`}>
+        {steps && <span className="muted small qprog-text">{progressText(step, total)}</span>}
+        {total > 1 && !steps && <span className="qsteps" aria-label={`Step ${Math.min(step + 1, total)} of ${total}`}>
           {questions.map((_, i) => (
             <button key={i} className={`qstep ${i === step ? "on" : ""} ${i < step || summary ? "done" : ""}`}
               onClick={() => setStep(i)} aria-label={`Question ${i + 1}`} aria-current={i === step && !summary ? "step" : undefined}><span className="qstep-dot" aria-hidden /></button>
@@ -194,6 +219,12 @@ export function QuestionsForm({ questions, answered, answer, replaced, closed, d
           <span className="muted small">{summary ? "Review" : `${step + 1} / ${total}`}</span>
         </span>}
       </div>
+      {steps && (
+        <div className="qprog" role="progressbar" aria-label="Questions answered" aria-valuemin={0} aria-valuemax={total} aria-valuenow={Math.min(step, total)}
+          aria-valuetext={summary ? "Check your answers" : `Question ${step + 1} of ${total}`}>
+          {segments(step, total).map((s, i) => <i key={i} className={s} />)}
+        </div>
+      )}
 
       {!summary ? (
         <div className="qbody">
@@ -235,7 +266,7 @@ export function QuestionsForm({ questions, answered, answer, replaced, closed, d
               return o.mockup && onPreview ? (
                 <div key={o.label} className="qopt-row">
                   {option}
-                  <button type="button" className="qpreview" title={`Preview ${o.mockup} in the Outputs tab`} onClick={() => onPreview(o.mockup!)}>
+                  <button type="button" className="qpreview" title={`Preview ${o.mockup} in the Outputs tab`} onClick={() => onPreview(o.mockup!, step)}>
                     Preview
                   </button>
                   {more}
@@ -245,6 +276,22 @@ export function QuestionsForm({ questions, answered, answer, replaced, closed, d
             <AnswerBox key={step} value={a.other} disabled={disabled} className={a.otherOn ? "on" : ""} inputRef={otherRef}
               placeholder="Or type your own" label="Your own answer" onFocus={focusOther} onChange={typeOther} onEnter={next} />
           </div>
+        </div>
+      ) : steps ? (
+        <div className="qbody">
+          <div className="qquestion">Check your answers</div>
+          <ul className="qcheck">
+            {questions.map((qq, i) => (
+              <li key={i}>
+                <span className="qcheck-q">{plainMarkdown(qq.question)}</span>
+                <span className="qcheck-a">{answerText(answers[i])}</span>
+                <button type="button" className="link-btn qcheck-change" onClick={() => setStep(i)}
+                  aria-label={`Change your answer to: ${plainMarkdown(qq.question)}`}>Change</button>
+              </li>
+            ))}
+          </ul>
+          <AnswerBox value={note} onChange={setNote} onEnter={send} disabled={disabled}
+            placeholder="Anything else Claude should know? (optional)" label={`Anything else ${claude} should know (optional)`} />
         </div>
       ) : (
         <div className="qbody">
@@ -262,7 +309,7 @@ export function QuestionsForm({ questions, answered, answer, replaced, closed, d
       )}
 
       <div className="qfoot">
-        <button className="btn ghost small qback" disabled={step === 0} onClick={() => setStep(step - 1)}>Back</button>
+        <button className="btn ghost small qback" disabled={step === 0} onClick={() => setStep(backStep(step))}>Back</button>
         {onClose && (
           <button className="btn ghost small qclose" disabled={disabled} onClick={close}
             title="Close this question without answering: nothing is sent to Claude, and it stops waiting on you">Close question</button>
@@ -270,6 +317,8 @@ export function QuestionsForm({ questions, answered, answer, replaced, closed, d
         <span className="muted small qhint">{summary ? "Enter to send" : "1-9 to pick · Enter for next"}</span>
         {summary || total === 1 ? (
           <button className="btn primary small qmain" disabled={disabled} onClick={send}>Send answers</button>
+        ) : steps ? (
+          <button className="btn primary small qmain" disabled={disabled} onClick={() => setStep(nextStep(step, total))}>{nextLabel(a)}</button>
         ) : (
           <button className="btn primary small qmain" disabled={disabled} onClick={next}>{step === total - 1 ? "Review →" : "Next →"}</button>
         )}

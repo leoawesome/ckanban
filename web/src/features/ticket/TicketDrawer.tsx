@@ -168,7 +168,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
   const tally = useMemo(() => (runsTasks(ticket) ? plan : taskTally(featRows)), [ticket, plan, featRows]);
   const huddle = huddleState.latest;
   const {
-    diffState, hasUsage, help, onTabKey, openTab, outputCount, outputFocus, setLinkFile, setOutputCount,
+    backToChat, diffState, formRequest, hasUsage, help, onTabKey, openOutput, openTab, outputCount, outputFocus, outputFrom, setLinkFile, setOutputCount,
     setOutputFocus, tab, tabs, ticketUsage, usage, whereShown,
   } = useDrawerTabs({
     children, familySize, huddleState, linked0, phone, setTab, slug, tabPick, ticket, tickets,
@@ -892,19 +892,19 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
               </div>
             ) : tab === "huddle" ? (
               <HuddlePanel slug={slug} ticket={ticket} tickets={tickets} state={huddleState} onError={onError} seed={huddleSeed ?? null} onSelect={setHuddlePick}
-                onOpenOutput={(name) => { setOutputFocus(name); setTab("outputs"); }}
+                onOpenOutput={(name) => openOutput(name)}
                 onOpenChat={() => setTab("chat")} onOpenTicket={onOpenTicket} onOpenTeam={onOpenTeam} />
             ) : tab === "changes" ? (
               <Changes slug={slug} ticket={ticket} state={diffState} onSent={() => setTab("chat")} onError={onError} />
             ) : tab === "usage" ? (
               <div className="panel-scroll panel-usage"><UsagePanel usage={usage} error={ticketUsage.error} /></div>
             ) : tab === "outputs" ? (
-              <div className="panel-scroll panel-outputs"><Outputs slug={slug} ticket={ticket} onCount={setOutputCount} focus={outputFocus} onOpenFile={(name) => setLinkFile({ id: ticket.id, name })} /></div>
+              <div className="panel-scroll panel-outputs"><Outputs slug={slug} ticket={ticket} onCount={setOutputCount} focus={outputFocus} from={outputFrom} onBackToChat={backToChat} onOpenFile={(name) => setLinkFile({ id: ticket.id, name })} /></div>
             ) : (
               <Chat slug={slug} ticket={ticket} tickets={tickets} contextRequest={contextRequest} onOpenTicket={onOpenTicket} onError={onError} onPendingProposal={onPendingProposal} onFilesChanged={diffState.reload}
                 onOpenTasks={tabs.includes("family") ? () => openTab("family") : undefined}
                 huddle={huddle} onOpenHuddle={() => setTab("huddle")} onOpenTeam={onOpenTeam} help={help}
-                onOpenOutput={(name) => { setOutputFocus(name); setTab("outputs"); }} turnBar={turnBar} />
+                onOpenOutput={openOutput} formRequest={formRequest} turnBar={turnBar} />
             )}
           </div>
         </div>

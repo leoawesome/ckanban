@@ -30,6 +30,8 @@ import { ImagePickButton } from "../../components/ImagePickButton";
 import { KeyHint } from "../../components/KeyHint";
 import { ProposalCard } from "../family/ProposalCard";
 import { QuestionsForm } from "../ticket/QuestionsForm";
+import { type FormPreview, mockupPath } from "../ticket/formPreview";
+import { waitingChip } from "../ticket/formSteps";
 import { RecoveryBanner } from "../board/RecoveryBanner";
 import { UndoBar, UndoneNote, UserMessage } from "./MessageActions";
 import { SetupRow } from "../../components/SetupRow";
@@ -75,9 +77,14 @@ import { useChatRewind } from "./useChatRewind";
 /** A queued peer message that carries huddle messages (see the server's huddleMainPrompt). */
 const HUDDLE_TAG = /<ckanban-context[^>]* huddle="/;
 
-export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenOutput, onError, onPendingProposal, huddle = null, onOpenHuddle, onOpenTeam, help, onFilesChanged, contextRequest = 0, turnBar }: {
+/** How long the chat keeps an open form in view after coming back from its preview, while cards below it load. */
+const FORM_HOLD_MS = 1500;
+
+export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenOutput, onError, onPendingProposal, huddle = null, onOpenHuddle, onOpenTeam, help, onFilesChanged, contextRequest = 0, formRequest = 0, turnBar }: {
   /** A Date.now() stamp: a new one opens the Context panel (the ticket ⋯ menu's Context item). */
   contextRequest?: number;
+  /** A Date.now() stamp: a new one scrolls to the open questions form (back from a preview opened from it). */
+  formRequest?: number;
   slug: string;
   ticket: Ticket;
   /** The board's tickets, to tell which proposed new tickets already exist. */
@@ -86,7 +93,7 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
   /** Open the Tasks tab (the feature status and its tasks), from the "Waiting on you" line. */
   onOpenTasks?: () => void;
   /** Show a file of the ticket's outputs folder (path relative to it) in the Outputs tab. */
-  onOpenOutput?: (name: string) => void;
+  onOpenOutput?: (name: string, form?: FormPreview) => void;
   onError: (m: string) => void;
   /** The newest proposal card not applied yet, as its Apply action (null when none): ⌘⇧Enter in the panel applies it. */
   /** The newest unapplied proposal's apply; start: also move the ticket to Ready. */
@@ -381,6 +388,33 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
     } else if (stickToBottom.current && !pressing.current) el.scrollTop = el.scrollHeight;
     lastGap.current = gapOf(el);
   }, [page, pending, running, live, waitingHandoff, help?.cards.length, help?.failed]);
+  // Back from a form's preview: show that open form (once it is drawn), not the bottom of the chat.
+  const formShown = useRef(0);
+  useLayoutEffect(() => {
+    const el = scroller.current;
+    if (!el || !formRequest || formShown.current === formRequest) return;
+    const form = [...el.querySelectorAll<HTMLElement>(".qcard:not(.answered)")].at(-1);
+    if (!form) return;
+    formShown.current = formRequest;
+    setJump(null);
+    // Cards still loading below the form would pull a chat that sits near the bottom down with them: keep the form
+    // in place for a moment, until the user scrolls or touches the chat themselves.
+    const until = Date.now() + FORM_HOLD_MS;
+    let stop = false;
+    const quit = () => { stop = true; };
+    const hold = () => {
+      if (stop || Date.now() > until || !form.isConnected) {
+        for (const t of ["wheel", "touchstart", "mousedown", "keydown"]) el.removeEventListener(t, quit);
+        return;
+      }
+      el.scrollTop += form.getBoundingClientRect().top - el.getBoundingClientRect().top - 12;
+      stickToBottom.current = false;
+      lastGap.current = gapOf(el);
+      requestAnimationFrame(hold);
+    };
+    for (const t of ["wheel", "touchstart", "mousedown", "keydown"]) el.addEventListener(t, quit, { passive: true });
+    hold();
+  });
   // Asking for help scrolls down to where its card appears.
   const helpBusy = help?.busy.length ?? 0;
   const helpBusyBefore = useRef(helpBusy);
@@ -424,6 +458,23 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
     entries, onError, onOpenTicket, onPendingProposal, pending, running, slug, ticket, tickets,
   });
   const empty = page !== null && !loadError && entries.length === 0 && !pending.length && !queued.length && !running;
+
+  // "↑ Answer N questions" over the message box while the open form is scrolled out of view.
+  const openFormEl = () => [...(scroller.current?.querySelectorAll<HTMLElement>(".qcard:not(.answered)") ?? [])].at(-1);
+  let openAt = -1;
+  for (const [i, f] of forms) if (f.state === "open" && entries[i]?.questions?.length) openAt = i;
+  const openCount = openAt >= 0 ? entries[openAt].questions!.length : null;
+  const [formOnScreen, setFormOnScreen] = useState(true);
+  useEffect(() => {
+    const root = scroller.current;
+    const form = openCount ? openFormEl() : undefined;
+    if (!root || !form || typeof IntersectionObserver === "undefined") return setFormOnScreen(true);
+    // On screen while at least 40px of it shows inside the log (a sliver at an edge doesn't count).
+    const io = new IntersectionObserver(([e]) => setFormOnScreen(e.isIntersecting), { root, rootMargin: "-40px 0px" });
+    io.observe(form);
+    return () => io.disconnect();
+  }, [openAt, openCount, page === null, entries.length]);
+  const chip = waitingChip(openCount, formOnScreen);
 
 
   // Message blocks are drawn again only when what they show changes (MemoBlock): the callbacks they hand out read the
@@ -559,7 +610,8 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
               {e.questions && (
                 <QuestionsForm questions={e.questions} answered={formState(b.index).state === "answered"} answer={answerOf(b.index)}
                   replaced={replacedBy(b.index)} closed={formState(b.index).state === "closed"} onClose={() => closeForm(e.uuid)}
-                  disabled={running} onSubmit={send} onPreview={onOpenOutput && ((m) => onOpenOutput(`mockups/${m}`))}
+                  disabled={running} onSubmit={send}
+                  onPreview={onOpenOutput && ((m, step) => onOpenOutput(mockupPath(m), { key: formKey(slug, ticket.id, openKey(b.index) ?? e.uuid), questions: e.questions!, step }))}
                   storageKey={formKey(slug, ticket.id, openKey(b.index) ?? e.uuid)} />
               )}
               {e.proposal && (
@@ -715,12 +767,17 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
   const pickWaiting = (it: WaitingItem, opener: HTMLElement) => {
     if (it.kind === "task") return openSheet(it.id, opener);
     if (it.kind === "status") return onOpenTasks?.();
-    const form = [...(scroller.current?.querySelectorAll<HTMLElement>(".qcard:not(.answered)") ?? [])].at(-1);
+    showOpenForm("center");
+  };
+  // Scrolls to the open questions form and rings it for a moment ("N waiting on you" and the "Answer N questions" chip).
+  const showOpenForm = (block: ScrollLogicalPosition) => {
+    const form = openFormEl();
     if (!form) return;
-    form.scrollIntoView({ block: "center", behavior: reducedMotion() ? "auto" : "smooth" });
+    // The ring first: its scroll margin keeps the ring in view when the form lands at the top.
     form.classList.remove("attn-flash");
     void form.offsetWidth;
     form.classList.add("attn-flash");
+    form.scrollIntoView({ block, behavior: reducedMotion() ? "auto" : "smooth" });
     setTimeout(() => form.classList.remove("attn-flash"), 2200);
     form.querySelector<HTMLElement>("input, textarea, button")?.focus({ preventScroll: true });
   };
@@ -999,6 +1056,11 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
           </div>
         )}
         {/* Sticky inside the log, so it floats just above the composer. */}
+        {chip && (
+          <button className="form-chip" onClick={() => showOpenForm("start")} aria-label={`${chip}: scroll up to the questions form`}>
+            <ArrowUpIcon size={14} /><span>{chip}</span>
+          </button>
+        )}
         {jump && (
           <button className={`jump-latest${jump.fresh ? " fresh" : ""}`} onClick={toBottom}
             aria-label={jump.fresh ? "New messages: jump to the latest" : "Jump to the latest message"} title={jump.fresh ? "New messages" : "Jump to latest"}>

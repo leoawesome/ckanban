@@ -1,7 +1,7 @@
 // Question forms: small safe markdown (web/src/features/ticket/miniMarkdown.ts), the optional context, and replies that only repeat a form.
 import { expect, test } from "bun:test";
 import { inlineMarkdown, miniMarkdown, plainMarkdown } from "./miniMarkdown";
-import { repeatsForm, signature } from "./questionForms";
+import { answersMessage, parseAnswers, repeatsForm, signature } from "./questionForms";
 
 test("markdown: raw HTML is escaped, never passed through", () => {
   expect(miniMarkdown(`<img src=x onerror="alert(1)"> & <script>x</script>`))
@@ -62,4 +62,31 @@ test("markdown: a cut-off summary's unclosed ** is dropped, spaced-out stars sta
   expect(miniMarkdown("Done, see **t_1")).toBe("Done, see t_1");
   expect(miniMarkdown("2 ** 3 is 8")).toBe("2 ** 3 is 8");
   expect(plainMarkdown("I created the ticket: **t_20261106_kiux** and **more…")).toBe("I created the ticket: t_20261106_kiux and more…");
+});
+
+const layoutQs = [
+  { question: "Which layout?", multiSelect: false, options: [{ label: "a: compact", recommended: true }, { label: "b: cards" }] },
+  { question: "Skip button?", options: [{ label: "Yes", recommended: true }, { label: "No" }] },
+  { question: "Which parts?", multiSelect: true, options: [{ label: "API", recommended: true }, { label: "UI" }] },
+];
+const pick = (...picked: string[]) => ({ picked, otherOn: false, other: "" });
+
+test("answersMessage says skipped and names Claude's pick when the user chose another", () => {
+  expect(answersMessage(layoutQs, [pick("b: cards"), pick(), pick("UI")])).toBe(
+    "My answers:\n- Which layout? → b: cards (not your pick: a: compact)\n- Skip button? → skipped\n- Which parts? → UI",
+  );
+  // The recommended pick, a typed-only answer and a multi-select pick get no note.
+  expect(answersMessage(layoutQs, [pick("a: compact"), { picked: [], otherOn: true, other: "maybe" }, pick("UI")])).toBe(
+    "My answers:\n- Which layout? → a: compact\n- Skip button? → maybe\n- Which parts? → UI",
+  );
+});
+
+test("parseAnswers reads new messages without the not-your-pick note", () => {
+  const sent = answersMessage(layoutQs, [pick("b: cards"), pick(), pick("API", "UI")], "thanks");
+  expect(parseAnswers(sent, layoutQs)).toEqual({ answers: ["b: cards", "skipped", "API; UI"], note: "thanks" });
+});
+
+test("parseAnswers still reads old messages", () => {
+  const old = "My answers:\n- Which layout? → b: cards\n- Skip button? → (no preference)";
+  expect(parseAnswers(old, layoutQs)).toEqual({ answers: ["b: cards", "(no preference)", null], note: "" });
 });

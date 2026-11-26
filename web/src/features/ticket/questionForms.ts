@@ -137,21 +137,41 @@ export function parseAnswers(text: string, questions: Pick<Question, "question">
     const j = items.findIndex((it, k) => !used.has(k) && it.startsWith(head));
     if (j < 0) return null;
     used.add(j);
-    return items[j].slice(head.length).trim();
+    // The pick alone: newer messages add " (not your pick: …)" for Claude when it differs from the recommended one.
+    return items[j].slice(head.length).replace(NOT_YOUR_PICK, "").trim();
   });
   return { answers, note };
 }
+
+/** The note answersMessage adds after a single pick that differs from Claude's recommended option. */
+const NOT_YOUR_PICK = / \(not your pick: [^\n]*\)$/;
 
 /** One answer as the sent message shows it: the picked options, then the typed text, joined with "; ". */
 export function answerText(a: Answer): string {
   const parts = [...a.picked, ...(a.otherOn && a.other.trim() ? [a.other.trim()] : [])];
   // Indent extra lines so a multi-line answer stays inside its list item.
-  return parts.length ? parts.join("; ").replace(/\n/g, "\n  ") : "(no preference)";
+  // Older messages said "(no preference)" here; parseAnswers shows either as written.
+  return parts.length ? parts.join("; ").replace(/\n/g, "\n  ") : "skipped";
+}
+
+/**
+ * What Claude reads for one answer: answerText, plus " (not your pick: <recommended>)" when the user picked one
+ * option of a pick-one question and it isn't the one Claude recommended (so Claude knows the user chose against it).
+ */
+function answerForClaude(q: Pick<Question, "question"> & Partial<Pick<Question, "options" | "multiSelect">>, a: Answer): string {
+  const text = answerText(a);
+  const rec = q.multiSelect ? undefined : q.options?.find((o) => o.recommended);
+  if (!rec || a.picked.length !== 1 || a.picked[0] === rec.label) return text;
+  return `${text} (not your pick: ${rec.label.replace(/\s*\n\s*/g, " ").trim()})`;
 }
 
 /** The one chat message a form sends (the board's form and Telegram's both use this). */
-export function answersMessage(questions: Pick<Question, "question">[], answers: Answer[], note = ""): string {
-  const lines = questions.map((q, i) => `- ${q.question} → ${answerText(answers[i] ?? { picked: [], otherOn: false, other: "" })}`);
+export function answersMessage(
+  questions: (Pick<Question, "question"> & Partial<Pick<Question, "options" | "multiSelect">>)[],
+  answers: Answer[],
+  note = "",
+): string {
+  const lines = questions.map((q, i) => `- ${q.question} → ${answerForClaude(q, answers[i] ?? { picked: [], otherOn: false, other: "" })}`);
   return `My answers:\n${lines.join("\n")}${note.trim() ? `\n\n${note.trim()}` : ""}`;
 }
 

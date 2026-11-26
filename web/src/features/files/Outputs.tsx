@@ -11,6 +11,8 @@ import { useLayer } from "../../lib/layers";
 import { useBackEntry } from "../../app/backEntry";
 import { usePhone } from "../../hooks/usePhone";
 import { PdfView } from "./PdfView";
+import { browserStore } from "../../lib/drafts";
+import { type FormPreview, isPicked, pickFromPreview, previewOptions, flipTo } from "../ticket/formPreview";
 
 function kb(n: number): string {
   return n < 1024 ? `${n} B` : `${(n / 1024).toFixed(1)} KB`;
@@ -179,7 +181,7 @@ function Links({ links }: { links: TicketLink[] }) {
  * Deliverables Claude saved in the ticket's outputs folder; markdown is rendered, images, HTML and PDFs previewed, other text shown raw.
  * The ticket's artifacts and share links sit above them.
  */
-export function Outputs({ slug, ticket, onCount, focus, onOpenFile }: {
+export function Outputs({ slug, ticket, onCount, focus, onOpenFile, from = null, onBackToChat }: {
   slug: string;
   ticket: Ticket;
   onCount?: (n: number) => void;
@@ -187,6 +189,10 @@ export function Outputs({ slug, ticket, onCount, focus, onOpenFile }: {
   focus?: string | null;
   /** The file the user picked (null: back to the list), so the panel can put it in the link. */
   onOpenFile?: (name: string | null) => void;
+  /** The questions form `focus` was previewed from: closing goes back to the chat, and a bar flips and picks its mockups. */
+  from?: FormPreview | null;
+  /** Back to the Chat tab (closing a reader opened from a form). */
+  onBackToChat?: () => void;
 }) {
   const ticketId = ticket.id;
   const [files, setFiles] = useState<OutputFile[] | null>(null);
@@ -260,9 +266,26 @@ export function Outputs({ slug, ticket, onCount, focus, onOpenFile }: {
     setReading(false);
     if (narrow) onOpenFile?.(null);
   };
-  useLayer(closeReader, { active: readerOn, skipInInputs: true });
-  // On a phone the Back gesture closes the reader, not the ticket: the reader gets its own history entry.
-  useBackEntry(readerOn && phone, closeReader);
+  // Opened from a questions form's Preview: closing (Back, the back button, Esc) returns to the chat, on desktop too.
+  const fromForm = !!from && !!onBackToChat;
+  const close = fromForm ? onBackToChat! : closeReader;
+  useLayer(close, { active: readerOn || fromForm, skipInInputs: true });
+  // On a phone the Back gesture closes the reader, not the ticket: the reader gets its own history entry. From a form,
+  // browser Back on a desktop goes back to the chat too.
+  useBackEntry((readerOn && phone) || fromForm, close);
+  // The form question's options that have a mockup, to flip through and pick from.
+  const formFiles = useMemo(() => (fromForm && files ? previewOptions(from!, new Set(files.map((f) => f.name))) : []), [fromForm, from, files]);
+  const formAt = formFiles.findIndex((o) => o.file === open);
+  const flip = (by: number) => {
+    const next = flipTo(formFiles, open ?? "", by);
+    setOpen(next);
+    onOpenFile?.(next);
+  };
+  const pickShown = () => {
+    if (formAt < 0 || !from) return;
+    pickFromPreview(browserStore(), from, formFiles[formAt].label);
+    onBackToChat?.();
+  };
   useEffect(() => { bodyRef.current?.scrollTo(0, 0); }, [open]);
   const pick = (name: string) => { setOpen(name); setReading(true); onOpenFile?.(name); };
   const stepFile = (by: number) => {
@@ -344,7 +367,11 @@ export function Outputs({ slug, ticket, onCount, focus, onOpenFile }: {
     <div className={`output-view${kind === "html" || kind === "pdf" ? ` ${kind}` : ""}${readerOn ? " reader" : ""}`} role={readerOn ? "dialog" : undefined} aria-label={readerOn ? baseName(open ?? "") : undefined}>
       {open && (
         <div className="output-bar">
-          {readerOn && <button className="output-back" onClick={closeReader}><ChevronLeftIcon size={14} /> Files</button>}
+          {(readerOn || fromForm) && (
+            <button className="output-back" onClick={close} aria-label={fromForm ? "Back to the chat" : "Back to the files"}>
+              <ChevronLeftIcon size={14} /> {fromForm ? "Chat" : "Files"}
+            </button>
+          )}
           <span className="output-bar-name" title={ticket.outputDir ? `${ticket.outputDir}/${open}` : open}>{baseName(open)}</span>
           {kind === "html" && (
             <button className="link-btn small" disabled={text === null} onClick={() => text !== null && openInTab(open, text)}>Open in new tab</button>
@@ -366,7 +393,21 @@ export function Outputs({ slug, ticket, onCount, focus, onOpenFile }: {
         : open && MARKDOWN.test(open) ? <Markdown text={text} />
         : <pre>{text.length > 200_000 ? text.slice(0, 200_000) + "\n…(truncated)" : text}</pre>}
       </div>
-      {readerOn && at >= 0 && order.length > 1 && (
+      {formAt >= 0 && from && (() => {
+        const picked = isPicked(browserStore(), from, formFiles[formAt].label);
+        return (
+          <div className="output-pickbar">
+            <button className="btn output-flip" onClick={() => flip(-1)} disabled={formFiles.length < 2} aria-label="Previous design"><ChevronLeftIcon size={16} /></button>
+            <span className="muted small output-flip-count">{formAt + 1} of {formFiles.length}</span>
+            <button className="btn output-flip" onClick={() => flip(1)} disabled={formFiles.length < 2} aria-label="Next design"><ChevronRightIcon size={16} /></button>
+            <button className={`btn output-use ${picked ? "picked" : "primary"}`} onClick={pickShown}
+              title={picked && from.questions[from.step]?.multiSelect ? "Picked: tap to unpick it" : `Pick ${formFiles[formAt].label} in the form`}>
+              {picked ? <><CheckIcon size={14} /> Picked</> : "Use this design"}
+            </button>
+          </div>
+        );
+      })()}
+      {readerOn && !fromForm && at >= 0 && order.length > 1 && (
         <div className="output-pager">
           <button className="link-btn" onClick={() => stepFile(-1)}><ChevronLeftIcon size={12} /> Previous</button>
           <span className="muted small">{at + 1} of {order.length}</span>

@@ -197,11 +197,15 @@ pub fn parse_answers(text: &str, questions: &[Question]) -> (Vec<Option<String>>
             let head = format!("{} → ", q.question);
             let j = items.iter().enumerate().position(|(k, it)| !used[k] && it.starts_with(&head))?;
             used[j] = true;
-            Some(js::trim(&items[j][head.len()..]).to_string())
+            // The pick alone: newer messages add " (not your pick: …)" for Claude when it differs from the recommended one.
+            Some(js::trim(&NOT_YOUR_PICK.replace(&items[j][head.len()..], "")).to_string())
         })
         .collect();
     (answers, note)
 }
+
+/// The note `answers_message` adds after a single pick that differs from Claude's recommended option.
+static NOT_YOUR_PICK: LazyLock<Regex> = LazyLock::new(|| Regex::new(r" \(not your pick: [^\n]*\)$").unwrap());
 
 /// One answer as the sent message shows it (`answerText`).
 pub fn answer_text(a: &Answer) -> String {
@@ -210,14 +214,30 @@ pub fn answer_text(a: &Answer) -> String {
     if a.other_on && !other.is_empty() {
         parts.push(other.to_string());
     }
-    if parts.is_empty() { "(no preference)".into() } else { parts.join("; ").replace('\n', "\n  ") }
+    // Older messages said "(no preference)" here; parse_answers shows either as written.
+    if parts.is_empty() { "skipped".into() } else { parts.join("; ").replace('\n', "\n  ") }
+}
+
+static LINE_BREAK: LazyLock<Regex> = LazyLock::new(|| Regex::new(&format!("[{JS_SPACE_CLASS}]*\n[{JS_SPACE_CLASS}]*")).unwrap());
+
+/// What Claude reads for one answer (`answerForClaude`): `answer_text`, plus " (not your pick: <recommended>)" when the
+/// user picked one option of a pick-one question and it isn't the one Claude recommended.
+fn answer_for_claude(q: &Question, a: &Answer) -> String {
+    let text = answer_text(a);
+    let rec = if q.multi_select == Some(true) { None } else { q.options.iter().find(|o| o.recommended == Some(true)) };
+    match rec {
+        Some(rec) if a.picked.len() == 1 && a.picked[0] != rec.label => {
+            format!("{text} (not your pick: {})", js::trim(&LINE_BREAK.replace_all(&rec.label, " ")))
+        }
+        _ => text,
+    }
 }
 
 /// The one chat message a form sends (`answersMessage`).
 pub fn answers_message(questions: &[Question], answers: &[Answer], note: &str) -> String {
     let empty = Answer::default();
     let lines: Vec<String> =
-        questions.iter().enumerate().map(|(i, q)| format!("- {} → {}", q.question, answer_text(answers.get(i).unwrap_or(&empty)))).collect();
+        questions.iter().enumerate().map(|(i, q)| format!("- {} → {}", q.question, answer_for_claude(q, answers.get(i).unwrap_or(&empty)))).collect();
     let note = js::trim(note);
     format!("My answers:\n{}{}", lines.join("\n"), if note.is_empty() { String::new() } else { format!("\n\n{note}") })
 }
