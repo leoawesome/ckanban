@@ -17,8 +17,10 @@ let root: string;
 let anchor: string;
 const SLUG = "restart";
 const T = `/api/profiles/${SLUG}/tickets`;
-// Waits are long: this file starts, stops and starts the daemon again, which is slow when the whole suite runs at once.
-const WAIT = 60_000;
+// Waits are long: this file starts, stops and starts the daemon again, which is slow when the whole suite runs at once
+// (load averages of 30+ seen on a busy Mac). Every wait is on a real condition, so a long deadline costs nothing when
+// things go well.
+const WAIT = 120_000;
 
 beforeAll(async () => {
   root = mkdtempSync(join(tmpdir(), "ck-contract-restart-"));
@@ -64,7 +66,7 @@ describe("POST /api/restart", () => {
     expect(r.data).toEqual({ running: 1, alreadyPending: false });
     expect((await d.api("GET", "/api/restart")).data).toEqual({ pending: true, waiting: 1 });
     expect((await d.api("POST", "/api/restart", {})).data).toEqual({ running: 1, alreadyPending: true });
-    await until(() => ev.all.some((e) => e.type === "restart.updated" && e.pending === true && e.waiting === 1), 5_000, "restart.updated");
+    await until(() => ev.all.some((e) => e.type === "restart.updated" && e.pending === true && e.waiting === 1), WAIT, "restart.updated");
 
     // A ticket moved to Ready now waits for the restart.
     const held = await create("Held", `x ${s.set("held", [{ summary: "Held done." }])}`);
@@ -84,7 +86,7 @@ describe("POST /api/restart", () => {
     const v = await settled(d, SLUG, held.id, (x) => x.status === "review", WAIT);
     expect(v.outcome).toBe("done");
     expect(s.runs("held")).toHaveLength(1);
-  }, 240_000);
+  }, 480_000);
 });
 
 describe("runs cut off by a daemon stop resume after the next start", () => {
@@ -97,7 +99,7 @@ describe("runs cut off by a daemon stop resume after the next start", () => {
     expect((await d.api("POST", "/api/profiles", { name: FU, path: fuDir })).status).toBe(201);
     const fu = await create("Cut follow-up", `x ${s.set("fu", [{}, { waitFile: join(s.dir, "never") }, { summary: "Followed up." }])}`, "ready", false, FU);
     // A main ticket cut while it works: woken again from its saved events, never a fresh work run.
-    const main = await create("Cut main", `x ${s.set("main", [{ waitFile: join(s.dir, "never") }])}`, "ready", true);
+    const main = await create("Cut main", `x ${s.set("main", [{ waitFile: join(s.dir, "never") }, { summary: "Main checked." }])}`, "ready", true);
 
     await settled(d, FU, fu.id, (x) => x.status === "review", WAIT);
     expect((await d.api("POST", `/api/profiles/${FU}/tickets/${fu.id}/follow-up`, { after: "2h", note: "Look again" })).status).toBe(201);
@@ -106,6 +108,9 @@ describe("runs cut off by a daemon stop resume after the next start", () => {
     await running(d, SLUG, work.id, WAIT);
     await running(d, SLUG, main.id, WAIT);
     await running(d, FU, fu.id, WAIT);
+    // "running" means the run was started; on a busy Mac the fake Claude can take seconds more to read its first step.
+    // Stop the daemon only once each run has taken it, or the resumed run would take the "wait forever" step instead.
+    await until(() => s.runs("cut").length === 1 && s.runs("main").length === 1, WAIT, "the cut runs to take their first step");
     const session = (await view(d, SLUG, work.id)).sessionId;
 
     d.kill("SIGTERM");
@@ -128,12 +133,18 @@ describe("runs cut off by a daemon stop resume after the next start", () => {
     expect(f.followUpRun ?? null).toBeNull();
     expect(comments(fu.id).some((c) => c.text === "Follow-up interrupted by daemon restart; resuming.")).toBe(true);
 
+    // Recovery puts the note in the plan's inbox and moves the card to Review; a few seconds later the board wakes the
+    // main ticket with that inbox, which empties it. How long the card stays in that first Review depends on the load,
+    // so wait for the wake itself and check the note reached the planner in the wake's prompt.
+    const NOTE = "The board restarted while your last run was going";
+    expect(comments(main.id).some((c) => c.text === "Interrupted by daemon restart; waking it again from its saved events.")).toBe(true);
     const m = await until(async () => {
       const x = await view(d, SLUG, main.id);
-      return x.status !== "in_progress" ? x : null;
-    }, WAIT, "main ticket out of In Progress");
-    expect(comments(main.id).some((c) => c.text === "Interrupted by daemon restart; waking it again from its saved events.")).toBe(true);
+      return s.runs("main").length === 2 && !x.running && x.status !== "in_progress" ? x : null;
+    }, WAIT, "main ticket woken again and settled");
     expect(m.status).toBe("review");
-    expect(JSON.stringify(meta(main.id).plan ?? {})).toContain("The board restarted while your last run was going");
-  }, 300_000);
+    const wake = s.runs("main")[1];
+    expect(wake.ticket).toBe(`${SLUG}/${main.id}`);
+    expect(wake.prompt ?? "").toContain(NOTE);
+  }, 600_000);
 });

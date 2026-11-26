@@ -81,6 +81,9 @@ async function script(d: Daemon, s: Scripts): Promise<Step[]> {
   list.tickets?.sort((x, y) => x.title.localeCompare(y.title));
   await call("search", "GET", `${T}?scope=search&q=Ready`);
   await call("all tickets", "GET", "/api/tickets");
+  // Each board's tickets in board order, where a Done and a Review ticket can share a place number (each column counts
+  // its own), so those two fall to the folder's order: sorted by title to compare.
+  (steps.find((x) => x.what === "all tickets")!.data as { title: string }[])?.sort((x, y) => x.title.localeCompare(y.title));
   await call("inbox", "GET", "/api/inbox");
   await call("profiles", "GET", "/api/profiles");
   for (const t of [a, q, b, m, task]) {

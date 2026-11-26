@@ -289,18 +289,22 @@ mod tests {
         let s2 = seen.clone();
         let handle: Arc<Mutex<Option<Arc<LoginProc>>>> = Arc::new(Mutex::new(None));
         let h2 = handle.clone();
+        // Pastes once the link is on the terminal. A busy machine can take seconds to start the script, so this waits on
+        // the link itself with a long deadline (no fixed number of tries), and the login's own timeout is longer still.
         let paste = tokio::spawn(async move {
-            for _ in 0..100 {
+            let deadline = std::time::Instant::now() + Duration::from_secs(60);
+            while std::time::Instant::now() < deadline {
                 if s2.lock().contains("sign in") && h2.lock().is_some() {
                     h2.lock().as_ref().unwrap().write("http://localhost/cb?code=SECRET\r");
-                    return;
+                    return true;
                 }
                 tokio::time::sleep(Duration::from_millis(20)).await;
             }
+            false
         });
         let cb: OnOutput = Arc::new(move |t: &str| *seen.lock() = t.to_string());
-        let r = run_login(bin.to_str().unwrap(), "x", &tmp, Duration::from_secs(10), cb, |p| *handle.lock() = Some(p)).await.unwrap();
-        paste.await.unwrap();
+        let r = run_login(bin.to_str().unwrap(), "x", &tmp, Duration::from_secs(90), cb, |p| *handle.lock() = Some(p)).await.unwrap();
+        assert!(paste.await.unwrap(), "the link never showed: {r:?}");
         assert_eq!(r.code, 0, "{r:?}");
         assert!(r.stdout.contains("tty"), "{r:?}");
         assert!(r.stdout.contains("got [pasted address]"), "{r:?}");

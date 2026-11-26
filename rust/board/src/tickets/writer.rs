@@ -54,6 +54,16 @@ pub fn now() -> String {
     iso(now_ms())
 }
 
+/// A new ticket's `createdAt`: now, but always after the last one this process handed out, so tickets made in the same
+/// millisecond (a gather's new group, a plan's tasks, a quick script) still have distinct times and a family lists its
+/// children oldest first (`Kids` sorts by `createdAt`; a tie fell back to board order, where the newest is on top).
+fn created_ms() -> f64 {
+    static LAST: Mutex<u64> = Mutex::new(0);
+    let mut last = LAST.lock();
+    *last = (now_ms() as u64).max(*last + 1);
+    *last as f64
+}
+
 fn obj(t: &Ticket) -> Map<String, Value> {
     match t.to_json() {
         Value::Object(m) => m,
@@ -178,7 +188,7 @@ impl Tickets {
 
     /// `Store.createTicket` (the board's lock held).
     fn store_create(&self, slug: &str, input: NewTicket) -> Result<Arc<Tk>, Refusal> {
-        let at = now();
+        let at = iso(created_ms());
         let id = new_ticket_id(now_ms());
         let order = self.entry_order(slug, &input.status);
         let t = tfile::new_ticket(input, &id, order, &at);
@@ -855,6 +865,15 @@ mod tests {
         t.delete("b", &b.id).unwrap();
         assert!(!t.ticket_dir("b", &b.id).exists());
         assert!(t.list("b").get(&b.id).is_none());
+    }
+
+    #[test]
+    fn tickets_made_at_once_keep_their_order() {
+        let (_d, t) = board();
+        let made: Vec<_> = (0..50).map(|i| t.create("b", input(&format!("T{i}"), "backlog")).unwrap()).collect();
+        for w in made.windows(2) {
+            assert!(w[0].created_at < w[1].created_at, "{} then {}", w[0].created_at, w[1].created_at);
+        }
     }
 
     #[test]
