@@ -37,8 +37,11 @@ export function segments(step: number, total: number): ("done" | "cur" | "todo")
 /** The words beside the bar: "2 of 3", or "Check" on the last step. */
 export const progressText = (step: number, total: number) => (step >= total ? "Check" : `${step + 1} of ${total}`);
 
-/** The chip over the message box: its label while an open form waits out of view, else null (hidden). */
-export function waitingChip(questions: number | null, formOnScreen: boolean): string | null {
-  if (!questions || formOnScreen) return null;
+/**
+ * The chip over the message box: its label while an open form waits out of view, else null (hidden). barForForm: the
+ * phone's "Your turn" bar shows for that form, and its button already leads there, so the chip stays hidden (one control).
+ */
+export function waitingChip(questions: number | null, formOnScreen: boolean, barForForm = false): string | null {
+  if (!questions || formOnScreen || barForForm) return null;
   return `Answer ${questions} question${questions > 1 ? "s" : ""}`;
 }

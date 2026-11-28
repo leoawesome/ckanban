@@ -710,12 +710,16 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
   // box says what for, with its one button (the same handlers as the Ticket tab's).
   const turnAction = !att || working ? null : goal ? { label: goal.button, run: goTo }
     : ticket.status === "review" && !finished ? { label: "Mark done", run: () => setStatus("done") } : null;
-  const turnBar = phone && turnAction ? (
-    <div className={`turn-bar tone-${attTone(att!.kind)}`} role="status">
-      <span className="turn-bar-text"><b>Your turn:</b> {reason}</span>
-      <button type="button" className="btn small turn-bar-btn" onClick={turnAction.run}>{turnAction.label}</button>
-    </div>
-  ) : null;
+  // For questions, the chat hands in its own "show the open form" (the chip's), so the bar replaces the chip.
+  const turnBar = phone && turnAction ? {
+    forForm: att!.kind === "questions",
+    render: (openForm: (() => void) | null) => (
+      <div className={`turn-bar tone-${attTone(att!.kind)}`} role="status">
+        <span className="turn-bar-text"><b>Your turn:</b> {reason}</span>
+        <button type="button" className="btn small turn-bar-btn" onClick={openForm ?? turnAction.run}>{turnAction.label}</button>
+      </div>
+    ),
+  } : null;
   const rename = async (t: string) => {
     await api.updateTicket(slug, ticket.id, { title: t });
     setTitle(t);

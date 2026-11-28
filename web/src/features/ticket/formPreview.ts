@@ -5,6 +5,7 @@
  */
 import { forget, loadSaved, save, type Store } from "../../lib/drafts";
 import { type Answer, fresh, type Progress, startProgress } from "./questionForms";
+import { findOutput } from "../files/outputFind";
 
 // Only the fields used here (structurally the same as api.ts's), so the root typecheck and bun tests can load this file.
 interface Question {
@@ -23,12 +24,19 @@ export interface FormPreview {
 /** Path of an option's mockup in the outputs folder. */
 export const mockupPath = (mockup: string) => `mockups/${mockup}`;
 
-/** The question's options that have a mockup (others are skipped), in order, with their file path. */
+/**
+ * The question's options that have a mockup (others are skipped), in order, with their file path. Given the outputs
+ * folder's files, each path is the file actually there (findOutput: mockups/ or the outputs root), and a missing
+ * mockup is skipped.
+ */
 export function previewOptions(from: FormPreview, files?: ReadonlySet<string>): { label: string; file: string }[] {
   const q = from.questions[from.step];
   if (!q) return [];
-  return q.options.filter((o) => o.mockup && (!files || files.has(mockupPath(o.mockup))))
-    .map((o) => ({ label: o.label, file: mockupPath(o.mockup!) }));
+  return q.options.flatMap((o) => {
+    if (!o.mockup) return [];
+    const file = files ? findOutput(files, mockupPath(o.mockup)) : mockupPath(o.mockup);
+    return file ? [{ label: o.label, file }] : [];
+  });
 }
 
 /** The file `by` steps from `file` among `list`, wrapping round; `file` itself when it isn't in the list. */

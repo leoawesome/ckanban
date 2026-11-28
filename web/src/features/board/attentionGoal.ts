@@ -20,7 +20,10 @@ export function attentionGoal(att: { kind: string; label: string } | null | unde
   if (!att) return null;
   switch (att.kind) {
     case "questions":
-      return { button: att.label === "Answer Claude" ? "Answer Claude" : "Answer questions", tab: "chat", targets: [".qcard:not(.answered)", ".task-card", ".reply-text"] };
+      // "Answer Claude": Claude asked in words, with no form left to answer (also when the user typed instead of
+      // answering one): the message box, unless a form is open after all.
+      if (att.label === "Answer Claude") return { button: "Reply to Claude", tab: "chat", targets: [".qcard:not(.answered)", ".composer"] };
+      return { button: "Answer questions", tab: "chat", targets: [".qcard:not(.answered)", ".task-card", ".reply-text"] };
     case "proposal":
       return { button: att.label, tab: "chat", targets: [".proposal:not(.applied)", ".reply-text"] };
     case "blocked":

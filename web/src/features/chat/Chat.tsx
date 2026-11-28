@@ -107,8 +107,11 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
   help?: HelpState;
   /** A rewind put files back: the Changes tab reloads its list. */
   onFilesChanged?: () => void;
-  /** Phones: the "Your turn" line just above the message box (TicketDrawer). */
-  turnBar?: ReactNode;
+  /**
+   * Phones: the "Your turn" line just above the message box (TicketDrawer). forForm: it asks to answer questions; while
+   * a form is open here its button scrolls to that form (render gets showOpenForm) and the waiting chip stays hidden.
+   */
+  turnBar?: { forForm: boolean; render: (openForm: (() => void) | null) => ReactNode } | null;
 }) {
   const claude = useClaudeName();
   const [page, setPage] = useState<{ entries: SessionEntry[]; start: number } | null>(null);
@@ -474,7 +477,8 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
     io.observe(form);
     return () => io.disconnect();
   }, [openAt, openCount, page === null, entries.length]);
-  const chip = waitingChip(openCount, formOnScreen);
+  const barForForm = !!turnBar?.forForm && !!openCount;
+  const chip = waitingChip(openCount, formOnScreen, barForForm);
 
 
   // Message blocks are drawn again only when what they show changes (MemoBlock): the callbacks they hand out read the
@@ -609,7 +613,7 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
               )}
               {e.questions && (
                 <QuestionsForm questions={e.questions} answered={formState(b.index).state === "answered"} answer={answerOf(b.index)}
-                  replaced={replacedBy(b.index)} closed={formState(b.index).state === "closed"} onClose={() => closeForm(e.uuid)}
+                  replaced={replacedBy(b.index)} closed={formState(b.index).state === "closed"} replied={formState(b.index).state === "replied"} onClose={() => closeForm(e.uuid)}
                   disabled={running} onSubmit={send}
                   onPreview={onOpenOutput && ((m, step) => onOpenOutput(mockupPath(m), { key: formKey(slug, ticket.id, openKey(b.index) ?? e.uuid), questions: e.questions!, step }))}
                   storageKey={formKey(slug, ticket.id, openKey(b.index) ?? e.uuid)} />
@@ -1099,11 +1103,11 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
       )}
       {undone && !undo && <UndoneNote line={undone} onClose={() => setUndone(null)} />}
       {waiting.length > 0 && <WaitingButton items={waiting} onPick={pickWaiting} />}
-      {turnBar}
+      {turnBar?.render(barForForm ? () => showOpenForm("start") : null)}
       <div className="composer">
         <textarea ref={composer} rows={phone ? 1 : 2} value={draft} disabled={stopping} className={images.dragOver ? "drop-target" : undefined} {...images.handlers}
           aria-label={running ? `Steer ${claude}` : `Message ${claude}`} aria-describedby={images.error ? "chat-attach-error" : undefined}
-          placeholder={formWaiting && !running ? `Or type a note to ${claude}…` : phone
+          placeholder={formWaiting && !running ? `Or reply to ${claude} here instead…` : phone
             ? running ? `Steer ${claude}…` : refine ? "Describe your idea…" : `Ask ${claude}…`
             : running ? `Steer ${claude}: it reads this at its next step, no restart…` : refine ? `Describe your idea or answer ${claude}…` : `Ask ${claude} to change or continue something…`}
           onChange={(e) => setDraft(e.target.value)}

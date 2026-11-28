@@ -6,7 +6,7 @@ import { parentLink } from "../family/family";
 import { type FollowUp } from "../family/ProposalCard";
 import { askClosed } from "../family/family";
 import { type Pending } from "../../lib/pendingBubbles";
-import { type FormState, formStates } from "../ticket/questionForms";
+import { type FormState, formStates, isAnswersMessage } from "../ticket/questionForms";
 import { canStartFromProposal } from "../../app/keynav";
 import { toast } from "../../components/toast";
 import { laterCounts } from "./chatMemo";
@@ -36,7 +36,10 @@ export function useChatForms({
   // knows a close came after its last run (it closed by itself when they answered in its task's chat).
   const closedIds = useMemo(() => new Set(Object.keys(ticket.closedForms ?? {})), [ticket.closedForms]);
   const closeLatest = !running && askClosed(ticket);
-  const forms = useMemo(() => formStates(entries, replying, closedIds, closeLatest), [entries, replying, closedIds, closeLatest]);
+  // A typed message on its way closes the form as "Replied in chat instead", not "Answered".
+  const firstPending = pending.find((p) => !p.steer);
+  const formReply = !firstPending ? false : isAnswersMessage(firstPending.text) ? true : "typed" as const;
+  const forms = useMemo(() => formStates(entries, formReply, closedIds, closeLatest), [entries, formReply, closedIds, closeLatest]);
   /** The message that answered form index: in the chat, or still on its way. */
   const answerOf = (index: number): string | undefined => {
     const f = formState(index);

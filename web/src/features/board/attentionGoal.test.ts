@@ -51,3 +51,13 @@ test("only a plain block looks for the ask", () => {
   expect(attentionGoal({ kind: "proposal", label: "Review" })!.find).toBeUndefined();
   expect(attentionGoal({ kind: "failed", label: "Run failed" })!.find).toBeUndefined();
 });
+
+test("Answer Claude with no form leads to the message box, not a form", () => {
+  const g = attentionGoal({ kind: "questions", label: "Answer Claude" })!;
+  expect(g.button).toBe("Reply to Claude");
+  expect(g.targets).toEqual([".qcard:not(.answered)", ".composer"]);
+  // A real form still leads to the form.
+  const q = attentionGoal({ kind: "questions", label: "Answer 1 question" })!;
+  expect(q.button).toBe("Answer questions");
+  expect(q.targets[0]).toBe(".qcard:not(.answered)");
+});

@@ -59,4 +59,8 @@ describe("waiting form chip", () => {
     expect(waitingChip(null, false)).toBeNull();
     expect(waitingChip(0, false)).toBeNull();
   });
+  test("hides while the phone's Your turn bar shows for the open form (one control)", () => {
+    expect(waitingChip(3, false, true)).toBeNull();
+    expect(waitingChip(3, false, false)).toBe("Answer 3 questions");
+  });
 });

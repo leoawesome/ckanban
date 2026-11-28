@@ -39,6 +39,10 @@ test("flip: only that question's options with a mockup, wrapping both ways", () 
   expect(previewOptions(from(1)).map((o) => o.label)).toEqual(["FAQ", "Prices"]);
 });
 
+test("flip: a mockup saved at the outputs root is used where it is", () => {
+  expect(previewOptions(from(0), new Set(["a.html", "mockups/c.html"])).map((o) => o.file)).toEqual(["a.html", "mockups/c.html"]);
+});
+
 test("Use this design: picks the option in the form's saved progress, on that question", () => {
   const store = memStore();
   // A new form starts on its first option; the user had typed a note and moved to question 2.

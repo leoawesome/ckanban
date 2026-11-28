@@ -246,6 +246,22 @@ pub fn chat_notes(notes: &[Comment]) -> String {
     )
 }
 
+/// Added to a message the user typed while a questions form of the last run still waited for answers: the form now
+/// shows as "Replied in chat instead" and can't be answered, so Claude must not point at it ("" when no form waits).
+pub fn form_skipped_note(open_questions: usize) -> String {
+    if open_questions == 0 {
+        return String::new();
+    }
+    format!(
+        "\n\n{}",
+        context(
+            "Questions form not answered",
+            "The user typed this message instead of answering your open questions form, so that form is now closed: the chat shows it as \"Replied in chat instead\" and the user can't pick in it any more. If the message answers your questions, go on with that answer. If it doesn't, reply to what they wrote, then ask what you still need with a new ask_questions call in this turn. Never tell the user to pick or answer in a form above.",
+            &[]
+        )
+    )
+}
+
 /// Added to the first message of a chat the user (or the board) started fresh (`freshChatNote`).
 pub fn fresh_chat_note(t: &Ticket, last_result: Option<&str>, comments: &[Comment], feature: Option<&FreshFeature>) -> String {
     let recent = comment_lines(comments);
@@ -727,4 +743,15 @@ pub fn follow_up_wake_prompt(t: &Ticket, now_ms: f64, manual: bool) -> String {
         ),
         &[],
     )
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn form_skipped_note_only_when_a_form_waits() {
+        assert_eq!(super::form_skipped_note(0), "");
+        let n = super::form_skipped_note(1);
+        assert!(n.contains("instead of answering your open questions form"));
+        assert!(n.contains("new ask_questions call"));
+    }
 }

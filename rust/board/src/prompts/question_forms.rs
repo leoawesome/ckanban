@@ -101,6 +101,8 @@ pub struct FormEntry {
     pub huddle_id: Option<String>,
     pub peer: Option<Peer>,
     pub questions: Option<Vec<Question>>,
+    /// The message's words: a typed reply (not a form's "My answers:" message) closes a form as `Replied`.
+    pub text: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -120,6 +122,8 @@ pub enum FormState {
     },
     Closed,
     Replaced { same: bool },
+    /// The user typed a chat message instead of answering; `by`: that message's index.
+    Replied { by: usize },
 }
 
 fn answers_forms(e: &FormEntry) -> bool {
@@ -140,7 +144,8 @@ pub fn form_states(entries: &[FormEntry], replying: bool, closed: &[String], clo
     for (i, e) in entries.iter().enumerate() {
         if answers_forms(e) {
             if let Some((_, last)) = &chain {
-                set(&mut out, *last, FormState::Answered { by: Some(i) });
+                let typed = e.text.as_deref().is_some_and(|t| !ANSWERS_HEAD.is_match(t));
+                set(&mut out, *last, if typed { FormState::Replied { by: i } } else { FormState::Answered { by: Some(i) } });
             }
             chain = None;
             continue;
@@ -310,4 +315,27 @@ pub fn repeats_form(text: &str, questions: &[Question]) -> bool {
     }
     let rep: usize = repeated.iter().map(|p| js::len16(p)).sum();
     rep as f64 / total as f64 >= 0.8
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn form(uuid: &str) -> FormEntry {
+        let q: Question = serde_json::from_value(json!({"question": "Which size?", "options": [{"label": "4ft"}, {"label": "5ft"}]})).unwrap();
+        FormEntry { uuid: uuid.into(), role: "assistant".into(), kind: "text".into(), questions: Some(vec![q]), ..Default::default() }
+    }
+    fn user(text: Option<&str>) -> FormEntry {
+        FormEntry { uuid: "u".into(), role: "user".into(), kind: "text".into(), text: text.map(str::to_string), ..Default::default() }
+    }
+
+    #[test]
+    fn a_typed_reply_closes_a_form_as_replied_not_answered() {
+        let states = form_states(&[form("f"), user(Some("Why 4 and not 5?"))], false, &[], false);
+        assert_eq!(states, vec![(0, FormState::Replied { by: 1 })]);
+        let states = form_states(&[form("f"), user(Some("My answers:\n- Which size? → 5ft"))], false, &[], false);
+        assert_eq!(states, vec![(0, FormState::Answered { by: Some(1) })]);
+        // An entry without its words (older callers) still reads as answered.
+        assert_eq!(form_states(&[form("f"), user(None)], false, &[], false), vec![(0, FormState::Answered { by: Some(1) })]);
+    }
 }

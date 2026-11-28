@@ -53,13 +53,15 @@ function AnswerBox({ value, onChange, onEnter, autoFocus, disabled, placeholder,
  * Claude's interview questions, one at a time (like Claude Code's question picker).
  * Keys: 1-9 pick an option, Enter goes next, Backspace/← goes back when not typing.
  */
-export function QuestionsForm({ questions, answered, answer, replaced, closed, disabled: off, onSubmit, onClose, storageKey, onPreview }: {
+export function QuestionsForm({ questions, answered, answer, replaced, closed, replied, disabled: off, onSubmit, onClose, storageKey, onPreview }: {
   questions: Question[];
   answered: boolean;
   /** The message that answered it (its "My answers:" list pairs each question with its answer), when known. */
   answer?: string;
   /** Closed without answering (Close question, or answered in its task's chat). */
   closed?: boolean;
+  /** The user typed a chat message instead of answering: shown as "Replied in chat instead", with the questions. */
+  replied?: boolean;
   /** Asked again further down (after a board update); same: with the same questions. Its progress lives on there. */
   replaced?: { same: boolean };
   disabled: boolean;
@@ -74,7 +76,7 @@ export function QuestionsForm({ questions, answered, answer, replaced, closed, d
 }) {
   const claude = useClaudeName();
   const sig = signature(questions);
-  const key = answered || replaced || closed ? null : storageKey ?? null;
+  const key = answered || replaced || closed || replied ? null : storageKey ?? null;
   // Progress saved for this form, or for the earlier form it asks again (same key), carried over question by question.
   const [progress, setProgress] = usePersistentState<Progress>(
     key,
@@ -95,8 +97,8 @@ export function QuestionsForm({ questions, answered, answer, replaced, closed, d
 
   // Answered (here or elsewhere): saved progress is no longer needed.
   useEffect(() => {
-    if ((answered || closed) && storageKey) forget(browserStore(), storageKey);
-  }, [answered, closed, storageKey]);
+    if ((answered || closed || replied) && storageKey) forget(browserStore(), storageKey);
+  }, [answered, closed, replied, storageKey]);
   const root = useRef<HTMLDivElement>(null);
   const total = questions.length;
   // Phone, two or more questions: one question per step with a progress bar, then "Check your answers".
@@ -107,7 +109,7 @@ export function QuestionsForm({ questions, answered, answer, replaced, closed, d
 
   const shownStep = useRef(step);
   useEffect(() => {
-    if (!answered && !replaced && !closed) root.current?.focus({ preventScroll: true });
+    if (!answered && !replaced && !closed && !replied) root.current?.focus({ preventScroll: true });
     // A step on the phone can be shorter than the one before: bring the card's top back into view if it went above.
     const el = root.current;
     const log = el?.closest(".chat-log");
@@ -115,7 +117,7 @@ export function QuestionsForm({ questions, answered, answer, replaced, closed, d
       el.scrollIntoView({ block: "start", behavior: reducedMotion() ? "auto" : "smooth" });
     }
     shownStep.current = step;
-  }, [step, answered, !!replaced, closed]);
+  }, [step, answered, !!replaced, closed, replied]);
 
   // Options whose whole description the user opened ("step:label"); only on screen, not saved.
   const [readMore, setReadMore] = useState<Set<string>>(() => new Set());
@@ -186,6 +188,7 @@ export function QuestionsForm({ questions, answered, answer, replaced, closed, d
     );
   }
 
+  if (replied) return <AnsweredCard questions={questions} replied />;
   if (answered) return <AnsweredCard questions={questions} answer={answer} />;
 
   const onKey = (e: React.KeyboardEvent) => {
@@ -327,13 +330,19 @@ export function QuestionsForm({ questions, answered, answer, replaced, closed, d
   );
 }
 
-/** An answered form: each question in bold, the user's answer under it, and its Details folded as on the open form. */
-function AnsweredCard({ questions, answer }: { questions: Question[]; answer?: string }) {
+/**
+ * An answered form: each question in bold, the user's answer under it, and its Details folded as on the open form.
+ * replied: the user typed a chat message instead, so the questions show without answers under a muted title.
+ */
+function AnsweredCard({ questions, answer, replied }: { questions: Question[]; answer?: string; replied?: boolean }) {
   const { answers, note } = answer ? parseAnswers(answer, questions) : { answers: questions.map(() => null), note: "" };
   const total = questions.length;
   return (
-    <div className="qcard answered">
-      <div className="qcard-head"><span className="qcard-title"><CheckIcon size={12} strokeWidth={2.2} /> Answered {total} question{total > 1 ? "s" : ""}</span></div>
+    <div className={`qcard answered${replied ? " replied" : ""}`}>
+      <div className="qcard-head">
+        {replied ? <span className="qcard-title">Replied in chat instead</span>
+          : <span className="qcard-title"><CheckIcon size={12} strokeWidth={2.2} /> Answered {total} question{total > 1 ? "s" : ""}</span>}
+      </div>
       <ol className="qanswered">
         {questions.map((q, i) => (
           <li key={i}>

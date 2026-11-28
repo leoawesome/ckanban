@@ -1050,6 +1050,9 @@ textarea { resize: vertical; font-size: var(--fs-md); }
 }
 .output-image img { max-width: 100%; height: auto; display: block; }
 .output-binary { padding: var(--sp-2) 0; }
+/* A file asked for by name (a form's Preview, a file link) that isn't in the outputs folder: said, not swapped for another. */
+.output-missing { display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-2); padding: var(--sp-5); }
+.output-missing-name { font-family: var(--mono); font-size: var(--fs-sm); overflow-wrap: anywhere; }
 .output-view.html .output-body { padding: 0; display: flex; flex-direction: column; overflow: hidden; }
 .output-html { flex: 1; min-height: 360px; width: 100%; border: 0; background: var(--paper); border-radius: 0 0 var(--r-md) var(--r-md); }
 .output-html-note { padding: var(--sp-5) var(--sp-5); }
@@ -1979,6 +1982,8 @@ body > .output-view.reader { position: fixed; }
 /* Narrow screens: with Close question in the footer, the keyboard hint has no room. */
 @media (max-width: 560px) { .qfoot .qclose + .qhint { display: none; } .qfoot .qclose { margin-right: auto; } }
 .qcard.closed .qcard-title { color: var(--muted); font-weight: 600; }
+/* Closed by a typed chat message ("Replied in chat instead"): muted title, the questions stay readable. */
+.qcard.replied .qcard-title { color: var(--muted); font-weight: 600; }
 /* Phone, two or more questions (QuestionsForm `stepped`): a segmented progress bar under the head, one question per
    step, Back beside a wide Next/Skip, and a "Check your answers" list with a Change link per answer. */
 .qprog-text { flex: none; font-weight: 600; }

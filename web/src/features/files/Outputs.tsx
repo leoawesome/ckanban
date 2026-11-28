@@ -13,6 +13,7 @@ import { usePhone } from "../../hooks/usePhone";
 import { PdfView } from "./PdfView";
 import { browserStore } from "../../lib/drafts";
 import { type FormPreview, isPicked, pickFromPreview, previewOptions, flipTo } from "../ticket/formPreview";
+import { findOutput } from "./outputFind";
 
 function kb(n: number): string {
   return n < 1024 ? `${n} B` : `${(n / 1024).toFixed(1)} KB`;
@@ -208,6 +209,9 @@ export function Outputs({ slug, ticket, onCount, focus, onOpenFile, from = null,
   const [reading, setReading] = useState(!!focus);
   const phone = usePhone();
   const bodyRef = useRef<HTMLDivElement>(null);
+  // The file asked for by name (a Preview or file link), until the user picks another: found or reported missing, never
+  // swapped for another file.
+  const asked = useRef(focus ?? null);
   useNow();
 
   useEffect(() => {
@@ -222,7 +226,9 @@ export function Outputs({ slug, ticket, onCount, focus, onOpenFile, from = null,
     setError(null);
     setFiles(fs);
     onCount?.(fs.length);
-    setOpen((cur) => (cur && fs.some((f) => f.name === cur) ? cur : null)
+    const names = new Set(fs.map((f) => f.name));
+    setOpen((cur) => (cur && names.has(cur) ? cur : null)
+      ?? (asked.current ? findOutput(names, asked.current) ?? asked.current : null)
       ?? featuredFiles(fs).find((f) => REPORT.test(baseName(f.name)))?.name
       ?? fs.slice().sort((a, b) => depthOf(a.name) - depthOf(b.name)).find((f) => MARKDOWN.test(f.name))?.name ?? fs[0]?.name ?? null);
   }).catch((e) => {
@@ -237,7 +243,9 @@ export function Outputs({ slug, ticket, onCount, focus, onOpenFile, from = null,
   }), [slug, ticketId]);
 
   const current = files?.find((f) => f.name === open);
-  const kind = !open ? null : IMAGE.test(open) ? "image" : PDF.test(open) ? "pdf" : BINARY.test(open) ? "binary" : HTML.test(open) ? "html" : "text";
+  // Asked for by name but not in the folder: the reader says so.
+  const missing = !!open && !!files && !current;
+  const kind = !open ? null : missing ? "missing" : IMAGE.test(open) ? "image" : PDF.test(open) ? "pdf" : BINARY.test(open) ? "binary" : HTML.test(open) ? "html" : "text";
   useEffect(() => {
     setText(null);
     if (!open || (kind !== "text" && kind !== "html")) return;
@@ -259,7 +267,7 @@ export function Outputs({ slug, ticket, onCount, focus, onOpenFile, from = null,
     return next;
   });
 
-  const readerOn = narrow && reading && !!open && !!files?.some((f) => f.name === open);
+  const readerOn = narrow && reading && !!open && !!files && (!!current || missing);
   const order = useMemo(() => flatten(tree), [tree]);
   const at = open ? order.indexOf(open) : -1;
   const closeReader = () => {
@@ -277,6 +285,7 @@ export function Outputs({ slug, ticket, onCount, focus, onOpenFile, from = null,
   const formFiles = useMemo(() => (fromForm && files ? previewOptions(from!, new Set(files.map((f) => f.name))) : []), [fromForm, from, files]);
   const formAt = formFiles.findIndex((o) => o.file === open);
   const flip = (by: number) => {
+    asked.current = null;
     const next = flipTo(formFiles, open ?? "", by);
     setOpen(next);
     onOpenFile?.(next);
@@ -287,9 +296,10 @@ export function Outputs({ slug, ticket, onCount, focus, onOpenFile, from = null,
     onBackToChat?.();
   };
   useEffect(() => { bodyRef.current?.scrollTo(0, 0); }, [open]);
-  const pick = (name: string) => { setOpen(name); setReading(true); onOpenFile?.(name); };
+  const pick = (name: string) => { asked.current = null; setOpen(name); setReading(true); onOpenFile?.(name); };
   const stepFile = (by: number) => {
     if (at < 0) return;
+    asked.current = null;
     const next = order[(at + by + order.length) % order.length];
     setOpen(next);
     onOpenFile?.(next);
@@ -311,7 +321,7 @@ export function Outputs({ slug, ticket, onCount, focus, onOpenFile, from = null,
       </div>,
     );
   }
-  if (!files.length) return withLinks(<div className="muted">No output files yet. Research and writing tasks save their report here.</div>);
+  if (!files.length && !missing) return withLinks(<div className="muted">No output files yet. Research and writing tasks save their report here.</div>);
 
   const pad = (depth: number) => ({ paddingLeft: `calc(var(--sp-3) + ${depth} * var(--sp-4))` });
   const renderFolder = (d: Folder, depth: number): React.ReactNode => (
@@ -376,11 +386,17 @@ export function Outputs({ slug, ticket, onCount, focus, onOpenFile, from = null,
           {kind === "html" && (
             <button className="link-btn small" disabled={text === null} onClick={() => text !== null && openInTab(open, text)}>Open in new tab</button>
           )}
-          <ShareMenu slug={slug} ticket={ticket} name={open} variant="button" text={kind === "text" || kind === "html" ? text : undefined} />
+          {!missing && <ShareMenu slug={slug} ticket={ticket} name={open} variant="button" text={kind === "text" || kind === "html" ? text : undefined} />}
         </div>
       )}
       <div className="output-body" ref={bodyRef}>
-      {kind === "html" ? (
+      {missing ? (
+        <div className="output-missing" role="status">
+          <b>This file isn't in the Outputs folder</b>
+          <span className="output-missing-name">{open}</span>
+          <span className="muted small">Claude may not have saved it, or saved it under another name.</span>
+        </div>
+      ) : kind === "html" ? (
         text === null ? <div className="muted output-html-note">Loading…</div>
           : <iframe className="output-html" sandbox="allow-scripts" srcDoc={withFit(text)} title={`Preview of ${open}`} />
       ) : kind === "pdf" ? (
@@ -431,7 +447,7 @@ export function Outputs({ slug, ticket, onCount, focus, onOpenFile, from = null,
         )}
         <nav className="file-tree output-files" aria-label="Outputs" role="tree">
           {featuredGroup}
-          {shown.length ? renderFolder(tree, 0) : <div className="tree-note muted small">No matches</div>}
+          {shown.length ? renderFolder(tree, 0) : <div className="tree-note muted small">{files.length ? "No matches" : "No output files yet"}</div>}
         </nav>
       </div>
       {!narrow && view}

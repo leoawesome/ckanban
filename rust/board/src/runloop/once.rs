@@ -307,6 +307,10 @@ impl RunLoop {
                     let list = self.tickets.list(slug);
                     let place = if refine && role.is_none() { follow_up_place(&list, &t.id) } else { None };
                     let mut x = crate::prompts::chat::chat_prompt(&pticket, &c.text, &c.mode, &out_s, artifacts, repo, session.in_place, &recall, role.as_ref(), place.as_ref());
+                    // Typed instead of answering the open form: tell Claude the form closed unanswered.
+                    if c.user && c.slash.is_none() && !c.text.trim_start().starts_with(super::rules::ANSWER_PREFIX) {
+                        x.push_str(&crate::prompts::chat::form_skipped_note(self.open_form(&t).len()));
+                    }
                     if !refine && !quiet {
                         let notes: Vec<pt::Comment> = comments.iter().filter(|c| c.is_note()).cloned().collect();
                         x.push_str(&crate::prompts::chat::chat_notes(&notes));

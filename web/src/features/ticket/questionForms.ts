@@ -13,6 +13,8 @@ interface SessionEntry {
   huddleId?: string;
   peer?: { dir?: string; ticketId?: string | null; title?: string; automation?: string };
   questions?: Question[];
+  /** The message's words: a typed reply (not a form's "My answers:" message) closes a form as "replied". */
+  text?: string;
 }
 
 export interface Answer {
@@ -75,7 +77,15 @@ export type FormState =
   /** The user closed it without answering (Close question), or it closed by itself when they answered in its task's chat. */
   | { state: "closed" }
   /** Asked again further down (a board update came in before the user answered): same says whether the questions match. */
-  | { state: "replaced"; same: boolean };
+  | { state: "replaced"; same: boolean }
+  /** The user typed a chat message instead of answering (by: its index): the form closed without answers. */
+  | { state: "replied"; by?: number };
+
+/** How a form's answers message starts (answersMessage). */
+const ANSWERS_HEAD = /^\s*My answers:\n/;
+
+/** Whether a message is a form's answers (answersMessage), not something the user typed. */
+export const isAnswersMessage = (text: string) => ANSWERS_HEAD.test(text);
 
 /** A user message that answers forms above it; board updates (kind "board"), huddle messages and an automation's items don't. */
 const answers = (e: SessionEntry) => e.role === "user" && e.kind === "text" && !e.huddleId && !e.peer?.automation;
@@ -83,17 +93,20 @@ const answers = (e: SessionEntry) => e.role === "user" && e.kind === "text" && !
 /**
  * The state of every questions form in the chat, by entry index. A form followed by another one before the user
  * answered is replaced by it; a chain of such forms shares one saved-progress key (the first form's uuid), so what the
- * user typed into the old form shows up in the new one. replying: the user's answer is on its way.
+ * user typed into the old form shows up in the new one. replying: the user's answer is on its way ("typed": a message
+ * they typed, not the form's answers).
  * closed: the uuids of forms the user closed (Ticket.closedForms); closeLatest: the newest open form counts as closed
  * too (askClosed: closed after the last run ended, also when the board only knows that it closed, not which form).
  */
-export function formStates(entries: SessionEntry[], replying = false, closed: ReadonlySet<string> = new Set(), closeLatest = false): Map<number, FormState> {
+export function formStates(entries: SessionEntry[], replying: boolean | "typed" = false, closed: ReadonlySet<string> = new Set(), closeLatest = false): Map<number, FormState> {
   const out = new Map<number, FormState>();
   let chain = null as { key: string; last: number } | null;
   for (let i = 0; i < entries.length; i++) {
     const e = entries[i];
     if (answers(e)) {
-      if (chain) out.set(chain.last, { state: "answered", by: i });
+      // A typed message isn't the form's answers: say so instead of "Answered" (an entry without its words, from an
+      // older caller, still reads as answered).
+      if (chain) out.set(chain.last, typeof e.text === "string" && !ANSWERS_HEAD.test(e.text) ? { state: "replied", by: i } : { state: "answered", by: i });
       chain = null;
       continue;
     }
@@ -108,7 +121,7 @@ export function formStates(entries: SessionEntry[], replying = false, closed: Re
       chain = null;
     }
   }
-  if (chain && replying) out.set(chain.last, { state: "answered" });
+  if (chain && replying) out.set(chain.last, replying === "typed" ? { state: "replied" } : { state: "answered" });
   else if (chain && closeLatest) out.set(chain.last, { state: "closed" });
   return out;
 }
@@ -119,7 +132,7 @@ export function formStates(entries: SessionEntry[], replying = false, closed: Re
  */
 export function parseAnswers(text: string, questions: Pick<Question, "question">[]): { answers: (string | null)[]; note: string } {
   const none = { answers: questions.map(() => null), note: "" };
-  const m = /^\s*My answers:\n/.exec(text);
+  const m = ANSWERS_HEAD.exec(text);
   if (!m) return none;
   const items: string[] = [];
   const lines = text.slice(m[0].length).split("\n");
