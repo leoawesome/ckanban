@@ -745,7 +745,12 @@ impl Telegram {
                 let w = if what.is_empty() { s(a, "path").to_string() } else { what };
                 (format!("Let the front desk change this on {board}{on}: {}?", short(&w, 80)), yes("Confirm"))
             }
-            "delete" => (format!("Delete \"{title}\" ({board})? This can't be undone."), yes("Confirm")),
+            "delete" => {
+                // Waiting jobs stay scheduled unless the request asks to cancel them too: the card says which.
+                let cancel = a.get("body").and_then(|b| b.get("cancelJobs")).filter(|c| js::truthy(Some(c)) && c.as_str() != Some("false"));
+                let jobs = if cancel.is_some() { " It also cancels the one-time jobs it scheduled that haven't run yet." } else { "" };
+                (format!("Delete \"{title}\" ({board})?{jobs} This can't be undone."), yes("Confirm"))
+            }
             "unschedule" => {
                 let sid = route_parts(s(a, "path")).and_then(|p| p.get(3).cloned()).unwrap_or_default();
                 let name = slug.as_deref().and_then(|sl| self.env.schedule(sl, &sid)).and_then(|x| x.get("name").map(js::to_string)).unwrap_or_else(|| sid.clone());

@@ -341,6 +341,30 @@ fn job_action(v: Option<&Value>) -> R<Value> {
     }
 }
 
+/// A delete's `cancelJobs` as the request's query: true is "all", a list of job ids is joined; false/absent is None.
+pub(super) fn cancel_jobs_arg(v: Option<&Value>) -> Result<Option<String>, String> {
+    const BAD: &str = "cancelJobs must be true (every waiting job the deleted tickets scheduled) or a list of job ids from list_jobs";
+    match v {
+        None | Some(Value::Null) | Some(Value::Bool(false)) => Ok(None),
+        Some(Value::Bool(true)) => Ok(Some("all".into())),
+        Some(Value::Array(a)) => {
+            let ids: Vec<&str> = a.iter().map(|x| x.as_str().map(js::trim).filter(|x| !x.is_empty() && !x.contains(','))).collect::<Option<_>>().ok_or(BAD)?;
+            Ok((!ids.is_empty()).then(|| ids.join(",")))
+        }
+        _ => Err(BAD.into()),
+    }
+}
+
+/// "1 waiting job" / "3 waiting jobs".
+pub(super) fn jobs_count(n: usize) -> String {
+    format!("{n} waiting job{}", if n == 1 { "" } else { "s" })
+}
+
+/// "'Post on X' (j1, in 2 hours), ..." for an answer.
+pub(super) fn jobs_names(jobs: &[&Value]) -> String {
+    jobs.iter().map(|j| format!("'{}' ({}, {})", sh(j, "name"), sh(j, "id"), sh(j, "when"))).collect::<Vec<_>>().join(", ")
+}
+
 /// jobLine: id, state, time, what it does, how it went.
 fn job_line(j: &Value) -> String {
     let action = get(j, "action").cloned().unwrap_or(Value::Null);
@@ -352,7 +376,12 @@ fn job_line(j: &Value) -> String {
     };
     let mut bits = vec![format!("{}  [{}]  {}: {}, {what}", sh(j, "id"), sh(j, "state"), sh(j, "name"), sh(j, "when"))];
     if t(j, "sourceTicketId") {
-        bits.push(format!("scheduled by {}", sh(j, "sourceTicketId")));
+        let title = if t(j, "sourceTicketTitle") { format!(" (\"{}\")", sh(j, "sourceTicketTitle")) } else { String::new() };
+        if t(j, "sourceGone") {
+            bits.push(format!("scheduled by a deleted ticket {}{title}; it still runs at its time", sh(j, "sourceTicketId")));
+        } else {
+            bits.push(format!("scheduled by {}", sh(j, "sourceTicketId")));
+        }
     }
     if let Some(c) = get(j, "changedBy").filter(|c| js::truthy(Some(c))) {
         bits.push(format!("{} by {}", sh(c, "action"), sh(c, "ticketId")));
@@ -458,6 +487,26 @@ mod tests {
         let j = json!({"id": "j_1", "state": "done", "name": "N", "when": "Tue", "action": {"kind": "command", "command": "echo  hi"}, "result": {"exitCode": 0, "durationMs": 1234, "output": "x"}});
         assert_eq!(job_line(&j), "j_1  [done]  N: Tue, command `echo hi`; exit 0; 1.2 s");
         assert_eq!(job_text(&j), "j_1  [done]  N: Tue, command `echo hi`; exit 0; 1.2 s\nLast output:\nx");
+    }
+
+    #[test]
+    fn a_job_of_a_deleted_ticket_says_so() {
+        let j = json!({"id": "j_2", "state": "scheduled", "name": "Post", "when": "in 2 hours", "action": {"kind": "ticket", "title": "T"}, "sourceTicketId": "t_1", "sourceTicketTitle": "Launch", "sourceGone": true});
+        assert_eq!(job_line(&j), "j_2  [scheduled]  Post: in 2 hours, ticket \"T\"; scheduled by a deleted ticket t_1 (\"Launch\"); it still runs at its time");
+        let live = json!({"id": "j_3", "state": "scheduled", "name": "P", "when": "w", "action": {"kind": "ticket", "title": "T"}, "sourceTicketId": "t_1", "sourceTicketTitle": "Launch"});
+        assert_eq!(job_line(&live), "j_3  [scheduled]  P: w, ticket \"T\"; scheduled by t_1");
+    }
+
+    #[test]
+    fn cancel_jobs_argument() {
+        assert_eq!(cancel_jobs_arg(None), Ok(None));
+        assert_eq!(cancel_jobs_arg(Some(&json!(false))), Ok(None));
+        assert_eq!(cancel_jobs_arg(Some(&json!(true))), Ok(Some("all".into())));
+        assert_eq!(cancel_jobs_arg(Some(&json!(["a", " b "]))), Ok(Some("a,b".into())));
+        assert_eq!(cancel_jobs_arg(Some(&json!([]))), Ok(None));
+        assert!(cancel_jobs_arg(Some(&json!("all"))).is_err());
+        assert!(cancel_jobs_arg(Some(&json!(["a,b"]))).is_err());
+        assert!(cancel_jobs_arg(Some(&json!([1]))).is_err());
     }
 
     #[test]

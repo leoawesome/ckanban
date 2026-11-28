@@ -6,7 +6,8 @@
 // (`at` must be in the future), so the test writes its file straight into the jobs folder, as an outside edit; the
 // next check sees it.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type Daemon, startDaemon, until } from "./daemon";
 
@@ -228,4 +229,105 @@ describe("firing at their time", () => {
     expect(lr).toMatchObject({ state: "done", result: { exitCode: 0, output: "ran-late\n" } });
     expect(JSON.parse(readFileSync(jobFile("late0cmd"), "utf8")).state).toBe("skipped");
   }, 60_000);
+});
+
+// Deleting a ticket never cancels the jobs it scheduled by itself: they stay scheduled and run at their time. Only a
+// delete that sends cancelJobs cancels them (contracts/api.md, "DELETE and waiting jobs").
+describe("deleting the ticket that scheduled a job", () => {
+  const newTicket = async (title: string, extra: object = {}) => (await d.api("POST", `${P}/tickets`, { title, body: "b", ...extra })).data;
+  const jobOf = async (src: string, name: string, at = inAnHour(), action: object = ticketJob()) =>
+    (await d.api("POST", `${P}/jobs`, { name, at, action }, { [RUN]: `${SLUG}/${src}` })).data;
+  const waiting = async (ids: string[]) => (await d.api("GET", `${P}/jobs?scheduledBy=${ids.join(",")}`)).data as any[];
+
+  test("a plain delete keeps the waiting job; it fires at its time and says its ticket was deleted", async () => {
+    const src = await newTicket("Post scheduler");
+    const at = new Date(Date.now() + 3_000).toISOString();
+    const j = await jobOf(src.id, "Publish post", at, ticketJob("Publish the post", "Post it."));
+    expect(j).toMatchObject({ sourceTicketId: src.id, sourceTicketTitle: "Post scheduler" });
+    expect(JSON.parse(readFileSync(jobFile(j.id), "utf8")).sourceTicketTitle).toBe("Post scheduler");
+    expect((await waiting([src.id])).map((x) => x.id)).toEqual([j.id]);
+
+    expect((await d.api("DELETE", `${P}/tickets/${src.id}`)).status).toBe(204);
+    const after = await getJob(j.id);
+    expect(after).toMatchObject({ state: "scheduled", sourceTicketId: src.id, sourceTicketTitle: "Post scheduler", sourceGone: true, result: null });
+
+    const fired = await until(async () => { const x = await getJob(j.id); return x.state === "done" ? x : null; }, 20_000, "the job to fire");
+    const made = await ranOnce(fired.result.ticketId);
+    expect(made.title).toBe("Publish the post");
+    expect(made.body).toContain(`Scheduled by ticket ${src.id} ("Post scheduler", deleted since; there is no ticket to go back to) as job 'Publish post'.`);
+    expect(made.body).toEndWith("Post it.");
+  }, 45_000);
+
+  test("cancelJobs cancels the chosen waiting jobs with a clear reason, never another ticket's", async () => {
+    const src = await newTicket("Launch posts");
+    const other = await newTicket("Someone else");
+    const a = await jobOf(src.id, "Post A");
+    const b = await jobOf(src.id, "Post B");
+    const theirs = await jobOf(other.id, "Their post");
+
+    // An id that is no job refuses the whole delete: nothing is deleted or cancelled.
+    const bad = await d.api("DELETE", `${P}/tickets/${src.id}`, { cancelJobs: [a.id, "nojob123"] });
+    expect(bad.status).toBe(400);
+    expect(bad.data.error).toContain("there is no job nojob123 on board");
+    expect((await d.api("GET", `${P}/tickets/${src.id}`)).status).toBe(200);
+    expect((await getJob(a.id)).state).toBe("scheduled");
+    expect((await d.api("DELETE", `${P}/tickets/${src.id}?cancelJobs=nope`)).status).toBe(400);
+    expect((await d.api("GET", `${P}/tickets/${src.id}`)).status).toBe(200);
+
+    // A list cancels only those; the rest stay.
+    // A card's whole list over several tickets goes with each ticket's DELETE: another ticket's job in it is left alone.
+    const r = await d.api("DELETE", `${P}/tickets/${src.id}`, { cancelJobs: [a.id, theirs.id] });
+    expect(r.status).toBe(200);
+    expect(r.data.cancelledJobs.map((x: any) => x.id)).toEqual([a.id]);
+    const ca = await getJob(a.id);
+    expect(ca).toMatchObject({ state: "cancelled", result: { message: 'cancelled because you chose to when deleting "Launch posts"' } });
+    expect(ca.changedBy).toBeUndefined();
+    expect((await getJob(b.id)).state).toBe("scheduled");
+    expect((await getJob(theirs.id)).state).toBe("scheduled");
+    // The same list on the other ticket's DELETE cancels its job; the one already cancelled is skipped.
+    const r2 = await d.api("DELETE", `${P}/tickets/${other.id}`, { cancelJobs: [a.id, theirs.id] });
+    expect(r2.status).toBe(200);
+    expect(r2.data.cancelledJobs.map((x: any) => x.id)).toEqual([theirs.id]);
+    expect((await getJob(theirs.id)).result.message).toBe('cancelled because you chose to when deleting "Someone else"');
+
+    // true (or ?cancelJobs=all) cancels every waiting job the deleted ticket scheduled, and nothing else.
+    const src2 = await newTicket("More posts");
+    const c = await jobOf(src2.id, "Post C");
+    const all = await d.api("DELETE", `${P}/tickets/${src2.id}?cancelJobs=all`);
+    expect(all.status).toBe(200);
+    expect(all.data.cancelledJobs.map((x: any) => [x.id, x.state])).toEqual([[c.id, "cancelled"]]);
+    expect((await getJob(b.id)).state).toBe("scheduled");
+  });
+
+  test("no other delete cancels a job: many deletes in a row, a feature's delete, a move to another board", async () => {
+    // A bulk delete is one DELETE per ticket.
+    const many = await Promise.all(["Bulk 1", "Bulk 2"].map((t) => newTicket(t)));
+    const bulkJobs = await Promise.all(many.map((t) => jobOf(t.id, `Job of ${t.title}`)));
+    for (const t of many) expect((await d.api("DELETE", `${P}/tickets/${t.id}`)).status).toBe(204);
+
+    // A feature: deleting the top ticket unlinks its members; their jobs and its own stay.
+    const top = await newTicket("Doomed feature", { main: true });
+    const member = await newTicket("Member", { partOf: top.id });
+    const topJob = await jobOf(top.id, "Feature job");
+    const memberJob = await jobOf(member.id, "Member job");
+    expect((await waiting([top.id])).map((x) => x.id)).toEqual([topJob.id]);
+    expect((await d.api("DELETE", `${P}/tickets/${top.id}`)).status).toBe(204);
+
+    // Moving a Backlog ticket to another board removes it here.
+    const twoDir = mkdtempSync(join(tmpdir(), "ckanban-jobs-two-"));
+    expect((await d.api("POST", "/api/profiles", { name: "Jobs Two", path: twoDir })).status).toBe(201);
+    const mover = await newTicket("Mover");
+    const moverJob = await jobOf(mover.id, "Mover job");
+    const moved = await d.api("POST", `${P}/tickets/${mover.id}/move`, { board: "jobs-two" });
+    expect(moved.status).toBe(201);
+
+    // Give a stray listener time to act, then check every one is still waiting.
+    await Bun.sleep(1_000);
+    for (const j of [...bulkJobs, topJob, memberJob, moverJob]) {
+      const x = await getJob(j.id);
+      expect([x.name, x.state]).toEqual([j.name, "scheduled"]);
+    }
+    expect((await getJob(topJob.id)).sourceGone).toBe(true);
+    expect((await getJob(memberJob.id)).sourceGone).toBeUndefined();
+  });
 });

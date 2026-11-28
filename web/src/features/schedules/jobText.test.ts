@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { type Job, commandResult, jobChip, jobDate, jobRelative, jobsToShow, jobWhen, localInput, upcoming } from "./jobText";
+import { type Job, commandResult, jobChip, jobDate, jobRelative, jobsToShow, jobWhen, localInput, proposedCancel, upcoming } from "./jobText";
 
 const NOW = new Date(2026, 9, 18, 22, 0).getTime(); // Sun 18 Oct 2026 22:00 local
 
@@ -59,4 +59,13 @@ test("a command's result reads as plain words", () => {
 
 test("localInput gives a datetime-local value in this computer's time", () => {
   expect(localInput(new Date(2026, 0, 5, 7, 3).toISOString())).toBe("2026-01-05T07:03");
+});
+
+test("proposedCancel: ticked only when Claude named every waiting job", () => {
+  const jobs = [{ id: "j1" }, { id: "j2" }];
+  expect(proposedCancel(jobs, undefined)).toBe(false);
+  expect(proposedCancel(jobs, true)).toBe(true);
+  expect(proposedCancel(jobs, ["j1", "j2", "j9"])).toBe(true);
+  expect(proposedCancel(jobs, ["j1"])).toBe(false);
+  expect(proposedCancel([], true)).toBe(false);
 });

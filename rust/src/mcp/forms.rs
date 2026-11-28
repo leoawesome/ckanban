@@ -146,6 +146,9 @@ async fn propose_delete(a: &Value, cx: &Ctx) -> R<String> {
     if !s(a, "reason").is_some_and(|r| !trim(r).is_empty()) {
         return err("reason is required. Fix it and call propose_delete again.");
     }
+    if let Err(m) = super::schedules::cancel_jobs_arg(get(a, "cancelJobs")) {
+        return err(format!("{m}. Fix it and call propose_delete again."));
+    }
     if let Some(own) = cx.run_ticket().filter(|o| ids.iter().any(|i| i == o)) {
         return err(format!("{own} is this chat's own ticket and can't be proposed for deletion; ask the user to delete it from the board."));
     }
@@ -159,7 +162,21 @@ async fn propose_delete(a: &Value, cx: &Ctx) -> R<String> {
         return err(format!("no such ticket on board {slug}: {list}. Check list_tickets."));
     }
     let skipped = if missing.is_empty() { String::new() } else { format!(" Not on board {slug}, shown as skipped: {list}.") };
-    Ok(format!("{SHOWN}{skipped}"))
+    // Jobs these tickets scheduled that haven't run: the card lists them, and they stay scheduled unless the user ticks
+    // them to cancel (or you passed cancelJobs, which the card shows ticked).
+    let found: Vec<String> = ids.iter().filter(|i| known.contains(*i)).cloned().collect();
+    let waiting = cx.client.waiting_jobs(&slug, &found).await.unwrap_or(Value::Null);
+    let waiting: Vec<&Value> = waiting.as_array().into_iter().flatten().collect();
+    let jobs = if waiting.is_empty() {
+        String::new()
+    } else {
+        format!(
+            " These tickets scheduled {}: {}. They stay scheduled and run at their time after the delete, unless the user ticks them to cancel on the card; tell the user.",
+            super::schedules::jobs_count(waiting.len()),
+            super::schedules::jobs_names(&waiting)
+        )
+    };
+    Ok(format!("{SHOWN}{skipped}{jobs}"))
 }
 
 async fn list_connections(a: &Value, cx: &Ctx) -> R<String> {

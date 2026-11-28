@@ -316,7 +316,9 @@ export const api = {
     req<Ticket>("POST", `${t(slug, id)}/plan`, { action }),
   updateTicket: (slug: string, id: string, patch: Partial<Pick<Ticket, "title" | "body" | "status" | "order" | "mode" | "notice" | "needs" | "tags" | "suggestedTags" | "important" | "runCapUsd" | "model" | "effort" | "ultracode" | "chrome" | "browsers">> & { expectedBody?: string; pinned?: boolean; freshChat?: boolean }) =>
     req<Ticket>("PATCH", t(slug, id), patch),
-  deleteTicket: (slug: string, id: string) => req<void>("DELETE", t(slug, id)),
+  /** cancelJobs: ids of the waiting jobs the user chose to cancel with it (left out: every job stays scheduled). */
+  deleteTicket: (slug: string, id: string, cancelJobs?: string[]) =>
+    req<void | { cancelledJobs: Job[] }>("DELETE", `${t(slug, id)}${cancelJobs?.length ? `?cancelJobs=${cancelJobs.map(encodeURIComponent).join(",")}` : ""}`),
   /** Part of parent's family (null unlinks). */
   setPartOf: (slug: string, id: string, parent: string | null) => req<Ticket>("PATCH", t(slug, id), { partOf: parent }),
   /** "Show on board" for a task: it gets a card (true) or lives in its feature only again (false). */
@@ -448,6 +450,8 @@ export const api = {
   scheduleHistory: (slug: string, id: string) => req<ScheduleHistoryItem[]>("GET", `${sch(slug, id)}/history`),
   /** Upcoming jobs plus every one that finished in the last 7 days. */
   jobs: (slug: string) => req<Job[]>("GET", `${jb(slug)}?finishedDays=7`),
+  /** The jobs still waiting to run that these tickets (and a main ticket's tool tickets) scheduled: a delete leaves them running. */
+  waitingJobs: (slug: string, ids: string[]) => req<Job[]>("GET", `${jb(slug)}?scheduledBy=${ids.map(encodeURIComponent).join(",")}`),
   /** at: local "YYYY-MM-DDTHH:MM" (this computer's time). */
   updateJob: (slug: string, id: string, patch: { name?: string; at?: string }) => req<Job>("PATCH", jb(slug, id), patch),
   cancelJob: (slug: string, id: string) => req<Job>("POST", `${jb(slug, id)}/cancel`),

@@ -263,6 +263,31 @@ describe("family group", () => {
     expect((await d.api("GET", `${P}/tickets/${gone}`)).status).toBe(404);
   });
 
+  test("delete_ticket keeps the ticket's waiting jobs and says so; cancelJobs cancels them; propose_delete lists them", async () => {
+    const at = new Date(Date.now() + 3_600_000).toISOString();
+    const jobOf = async (src: string, name: string) =>
+      (await d.api("POST", `${P}/jobs`, { name, at, action: { kind: "command", command: "echo hi" } }, { "x-ckanban-run": `${SLUG}/${src}` })).data;
+    const keep = await newTicket("Keeps its job");
+    const kept = await jobOf(keep, "Kept job");
+    const r = await user.call("delete_ticket", { id: keep });
+    expect(r.text).toStartWith(`Deleted ${keep}. 1 waiting job it scheduled stays scheduled and runs at its time: 'Kept job' (${kept.id}, `);
+    expect(r.text).toEndWith("To stop one, call cancel_job.");
+    expect((await d.api("GET", `${P}/jobs/${kept.id}`)).data.state).toBe("scheduled");
+
+    const drop = await newTicket("Drops its job");
+    const dropped = await jobOf(drop, "Dropped job");
+    const c = await user.call("delete_ticket", { id: drop, cancelJobs: true });
+    expect(c.text).toStartWith(`Deleted ${drop}. Cancelled 1 waiting job as asked: 'Dropped job' (${dropped.id}, `);
+    expect((await d.api("GET", `${P}/jobs/${dropped.id}`)).data).toMatchObject({ state: "cancelled", result: { message: 'cancelled because you chose to when deleting "Drops its job"' } });
+    expect((await user.call("delete_ticket", { id: drop, cancelJobs: "yes" })).text).toStartWith("cancelJobs must be true");
+
+    const card = await newTicket("Card target");
+    const cj = await jobOf(card, "Card job");
+    const p = await run.call("propose_delete", { ids: [card], reason: "r" });
+    expect(p.text).toContain(`These tickets scheduled 1 waiting job: 'Card job' (${cj.id}, `);
+    expect(p.text).toContain("They stay scheduled and run at their time after the delete, unless the user ticks them to cancel on the card; tell the user.");
+  });
+
   test("report_bug falls back to a prefilled link when gh can't file it", async () => {
     const r = await user.call("report_bug", { title: "Contract bug", description: "It broke.", includeLogs: false });
     expect(r.isError).toBe(false);

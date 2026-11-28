@@ -41,7 +41,8 @@ import { afterBar, ticketActions } from "../features/board/ticketActions";
 import { onBoard } from "../features/family/family";
 import { searchBoard } from "../features/ticket/toolTickets";
 import { ConfirmDialog } from "../components/ConfirmDialog";
-import { deleteTitle, parkNeedsConfirm, parkText, parkTitle, toolCount } from "../features/family/familyActions";
+import { DeleteTicketDialog } from "../features/ticket/DeleteTicketDialog";
+import { parkNeedsConfirm, parkText, parkTitle } from "../features/family/familyActions";
 import { NewTicketDialog } from "../features/board/NewTicketDialog";
 import { ProfileDialog } from "../features/settings/ProfileDialog";
 import { SchedulesDialog } from "../features/schedules/SchedulesDialog";
@@ -1206,19 +1207,9 @@ export function App() {
       {deleteAsk && profile && (() => {
         const t = tickets.find((x) => x.id === deleteAsk);
         if (!t) return null;
-        const working = t.status === "in_progress" || !!t.running;
         return (
-          <ConfirmDialog title={deleteTitle(t)} confirmLabel={toolCount(t) ? "Delete all" : "Delete ticket"} busyLabel="Deleting…" onCancel={() => setDeleteAsk(null)}
-            onConfirm={async () => {
-              await api.deleteTicket(profile.slug, t.id);
-              setTickets((ts) => ts.filter((x) => x.id !== t.id));
-              setDeleteAsk(null);
-            }}>
-            {toolCount(t) > 0
-              ? <p>Work that isn't merged is lost. Their copies of the folder go too; tickets you added to the feature stay, unlinked.</p>
-              : <p>Removes the ticket and its board history.{working ? " Claude will be stopped." : ""}</p>}
-            {t.worktree && <p className="muted">Its copy of the folder is removed if it has no unsaved changes. Its saved versions and any pull request stay.</p>}
-          </ConfirmDialog>
+          <DeleteTicketDialog slug={profile.slug} ticket={t} onCancel={() => setDeleteAsk(null)}
+            onDeleted={() => { setTickets((ts) => ts.filter((x) => x.id !== t.id)); setDeleteAsk(null); }} />
         );
       })()}
       {findLinksOpen && profile && <FindLinksDialog slug={profile.slug} tickets={tickets} onClose={() => setFindLinksOpen(false)} />}

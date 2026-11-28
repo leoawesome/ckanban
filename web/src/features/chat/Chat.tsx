@@ -631,7 +631,7 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
                   onBranch={() => branchTicket(slug, ticket, onOpenTicket).then(() => {}, (err) => onError(err.message))} />
               )}
               {e.deletion && (
-                <DeleteCard slug={slug} ticket={ticket} tickets={tickets} uuid={e.uuid} ids={e.deletion.ids} reason={e.deletion.reason} onError={onError} />
+                <DeleteCard slug={slug} ticket={ticket} tickets={tickets} uuid={e.uuid} ids={e.deletion.ids} reason={e.deletion.reason} cancelJobs={e.deletion.cancelJobs} onError={onError} />
               )}
               {e.scheduleDeletion && (
                 <ScheduleDeleteCard slug={slug} ticketId={ticket.id} uuid={e.uuid} scheduleId={e.scheduleDeletion.id} reason={e.scheduleDeletion.reason}

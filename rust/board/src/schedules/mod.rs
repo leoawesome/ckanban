@@ -153,16 +153,8 @@ impl Schedules {
         // A pending restart waits for running commands, so it doesn't cut them off.
         let me = Arc::downgrade(&s);
         s.d.runs.on_restart_busy(Arc::new(move || me.upgrade().map(|m| m.inflight.lock().values().cloned().collect()).unwrap_or_default()));
-        // A deleted ticket's jobs that haven't run yet go with it.
-        let me = Arc::downgrade(&s);
-        s.d.bus.on(move |e| {
-            if e.ty != "ticket.deleted" {
-                return;
-            }
-            let (Some(m), Some(slug), Some(id)) = (me.upgrade(), e.body.get("profile").and_then(Value::as_str), e.body.get("id").and_then(Value::as_str)) else { return };
-            let (slug, id) = (slug.to_string(), id.to_string());
-            std::thread::spawn(move || m.drop_source(&slug, &id));
-        });
+        // A deleted ticket's waiting jobs stay scheduled and run at their time: only a delete that asks (`cancelJobs`)
+        // cancels them, saying so (`jobs::cancel_for_delete`).
         s
     }
 

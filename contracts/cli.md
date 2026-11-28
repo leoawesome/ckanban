@@ -646,7 +646,7 @@ Automation check scripts get a clean env: only `HOME, USER, LOGNAME, LANG, LC_AL
 | `chat_ticket` | POST `{t}/{id}/chat` | send a chat message to a ticket (may start a run) |
 | `comment_ticket` | POST `{t}/{id}/comments` | add a comment |
 | `stop_ticket` | POST `{t}/{id}/stop` | stop a ticket's run |
-| `delete_ticket` | DELETE `{t}/{id}` | delete a ticket |
+| `delete_ticket` | GET `{p}/jobs?scheduledBy={id}`, DELETE `{t}/{id}` (body `{cancelJobs}` when asked) | delete a ticket; the answer lists the waiting jobs it scheduled that stay, or the ones cancelled |
 | `plan_control` | POST `{t}/{id}/plan` body `{action: start\|resume}` | start or resume a main ticket's tool tickets |
 | `gather_tickets` | POST `{t}/{id}/gather` | gather tickets into a feature (optionally a new group, hide) |
 | `update_status` | POST `{t}/{id}/status` | update a feature's status sections, returns its markdown |
@@ -676,7 +676,7 @@ Automation check scripts get a clean env: only `HOME, USER, LOGNAME, LANG, LC_AL
 | `ask_keys` | GET `{t}/{own}`, GET `/api/passes` | form: ask the user for keys (secrets) the work needs |
 | `propose_ticket` | none | card: improved title and description for this ticket |
 | `propose_branch` | none | card: start a branch ticket from this chat |
-| `propose_delete` | GET `{t}?scope=ids&ids=...` | card: ask the user to delete tickets |
+| `propose_delete` | GET `{t}?scope=ids&ids=...`, GET `{p}/jobs?scheduledBy=...` | card: ask the user to delete tickets; the answer lists their waiting jobs |
 | `propose_automation` | none | card: an automation (check script) to save |
 | `propose_teammate` | POST `{h}/teammates` (hid `current`) | propose a huddle role preset; waits under the huddle's Learnings |
 | `propose_squad` | GET `{p}/huddle-presets`, POST `{h}/squads` | propose a huddle squad; waits under Learnings |
@@ -736,14 +736,14 @@ Each tool's `inputSchema` is `{"type": "object", "properties": {...}, "required"
 | `send_file` | `path`* string, `caption` string |  |
 | `stop_ticket` | `profile` string, `id`* string |  |
 | `comment_ticket` | `profile` string, `id`* string, `text`* string |  |
-| `delete_ticket` | `profile` string, `id`* string |  |
+| `delete_ticket` | `profile` string, `id`* string, `cancelJobs` boolean\|array |  |
 | `report_bug` | `title`* string, `description`* string, `ticketId` string, `includeLogs` boolean, `profile` string |  |
 | `ask_questions` | `questions`* object[], `urgent` boolean, `why` string, `about` string[] | yes |
 | `ask_keys` | `keys`* object[], `reason`* string, `replace` boolean | yes |
 | `backup_file` | `path`* string, `profile` string |  |
 | `propose_ticket` | `title`* string, `description`* string, `important` boolean, `partOf` string | yes |
 | `propose_branch` | `reason` string | yes |
-| `propose_delete` | `ids`* string[], `reason`* string | yes |
+| `propose_delete` | `ids`* string[], `reason`* string, `cancelJobs` boolean\|array | yes |
 | `propose_teammate` | `name`* string, `prompt`* string, `role` string, `model` string, `mode` string (tagged\|monitor), `lead` boolean, `canEdit` boolean, `workspace` string (shared\|own), `why`* string | yes |
 | `propose_squad` | `name`* string, `label` string, `description` string, `hostRules` string, `roster`* object[], `rounds` integer\|null, `maxCostUsd` number\|null, `report` string, `why`* string | yes |
 | `list_connections` | `profile` string | yes |

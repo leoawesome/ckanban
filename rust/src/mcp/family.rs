@@ -1,10 +1,12 @@
 //! Tickets talking to tickets (src/mcp/family-tools.ts): chat, ask, merge into main, land, send files, stop,
 //! comment, delete, report a bug.
 
+use std::collections::HashSet;
+
 use serde_json::{Map, Value, json};
 
 use super::client::{R, err};
-use super::js::{self, get, s, sh, t, trim};
+use super::js::{self, arr, get, s, sh, t, trim};
 use super::text::bug_report_text;
 use super::{Ctx, opt_str, req_str};
 
@@ -74,8 +76,29 @@ async fn comment_ticket(a: &Value, cx: &Ctx) -> R<String> {
 async fn delete_ticket(a: &Value, cx: &Ctx) -> R<String> {
     let slug = cx.slug(a).await?;
     let id = req_str(a, "id")?;
-    cx.client.delete_ticket(&slug, id).await?;
-    Ok(format!("Deleted {id}."))
+    let cancel = match super::schedules::cancel_jobs_arg(get(a, "cancelJobs")) {
+        Ok(c) => c,
+        Err(m) => return err(format!("{m}. Fix it and call delete_ticket again.")),
+    };
+    // Looked up first: once the ticket is gone, its jobs are still there, but the answer should say which stay.
+    let waiting = cx.client.waiting_jobs(&slug, &[id.to_string()]).await.unwrap_or(Value::Null);
+    let r = cx.client.delete_ticket(&slug, id, cancel.as_deref()).await?;
+    let cancelled: Vec<&Value> = arr(&r, "cancelledJobs").iter().collect();
+    let gone: HashSet<String> = cancelled.iter().map(|j| sh(j, "id")).collect();
+    let kept: Vec<&Value> = waiting.as_array().into_iter().flatten().filter(|j| !gone.contains(&sh(j, "id"))).collect();
+    let mut out = format!("Deleted {id}.");
+    if !cancelled.is_empty() {
+        out.push_str(&format!(" Cancelled {} as asked: {}.", super::schedules::jobs_count(cancelled.len()), super::schedules::jobs_names(&cancelled)));
+    }
+    if !kept.is_empty() {
+        out.push_str(&format!(
+            " {} it scheduled {}: {}. To stop one, call cancel_job.",
+            super::schedules::jobs_count(kept.len()),
+            if kept.len() == 1 { "stays scheduled and runs at its time" } else { "stay scheduled and run at their time" },
+            super::schedules::jobs_names(&kept)
+        ));
+    }
+    Ok(out)
 }
 
 async fn report_bug(a: &Value, cx: &Ctx) -> R<String> {

@@ -76,6 +76,10 @@ export interface Job {
   action: JobAction;
   state: JobState;
   sourceTicketId: string | null;
+  /** The scheduling ticket's title (saved with the job, so it stays once that ticket is deleted). */
+  sourceTicketTitle?: string;
+  /** In views: the scheduling ticket was deleted since (the job still runs at its time). */
+  sourceGone?: boolean;
   /** The last change, cancel or run now, when a board run (not the user) made it. */
   changedBy?: { ticketId: string; action: "changed" | "cancelled" | "run now"; at: string };
   createdAt: string;

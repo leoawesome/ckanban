@@ -2,7 +2,7 @@ import { useKeyboardFit } from "../../lib/sheet";
 import { hashIsTicket, readTabLink } from "./tabLink";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { setCoveredFrom } from "../board/cardMotion";
-import { deleteTitle, parkNeedsConfirm, parkText, parkTitle, runningTools, stopTitle, toolCount } from "../family/familyActions";
+import { parkNeedsConfirm, parkText, parkTitle, runningTools, stopTitle } from "../family/familyActions";
 import { api, COLUMNS, safeHref, startWorkTarget, type ClaudeSession, type Job, type Profile, type Status, type Ticket } from "../../lib/api";
 import { boardColumnOf, menuPick, STATUS_MENU } from "../board/columns";
 import { StatusPill } from "../../components/StatusPill";
@@ -22,6 +22,7 @@ import { HelpMenu } from "../../app/HelpMenu";
 import { Chat } from "../chat/Chat";
 import { useStop } from "../chat/useStop";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
+import { DeleteTicketDialog } from "./DeleteTicketDialog";
 import { DescriptionEditor, useDescriptionCommands } from "./DescriptionEditor";
 import { CheckIcon, ChevronDownIcon, ChevronLeftIcon, ChevronUpIcon, CloseIcon, ExternalIcon, LinkIcon, PinIcon, SparkIcon } from "../../components/icons";
 import { useImagePaste } from "../../lib/imagePaste";
@@ -981,13 +982,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
           <BugReportDialog ticket={{ profile: slug, id: ticket.id, title: ticket.title }} onClose={() => setReportingBug(false)} />
         )}
         {confirmDelete && (
-          <ConfirmDialog title={deleteTitle(ticket)} confirmLabel={toolCount(ticket) ? "Delete all" : "Delete ticket"} busyLabel="Deleting…" onCancel={() => setConfirmDelete(false)}
-            onConfirm={async () => { await api.deleteTicket(slug, ticket.id); onClose(); }}>
-            {toolCount(ticket) > 0
-              ? <p>Work that isn't merged is lost. Their copies of the folder go too; tickets you added to the feature stay, unlinked.</p>
-              : <p>Removes the ticket and its board history.{working ? " Claude will be stopped." : ""}</p>}
-            {ticket.worktree && <p className="muted">Its copy of the folder is removed if it has no unsaved changes. Its saved versions and any pull request stay.</p>}
-          </ConfirmDialog>
+          <DeleteTicketDialog slug={slug} ticket={ticket} onCancel={() => setConfirmDelete(false)} onDeleted={onClose} />
         )}
       </aside>
     </div>

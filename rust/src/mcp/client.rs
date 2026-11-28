@@ -239,8 +239,11 @@ impl Client {
     pub async fn update_ticket(&self, slug: &str, id: &str, patch: &Value, run: Option<&str>) -> R<Value> {
         self.req("PATCH", &Self::t(slug, Some(id)), Some(patch), Self::by(run)).await
     }
-    pub async fn delete_ticket(&self, slug: &str, id: &str) -> R<Value> {
-        self.req("DELETE", &Self::t(slug, Some(id)), None, vec![]).await
+    /// `cancel`: the waiting jobs to cancel with it ("all" or comma-separated job ids); None keeps them all. Sent in
+    /// the body, which a held front desk request keeps for its Confirm (the query isn't).
+    pub async fn delete_ticket(&self, slug: &str, id: &str, cancel: Option<&str>) -> R<Value> {
+        let body = cancel.map(|c| json!({ "cancelJobs": c }));
+        self.req("DELETE", &Self::t(slug, Some(id)), body.as_ref(), vec![]).await
     }
     pub async fn chat(&self, slug: &str, id: &str, text: &str, run: Option<&str>) -> R<Value> {
         self.req("POST", &format!("{}/chat", Self::t(slug, Some(id))), Some(&json!({ "text": text })), Self::by(run)).await
@@ -310,6 +313,11 @@ impl Client {
     }
     pub async fn schedule_history(&self, slug: &str, id: &str) -> R<Value> {
         self.get(&format!("{}/history", Self::s(slug, Some(id))), vec![]).await
+    }
+    /// The jobs still waiting to run that a delete of these tickets leaves behind (`?scheduledBy=`).
+    pub async fn waiting_jobs(&self, slug: &str, ids: &[String]) -> R<Value> {
+        let list = ids.iter().map(|i| enc(i)).collect::<Vec<_>>().join(",");
+        self.get(&format!("{}?scheduledBy={list}", Self::j(slug, None)), vec![]).await
     }
     pub async fn list_jobs(&self, slug: &str, ticket_id: Option<&str>) -> R<Value> {
         let path = match ticket_id {
