@@ -1304,10 +1304,19 @@ body > .output-view.reader { position: fixed; }
 .delete-card.done .proposal-tag { color: var(--muted); }
 .delete-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: var(--sp-1); font-size: var(--fs-sm); }
 .delete-card .proposal-actions { justify-content: flex-end; border-top: 1px solid var(--border); padding-top: var(--sp-3); }
+/* Delete confirms: the waiting jobs the tickets scheduled, which keep running unless cancelled (WaitingJobs.tsx) */
+.waiting-jobs { display: flex; flex-direction: column; gap: var(--sp-2h); padding: var(--sp-3) var(--sp-3h); background: var(--warn-soft); border-radius: var(--r-sm); font-size: var(--fs-sm); overflow-wrap: anywhere; }
+.waiting-jobs-head { font-weight: 600; color: var(--warn); }
+.waiting-jobs-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: var(--sp-2); }
+.waiting-jobs-list li { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: var(--sp-3); }
+.waiting-jobs-name { font-weight: 600; min-width: 0; }
+label.waiting-jobs-cancel { display: flex; flex-direction: row; align-items: center; gap: var(--sp-3); min-height: var(--tap); font-weight: 500; cursor: pointer; }
+label.waiting-jobs-cancel input { width: 20px; height: 20px; flex: none; margin: 0; }
+p.waiting-jobs-note { margin: 0; font-size: var(--fs-sm); }
 /* delete_schedule: the user confirms deleting a schedule (ScheduleDeleteCard.tsx) */
 .sdc-what { display: flex; flex-direction: column; gap: var(--sp-1); font-size: var(--fs-sm); overflow-wrap: anywhere; }
 @media (max-width: 720px) {
-  .sched-delete-card .proposal-actions .btn { min-height: 44px; padding: 0 var(--sp-5); font-size: var(--fs-sm); }
+  .sched-delete-card .proposal-actions .btn, .delete-card .proposal-actions .btn { min-height: 44px; padding: 0 var(--sp-5); font-size: var(--fs-sm); }
 }
 /* propose_helper_rule: a line for what the helper knows about you, added with one tap (HelperRuleCard.tsx) */
 .helper-rule-card .proposal-tag { display: inline-flex; align-items: center; gap: var(--sp-2); }

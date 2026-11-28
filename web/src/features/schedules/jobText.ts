@@ -89,3 +89,9 @@ export function commandResult(j: Job): string | null {
   if (r.exitCode != null) return `Exit code ${r.exitCode}${took}`;
   return null;
 }
+
+/** A delete card's "Also cancel these jobs" starts ticked when Claude's propose_delete named every job shown (true: all of them). */
+export function proposedCancel(jobs: { id: string }[], proposed: true | string[] | undefined): boolean {
+  if (!proposed || !jobs.length) return false;
+  return proposed === true || jobs.every((j) => proposed.includes(j.id));
+}
