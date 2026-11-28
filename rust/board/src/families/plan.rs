@@ -210,6 +210,42 @@ pub fn plan_step(
     PlanStep { start, events, all_complete, active, awaiting_merge, dead_end, user_wait }
 }
 
+/// Why a stuck main ticket's plan may run again, as the note's words; None while its reason still holds. Only for
+/// a main ticket whose own run isn't going. `main_asks`: the main ticket's chat has an open questions form it hasn't
+/// closed; `kid_waits`: a task waits on the user; `step`: what the plan would do next; `sig`: the family's signature
+/// now. Unknown reasons stay stuck (the user's chat or Resume plan clears them, as before).
+pub fn stuck_cleared(plan: &Map<String, Value>, main: &Tk, main_asks: bool, kids: &[Arc<Tk>], kid_waits: &dyn Fn(&Tk) -> bool, step: &PlanStep, sig: &str) -> Option<&'static str> {
+    let reason = plan.get("reason").and_then(Value::as_str).unwrap_or("");
+    let closed = crate::index::family::ask_closed(main);
+    let main_holds = main_asks
+        || (main.outcome_is("needs_input") && !closed)
+        || ["blocked", "failed", "stopped", "limit"].iter().any(|o| main.outcome_is(o));
+    // Whatever the reason, nothing may still wait on the user, and the plan must not hit the same dead end at once.
+    if main_holds || kids.iter().any(|k| !is_complete(k) && kid_waits(k)) || (step.dead_end.is_some() && step.start.is_empty()) {
+        return None;
+    }
+    if reason == crate::index::attention::STUCK_ON_QUESTIONS {
+        Some("Plan running again: nothing is waiting on you.")
+    } else if reason.starts_with("the run that plans the steps") {
+        Some("Plan running again: a later run of this ticket ended well.")
+    } else if reason.starts_with("waiting for you:") || reason.starts_with("nothing can run") {
+        Some("Plan running again: the blocked task was resolved.")
+    } else if reason.contains("wakes in a row without any tool ticket changing") {
+        (plan.get("progressSig").and_then(Value::as_str) != Some(sig)).then_some("Plan running again: a tool ticket changed.")
+    } else {
+        None
+    }
+}
+
+/// `kid_waits` for `stuck_cleared`: a task not at work whose last run ended asking, blocked or failed, or that waits
+/// on the user for another reason (`user_wait`).
+pub fn kid_waits_on_user(t: &Tk, running: bool, user_wait: Option<String>) -> bool {
+    if running || t.status == "ready" || t.status == "in_progress" || plan_active(t) {
+        return false;
+    }
+    ["needs_input", "blocked", "failed"].iter().any(|o| t.outcome_is(o)) || user_wait.is_some()
+}
+
 /// `progressStep`: (progressSig, noProgress, stuck) for a wake about to happen, sig being the family's signature.
 pub fn progress_step(plan: &Map<String, Value>, sig: &str) -> (String, f64, bool) {
     let same = plan.get("progressSig").and_then(Value::as_str) == Some(sig);
@@ -309,6 +345,32 @@ mod tests {
         assert_eq!(s.events[0].line, "finished: a \"a\"; outcome done; summary: ok; report: no report");
         assert_eq!(plan_problem(&[]).as_deref(), Some("this ticket has no tool tickets to run"));
         assert_eq!(plan_problem(&[kid("x", json!({ "dependsOn": ["zz"] }))]).as_deref(), Some("\"x\" depends on unknown ticket \"zz\""));
+    }
+
+    #[test]
+    fn stuck_cleared_by_reason() {
+        let main = |o: &str| tk(json!({ "id": "m", "title": "m", "status": "review", "main": true, "outcome": o }));
+        let kids = vec![kid("a", json!({ "status": "in_progress" }))];
+        let plan = |reason: &str, sig: &str| {
+            let mut p = Map::new();
+            p.insert("reason".into(), reason.into());
+            p.insert("progressSig".into(), sig.into());
+            p
+        };
+        let no = |_: &Tk| false;
+        let step = |p: &Map<String, Value>| plan_step(p, &kids, &|_| false, &|_| None, &|_| String::new(), &|_| None);
+        let check = |p: Map<String, Value>, o: &str, asks: bool| stuck_cleared(&p, &main(o), asks, &kids, &no, &step(&p), "sig");
+        assert_eq!(check(plan("the run that plans the steps failed", ""), "failed", false), None);
+        assert_eq!(check(plan("the run that plans the steps failed", ""), "done", false), Some("Plan running again: a later run of this ticket ended well."));
+        assert_eq!(check(plan(crate::index::attention::STUCK_ON_QUESTIONS, ""), "done", true), None);
+        assert_eq!(check(plan("3 wakes in a row without any tool ticket changing; waiting events: x", "sig"), "done", false), None);
+        assert_eq!(check(plan("3 wakes in a row without any tool ticket changing; waiting events: x", "old"), "done", false), Some("Plan running again: a tool ticket changed."));
+        assert_eq!(check(plan("something else", ""), "done", false), None);
+        let waits = |_: &Tk| true;
+        let p = plan("waiting for you: \"a\" (has questions for you)", "");
+        assert_eq!(stuck_cleared(&p, &main("done"), false, &kids, &waits, &step(&p), "sig"), None);
+        assert!(kid_waits_on_user(&kid("b", json!({ "status": "review", "outcome": "failed" })), false, None));
+        assert!(!kid_waits_on_user(&kid("b", json!({ "status": "ready", "outcome": "failed" })), false, None));
     }
 
     #[test]

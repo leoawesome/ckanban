@@ -240,7 +240,11 @@ impl RunHooks {
                 c.insert(u, json!({ "at": now_iso(), "by": "user", "run": run }));
                 Ok(obj(json!({ "closedForms": c })))
             })?;
-        Ok(t.json.clone())
+        // A closed form may be all that kept a main ticket's plan stuck.
+        if t.main {
+            self.runs.families.advance_plans(slug);
+        }
+        Ok(self.runs.tickets.get(slug, id).map(|n| n.json.clone()).unwrap_or_else(|| t.json.clone()))
     }
 }
 

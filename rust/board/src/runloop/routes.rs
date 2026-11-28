@@ -369,6 +369,8 @@ impl RunLoop {
             Ok(super::board::obj(json!({ "closedForms": c })))
         });
         self.note(slug, &main.id, &format!("Closed the question about \"{}\": you answered it in that task's chat.", task.title));
+        // It may be all that kept the main ticket's plan stuck.
+        self.families.advance_plans(slug);
         Some(main.id.clone())
     }
 }

@@ -433,5 +433,9 @@ async fn a_tickets_run_gets_its_own_temp_folder_removed_when_it_ends_or_is_stopp
     let Some(e) = env(&[("FAKE_ARGS_FILE", &af), ("FAKE_ENV_KEYS", "TMPDIR")]) else { return };
     runner::start_run(opts(&e, vec![], Box::new(|_| {}))).wait().await;
     let rec: Value = serde_json::from_str(std::fs::read_to_string(&args_file).unwrap().lines().next().unwrap()).unwrap();
-    assert!(!rec["env"]["TMPDIR"].as_str().unwrap_or("").contains("ckanban-runs"));
+    // When the tests themselves run inside a ticket's run, the inherited TMPDIR is already
+    // that run's folder, so only a new folder made for this process counts.
+    let got = rec["env"]["TMPDIR"].as_str().unwrap_or("");
+    let inherited = std::env::var("TMPDIR").unwrap_or_default();
+    assert!(got == inherited || !got.contains("ckanban-runs"), "{got} is a new run temp folder");
 }

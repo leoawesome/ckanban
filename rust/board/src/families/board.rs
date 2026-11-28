@@ -13,7 +13,7 @@ use std::sync::{Arc, Weak};
 use parking_lot::{Mutex, ReentrantMutex, RwLock};
 use serde_json::{Map, Value, json};
 
-use super::plan::{children, family_sig, finished_line, or_empty, plan_problem, plan_step, progress_step, wake_table, REPORT_FILE, RESULTS_KEEP};
+use super::plan::{children, family_sig, finished_line, kid_waits_on_user, or_empty, plan_problem, plan_step, progress_step, stuck_cleared, wake_table, REPORT_FILE, RESULTS_KEEP};
 use super::rules::{MAX_LEVEL, Moved, groups_of, is_feature, link_problem, next_round_title, subtree_ids, would_loop, without_plan_link};
 use super::status::{
     FEATURE_TRAILER, SAVED_CHANGES_FILE, STATUS_NOTE_MAX, SubFacts, apply_patch, read_status, saved_changes_markdown, status_md, status_facts,
@@ -828,6 +828,29 @@ impl Families {
         true
     }
 
+    /// A stuck main ticket's plan runs again when what made it stuck is gone (`plan::stuck_cleared`): only this
+    /// family is looked at. True when it was written (the pass goes again and moves the plan on, its inbox waking the
+    /// main ticket through the usual wake).
+    fn unstick(&self, slug: &str, planner: &Arc<Tk>, orig: &Map<String, Value>, plan: &Map<String, Value>, kids: &[Arc<Tk>]) -> bool {
+        let asks = !crate::index::family::ask_closed(planner)
+            && self.session(planner).and_then(|s| s.get("openQuestions").and_then(Value::as_f64)).is_some_and(|q| q > 0.0);
+        let running = |id: &str| self.is_running(slug, id);
+        let kid_waits = |t: &Tk| kid_waits_on_user(t, running(&t.id), self.user_wait(t));
+        let step = plan_step(plan, kids, &running, &|t| self.user_wait(t), &|t| self.last_summary(slug, &t.id), &|t| self.report_of(slug, &t.id));
+        let sig = family_sig(kids.iter().map(|k| &**k));
+        let Some(why) = stuck_cleared(plan, planner, asks, kids, &kid_waits, &step, &sig) else { return false };
+        let mut next = plan.clone();
+        for (k, v) in [("state", json!("running")), ("reason", Value::Null), ("awaiting", Value::Null), ("noProgress", json!(0)), ("wakeups", json!(0))] {
+            next.insert(k.into(), v);
+        }
+        if !self.save_plan(slug, &planner.id, orig, next) {
+            return false;
+        }
+        self.note(slug, &planner.id, why);
+        self.again.lock().insert(slug.to_string());
+        true
+    }
+
     /// `userWait`: why a plan child waits on the user.
     fn user_wait(&self, t: &Tk) -> Option<String> {
         user_wait_reason(t, self.session(t).as_ref())
@@ -1091,6 +1114,10 @@ impl Families {
             plan.insert("awaiting".into(), Value::Null);
         }
         let state = plan.get("state").and_then(Value::as_str).unwrap_or("").to_string();
+        // A stuck main plan whose reason is gone runs again; the next round wakes it for its inbox as usual.
+        if state == "stuck" && planner.main && !busy && self.unstick(slug, planner, &orig, &plan, kids) {
+            return false;
+        }
         if state == "stuck" && !planner.main {
             if !kids.is_empty() && kids.iter().all(|k| is_complete(k)) {
                 self.close_plan(slug, planner, &orig, "Plan done: every ticket in this group finished, so the stuck plan was closed without another run.");
