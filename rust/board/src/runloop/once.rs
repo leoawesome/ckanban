@@ -181,7 +181,16 @@ impl RunLoop {
             let r = run.clone();
             let out2 = out.clone();
             let handle2 = handle.clone();
-            let next = tokio::task::spawn_blocking(move || me.finish(&r, &session, prep, &out2, &handle2, live, spend, cap, &started_at, healed)).await;
+            let next = tokio::task::spawn_blocking(move || {
+                let next = me.finish(&r, &session, prep, &out2, &handle2, live, spend, cap, &started_at, healed);
+                // A run that left its card in Done (a quiet chat, a chat that went back there) while it asks the
+                // user a question: back to Review, where "Your turn" shows.
+                if matches!(next, Next::Done) {
+                    me.families.unpark_asking(&r.slug, &r.id);
+                }
+                next
+            })
+            .await;
             match next {
                 Ok(Next::Done) | Err(_) => {}
                 Ok(Next::Again(text)) => self.execute_once(run, healed, Some(text)).await,

@@ -699,9 +699,46 @@ impl Families {
         true
     }
 
-    /// `holdsReview`: the PR poller leaves a main ticket in Review.
+    /// `unparkAsking`: a ticket in Done that now asks the user a question (a run ended with questions, a form is
+    /// open) goes back to Review, so its "Your turn" badge shows. True when it moved.
+    pub fn unpark_asking(&self, slug: &str, id: &str) -> bool {
+        let Some(t) = self.get(slug, id) else { return false };
+        if t.status != "done" || t.tool {
+            return false;
+        }
+        // The card's own rule, read as if it sat in Review (Done cards never show "Your turn").
+        let mut seen = (*t).clone();
+        seen.status = "review".into();
+        let list = self.list(slug);
+        if self.attention(slug, &list, &seen).is_none_or(|a| a.kind != "questions") {
+            return false;
+        }
+        // Only the card that is still in Done moves (the user may have moved it meanwhile).
+        let r = self.change(slug, id, |meta| {
+            if meta.get("status").and_then(Value::as_str) != Some("done") {
+                return Ok(None);
+            }
+            let mut p = Map::new();
+            p.insert("status".into(), "review".into());
+            p.insert("reopenedFrom".into(), Value::Null);
+            Ok(Some(p))
+        });
+        if !matches!(r, Ok(Some(_))) {
+            return false;
+        }
+        self.note(slug, id, "Moved back from Done: it asks you a question.");
+        true
+    }
+
+    /// `holdsReview`: the PR poller leaves a ticket in Review while it still waits on the user (questions, a form, a
+    /// proposal or tickets to apply, a failed or blocked run), and a main ticket while its steps are open.
     pub fn holds_review(&self, slug: &str, id: &str) -> bool {
-        self.get(slug, id).is_some_and(|t| t.main && (t.is("doneAt") || self.open_steps(slug, id)))
+        let Some(t) = self.get(slug, id) else { return false };
+        if t.main && (t.is("doneAt") || self.open_steps(slug, id)) {
+            return true;
+        }
+        // One ticket, its session summary and the cached index: cheap enough for every poll of every Review card.
+        self.waits_on_user(slug, &self.list(slug), &t)
     }
 
     /// `openSteps`: the family still has tool tickets that aren't finished.
@@ -798,15 +835,19 @@ impl Families {
 
     /// `waitsOnUser`: the card still needs the user (not just a look).
     pub fn waits_on_user(&self, slug: &str, list: &BoardList, t: &Tk) -> bool {
-        let running = self.is_running(slug, &t.id);
         if t.tool && t.kind.as_deref() == Some("with_you") {
-            return you_waiting(t, running);
+            return you_waiting(t, self.is_running(slug, &t.id));
         }
+        self.attention(slug, list, t).is_some_and(|a| a.kind != "review")
+    }
+
+    /// The card's attention badge (`ticketAttention`) with what the board knows now.
+    fn attention(&self, slug: &str, list: &BoardList, t: &Tk) -> Option<crate::index::attention::Attention> {
+        let running = self.is_running(slug, &t.id);
         let host = self.reads.live.host(slug, &t.id);
         let is_running = |x: &str| self.is_running(slug, x);
         let root = self.tickets.root().to_path_buf();
-        let a = ticket_attention(list, t, self.session(t).as_ref(), running, host.as_ref(), &is_running, &|| schedule_ids(&root, slug));
-        a.is_some_and(|a| a.kind != "review")
+        ticket_attention(list, t, self.session(t).as_ref(), running, host.as_ref(), &is_running, &|| schedule_ids(&root, slug))
     }
 
     /// `lastSummary`: the ticket's newest Claude comment that isn't a board note.
