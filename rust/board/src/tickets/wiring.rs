@@ -165,6 +165,13 @@ impl BoardHooks for Wired {
         }
     }
 
+    fn after_delete(&self, slug: &str, _id: &str) {
+        // A deleted task may have been what kept its main ticket's plan stuck.
+        if let Some(f) = &self.families {
+            f.advance_plans(slug);
+        }
+    }
+
     fn board_changed(&self, slug: &str) {
         if let Some(f) = &self.families {
             f.runs_handle().dispatch(slug);
