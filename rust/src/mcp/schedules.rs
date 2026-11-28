@@ -378,7 +378,8 @@ fn job_line(j: &Value) -> String {
     if t(j, "sourceTicketId") {
         let title = if t(j, "sourceTicketTitle") { format!(" (\"{}\")", sh(j, "sourceTicketTitle")) } else { String::new() };
         if t(j, "sourceGone") {
-            bits.push(format!("scheduled by a deleted ticket {}{title}; it still runs at its time", sh(j, "sourceTicketId")));
+            let still = if s(j, "state") == Some("scheduled") { "; it still runs at its time" } else { "" };
+            bits.push(format!("scheduled by a deleted ticket {}{title}{still}", sh(j, "sourceTicketId")));
         } else {
             bits.push(format!("scheduled by {}", sh(j, "sourceTicketId")));
         }
@@ -495,6 +496,8 @@ mod tests {
         assert_eq!(job_line(&j), "j_2  [scheduled]  Post: in 2 hours, ticket \"T\"; scheduled by a deleted ticket t_1 (\"Launch\"); it still runs at its time");
         let live = json!({"id": "j_3", "state": "scheduled", "name": "P", "when": "w", "action": {"kind": "ticket", "title": "T"}, "sourceTicketId": "t_1", "sourceTicketTitle": "Launch"});
         assert_eq!(job_line(&live), "j_3  [scheduled]  P: w, ticket \"T\"; scheduled by t_1");
+        let cancelled = json!({"id": "j_4", "state": "cancelled", "name": "Post", "when": "Tue", "action": {"kind": "ticket", "title": "T"}, "sourceTicketId": "t_1", "sourceGone": true});
+        assert_eq!(job_line(&cancelled), "j_4  [cancelled]  Post: Tue, ticket \"T\"; scheduled by a deleted ticket t_1");
     }
 
     #[test]
