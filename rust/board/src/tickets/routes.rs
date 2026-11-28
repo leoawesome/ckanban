@@ -896,14 +896,30 @@ impl Writes {
         {
             return Err((409, "Wait a moment: a merge is running".into()));
         }
-        if doomed.main {
-            for o in self.tickets.tool_tickets(slug, id) {
-                hooks.close_huddles(slug, &o.id);
-            }
+        // Waiting jobs the tickets scheduled stay scheduled unless the request asks to cancel them (`cancelJobs`: the
+        // query or the JSON body); a list may only name those tickets' waiting jobs, checked before anything goes.
+        let pick = match param(&req.query, "cancelJobs") {
+            Some(q) => Some(Value::String(q)),
+            None if req.body.iter().any(|b| !b.is_ascii_whitespace()) => body_obj(req)?.get("cancelJobs").cloned(),
+            None => None,
+        };
+        let pick = super::hooks::CancelJobs::parse(pick.as_ref()).map_err(bad)?;
+        let tools = if doomed.main { self.tickets.tool_tickets(slug, id) } else { Vec::new() };
+        let titles: std::collections::HashMap<String, String> =
+            std::iter::once(&doomed).chain(tools.iter()).map(|t| (t.id.clone(), t.title.clone())).collect();
+        let ids: Vec<String> = std::iter::once(id.to_string()).chain(tools.iter().map(|t| t.id.clone())).collect();
+        let cancel = hooks.jobs_to_cancel(slug, &ids, &pick)?;
+        for o in &tools {
+            hooks.close_huddles(slug, &o.id);
         }
         hooks.close_huddles(slug, id);
         self.tickets.delete(slug, id).map_err(|(_, e)| (409, e))?;
-        Ok(Reply::Empty(204))
+        if pick == super::hooks::CancelJobs::None {
+            return Ok(Reply::Empty(204));
+        }
+        let by = req.run.as_deref().and_then(|h| h.split('/').nth(1)).filter(|x| !x.is_empty());
+        let cancelled = hooks.cancel_jobs(slug, &cancel, &titles, by);
+        Ok(Reply::Json(200, json!({ "cancelledJobs": cancelled })))
     }
 
     /// `POST .../move`: a Backlog ticket to another board.

@@ -226,11 +226,17 @@ fn route(s: &Arc<Schedules>, r: &Req) -> Result<Answer, Fail> {
         "jobs" => {
             if n == 3 && m == "GET" {
                 let days = query(r.query, "finishedDays").map(|d| crate::runs::js::number_of_str(&d)).filter(|d| d.is_finite() && *d > 0.0).map(|d| d.min(365.0));
+                // `?scheduledBy=a,b`: the jobs still waiting to run that a delete of those tickets would leave behind
+                // (a main ticket counts with its tool tickets, which go with it).
+                if let Some(ids) = query(r.query, "scheduledBy") {
+                    let ids = s.doomed_ids(slug, &ids.split(',').map(str::trim).filter(|x| !x.is_empty()).map(str::to_string).collect::<Vec<_>>());
+                    return ok(s.jobs_view(slug, &s.waiting_jobs_of(slug, &ids)));
+                }
                 let tid = query(r.query, "ticketId");
-                return ok(Value::Array(s.list_jobs(slug, tid.as_deref(), days).iter().map(|j| s.job_view(j)).collect()));
+                return ok(s.jobs_view(slug, &s.list_jobs(slug, tid.as_deref(), days)));
             }
             if n == 4 && m == "GET" {
-                return ok(s.job_view(&s.get_job(slug, p(3))?));
+                return ok(s.job_view(slug, &s.get_job(slug, p(3))?));
             }
             if r.huddle {
                 return Err(fail(403, "huddle participants can't schedule or change jobs; ask @main"));
@@ -243,18 +249,18 @@ fn route(s: &Arc<Schedules>, r: &Req) -> Result<Answer, Fail> {
             }
             let by = by.as_deref();
             if n == 3 && m == "POST" {
-                return Ok((201, Some(s.job_view(&s.create_job(slug, &body(r)?, by)?))));
+                return Ok((201, Some(s.job_view(slug, &s.create_job(slug, &body(r)?, by)?))));
             }
             let jid = p(3);
             if n == 4 && m == "PATCH" {
-                return ok(s.job_view(&s.update_job(slug, jid, &body(r)?, by)?));
+                return ok(s.job_view(slug, &s.update_job(slug, jid, &body(r)?, by)?));
             }
             if n == 5 && m == "POST" {
                 if p(4) == "cancel" {
-                    return ok(s.job_view(&s.cancel_job(slug, jid, by)?));
+                    return ok(s.job_view(slug, &s.cancel_job(slug, jid, by)?));
                 }
                 if p(4) == "run" {
-                    return ok(s.job_view(&s.run_job_now(slug, jid, by)?));
+                    return ok(s.job_view(slug, &s.run_job_now(slug, jid, by)?));
                 }
             }
             Err(fail(404, "not found"))

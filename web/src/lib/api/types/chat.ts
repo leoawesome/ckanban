@@ -103,7 +103,8 @@ export interface SessionEntry {
   /** Claude proposed a huddle (propose_huddle): the roster card with Start. */
   huddle?: { roster: RosterEntry[]; reason: string; template?: string; maxCostUsd?: number; topic?: string };
   /** Claude asked to delete tickets (propose_delete): the card with Cancel / Delete. */
-  deletion?: { ids: string[]; reason: string };
+  /** cancelJobs: Claude proposed cancelling the tickets' waiting jobs too (true: all; else job ids); the user's click decides. */
+  deletion?: { ids: string[]; reason: string; cancelJobs?: true | string[] };
   /** Claude asked to delete a schedule (delete_schedule in a board chat or run): the card with Keep / Delete. */
   scheduleDeletion?: { id: string; reason: string };
   /** Claude suggested a line for what the helper knows about the user (propose_helper_rule): the card with Not now / Add. */

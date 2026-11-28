@@ -66,6 +66,17 @@ impl BoardHooks for Wired {
         }
         s.remove_schedule(slug, id, &serde_json::Value::from("user")).map(Some).map_err(|(_, e)| e)
     }
+    fn jobs_to_cancel(&self, slug: &str, ids: &[String], pick: &super::hooks::CancelJobs) -> Result<Vec<String>, (u16, String)> {
+        match &self.schedules {
+            Some(s) => s.jobs_to_cancel(slug, ids, pick),
+            None if *pick == super::hooks::CancelJobs::None => Ok(Vec::new()),
+            None => Err((400, format!("cancelling jobs is {}", super::hooks::NOT_YET))),
+        }
+    }
+    fn cancel_jobs(&self, slug: &str, job_ids: &[String], titles: &std::collections::HashMap<String, String>, by: Option<&str>) -> Vec<Value> {
+        let Some(s) = &self.schedules else { return Vec::new() };
+        s.cancel_for_delete(slug, job_ids, titles, by).iter().map(|j| s.job_view(slug, j)).collect()
+    }
     fn run_state(&self, slug: &str, id: &str) -> super::hooks::RunState {
         self.runs.as_ref().map(|r| r.run_state(slug, id)).unwrap_or_default()
     }

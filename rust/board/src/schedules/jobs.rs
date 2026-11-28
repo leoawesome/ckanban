@@ -11,6 +11,7 @@ use serde_json::{Value, json};
 use super::files::Obj;
 use super::text::describe_at;
 use super::{Fail, Schedules, fail, now_iso, obj, st};
+pub use crate::tickets::hooks::CancelJobs;
 use crate::runloop::followup::{format_at, iso_ms, parse_at};
 use crate::runs::js;
 
@@ -45,11 +46,93 @@ impl Schedules {
         self.files.get_job(slug, id).ok_or_else(|| fail(404, format!("job {id} not found")))
     }
 
-    /// `view`: the job with its due time in words.
-    pub fn job_view(&self, j: &Obj) -> Value {
+    /// `view`: the job with its due time in words. A job a ticket scheduled also says that ticket's title (its saved
+    /// one once the ticket is gone) and `sourceGone: true` when the ticket was deleted since.
+    pub fn job_view(&self, slug: &str, j: &Obj) -> Value {
+        self.view_with(j, |id| self.title_of(slug, id))
+    }
+
+    /// The views of many jobs, looking their tickets up in one listing of the board (no file read per job).
+    pub fn jobs_view(&self, slug: &str, jobs: &[Obj]) -> Value {
+        let list = self.d.tickets.list(slug);
+        Value::Array(jobs.iter().map(|j| self.view_with(j, |id| list.get(id).map(|t| t.title.clone()))).collect())
+    }
+
+    fn view_with(&self, j: &Obj, title: impl Fn(&str) -> Option<String>) -> Value {
         let mut v = j.clone();
         v.insert("when".into(), describe_at(st(j, "at"), self.now()).into());
+        if let Some(src) = j.get("sourceTicketId").and_then(Value::as_str).filter(|s| !s.is_empty()) {
+            match title(src) {
+                Some(t) => {
+                    v.insert("sourceTicketTitle".into(), t.into());
+                }
+                None => {
+                    v.insert("sourceGone".into(), true.into());
+                }
+            }
+        }
         Value::Object(v)
+    }
+
+    /// The tickets a delete of `ids` removes: each, and a main ticket's tool tickets (`Tickets::delete`).
+    pub fn doomed_ids(&self, slug: &str, ids: &[String]) -> Vec<String> {
+        let mut out: Vec<String> = Vec::new();
+        for id in ids {
+            let tools = self.d.tickets.get(slug, id).filter(|t| t.main).map(|_| self.d.tickets.tool_tickets(slug, id)).unwrap_or_default();
+            for x in std::iter::once(id.clone()).chain(tools.into_iter().map(|t| t.id.clone())) {
+                if !out.contains(&x) {
+                    out.push(x);
+                }
+            }
+        }
+        out
+    }
+
+    /// The jobs still waiting to run (not run yet) that these tickets scheduled, oldest due first. Reads only this
+    /// board's open jobs.
+    pub fn waiting_jobs_of(&self, slug: &str, ids: &[String]) -> Vec<Obj> {
+        self.files.open_jobs(slug).into_iter().filter(|j| is_open(j) && j.get("sourceTicketId").and_then(Value::as_str).is_some_and(|s| ids.iter().any(|i| i == s))).collect()
+    }
+
+    /// Which waiting jobs a delete of `ids` cancels: none unless asked; `All` is every waiting job they scheduled; a
+    /// list must name only such jobs (Err otherwise, so a delete can never cancel another ticket's job).
+    pub fn jobs_to_cancel(&self, slug: &str, ids: &[String], pick: &CancelJobs) -> Result<Vec<String>, Fail> {
+        let waiting = || self.waiting_jobs_of(slug, ids).into_iter().map(|j| st(&j, "id").to_string()).collect::<Vec<_>>();
+        match pick {
+            CancelJobs::None => Ok(Vec::new()),
+            CancelJobs::All => Ok(waiting()),
+            CancelJobs::These(want) => {
+                let w = waiting();
+                if let Some(bad) = want.iter().find(|x| !w.contains(x)) {
+                    return Err(fail(400, format!("job {bad} isn't a waiting job of the tickets being deleted: cancelJobs can only cancel jobs those tickets scheduled that haven't run yet. Nothing was deleted.")));
+                }
+                let mut out: Vec<String> = Vec::new();
+                for x in want {
+                    if !out.contains(x) {
+                        out.push(x.clone());
+                    }
+                }
+                Ok(out)
+            }
+        }
+    }
+
+    /// Cancels jobs the user (or a main ticket's run, `by`) chose to cancel when deleting the tickets that scheduled
+    /// them; `titles` are those tickets' titles, taken before the delete. A job that ran meanwhile is left alone.
+    pub fn cancel_for_delete(&self, slug: &str, job_ids: &[String], titles: &std::collections::HashMap<String, String>, by: Option<&str>) -> Vec<Obj> {
+        let _g = self.job_lock.lock();
+        let mut out = Vec::new();
+        for id in job_ids {
+            let Some(j) = self.files.get_job(slug, id).filter(is_open) else { continue };
+            let src = st(&j, "sourceTicketId").to_string();
+            let title = titles.get(&src).cloned().or_else(|| j.get("sourceTicketTitle").and_then(Value::as_str).map(str::to_string)).unwrap_or(src);
+            let who = if by.is_some() { "its main ticket" } else { "you" };
+            let mut c = self.credit(j, by, "cancelled");
+            c.insert("state".into(), "cancelled".into());
+            c.insert("result".into(), json!({ "message": format!("cancelled because {who} chose to when deleting \"{title}\"") }));
+            out.push(self.save_job(slug, &c));
+        }
+        out
     }
 
     /// `list`: everything still to come, plus the most recent finished ones (or every one finished in
@@ -183,6 +266,11 @@ impl Schedules {
             "id": ckanban_core::atomic::new_id(), "name": name, "at": at, "action": action, "state": "scheduled",
             "sourceTicketId": source, "createdAt": now, "updatedAt": now, "firedAt": null, "result": null,
         }));
+        let mut j = j;
+        // Kept with the job, so it can still say who scheduled it once that ticket is deleted.
+        if let Some(t) = source.filter(|s| !s.is_empty()).and_then(|s| self.title_of(slug, s)) {
+            j.insert("sourceTicketTitle".into(), t.into());
+        }
         Ok(self.save_job(slug, &j))
     }
 
@@ -277,7 +365,14 @@ impl Schedules {
         let mut links = vec![(j.clone(), source.clone(), src_title.clone())];
         links.extend(self.job_chain(slug, source.as_deref()));
         if links.len() == 1 {
-            let t = src_title.map(|t| format!(" (\"{t}\")")).unwrap_or_default();
+            let t = match src_title {
+                Some(t) => format!(" (\"{t}\")"),
+                // Deleted since: its saved title, said plainly so the run doesn't look for it.
+                None => match j.get("sourceTicketTitle").and_then(Value::as_str) {
+                    Some(t) => format!(" (\"{t}\", deleted since; there is no ticket to go back to)"),
+                    None => " (deleted since; there is no ticket to go back to)".to_string(),
+                },
+            };
             return format!("Scheduled by ticket {}{t} as job '{}'.", source.unwrap_or_default(), st(j, "name"));
         }
         let parts: Vec<String> = links
@@ -377,19 +472,6 @@ impl Schedules {
             me.d.runs.restart_work_changed();
         });
         running
-    }
-
-    /// `dropSource`: a deleted ticket's jobs that haven't run yet are cancelled.
-    pub fn drop_source(&self, slug: &str, ticket_id: &str) {
-        let _g = self.job_lock.lock();
-        for j in self.files.open_jobs(slug) {
-            if is_open(&j) && j.get("sourceTicketId").and_then(Value::as_str) == Some(ticket_id) {
-                let mut c = j.clone();
-                c.insert("state".into(), "cancelled".into());
-                c.insert("result".into(), json!({ "message": "its ticket was deleted" }));
-                self.save_job(slug, &c);
-            }
-        }
     }
 
     /// `recover` once, before any job fires (under `job_lock`).

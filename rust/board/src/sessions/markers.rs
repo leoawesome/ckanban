@@ -511,7 +511,22 @@ pub fn card_entry(block: &Value) -> Option<Obj> {
         if ids.is_empty() {
             return None;
         }
-        return Some(one("deletion", Value::Object(with_reason("ids", ids.into(), str_trim(inp("reason"))))));
+        let mut d = with_reason("ids", ids.into(), str_trim(inp("reason")));
+        // Waiting jobs Claude proposes to cancel with the delete (true: all of them); the card shows them ticked and
+        // only the user's click cancels anything. The card looks the waiting jobs up itself (`GET .../jobs?scheduledBy=`).
+        match inp("cancelJobs") {
+            Some(Value::Bool(true)) => {
+                d.insert("cancelJobs".into(), true.into());
+            }
+            Some(Value::Array(a)) => {
+                let jobs: Vec<Value> = a.iter().filter_map(Value::as_str).map(js::trim).filter(|s| !s.is_empty()).map(Value::from).collect();
+                if !jobs.is_empty() {
+                    d.insert("cancelJobs".into(), jobs.into());
+                }
+            }
+            _ => {}
+        }
+        return Some(one("deletion", Value::Object(d)));
     }
     if tool_is(&name, "propose_teammate") {
         return cards::parse_teammate_proposal(input).map(|t| one("teammate", t));
@@ -550,4 +565,22 @@ pub fn card_entry(block: &Value) -> Option<Obj> {
         return Some(one("huddle", Value::Object(h)));
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::card_entry;
+    use serde_json::{Value, json};
+
+    fn deletion(input: Value) -> Option<Value> {
+        card_entry(&json!({ "type": "tool_use", "name": "mcp__ckanban__propose_delete", "input": input })).and_then(|o| o.get("deletion").cloned())
+    }
+
+    #[test]
+    fn a_delete_card_carries_the_jobs_claude_proposed_to_cancel() {
+        assert_eq!(deletion(json!({ "ids": ["t_1"], "reason": "r" })), Some(json!({ "ids": ["t_1"], "reason": "r" })));
+        assert_eq!(deletion(json!({ "ids": ["t_1"], "reason": "r", "cancelJobs": true })), Some(json!({ "ids": ["t_1"], "reason": "r", "cancelJobs": true })));
+        assert_eq!(deletion(json!({ "ids": ["t_1"], "reason": "r", "cancelJobs": [" j1 ", ""] })), Some(json!({ "ids": ["t_1"], "reason": "r", "cancelJobs": ["j1"] })));
+        assert_eq!(deletion(json!({ "ids": ["t_1"], "reason": "r", "cancelJobs": false })), Some(json!({ "ids": ["t_1"], "reason": "r" })));
+    }
 }

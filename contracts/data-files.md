@@ -622,7 +622,10 @@ chat.
   timeoutSec?, ifLate?: "skip" | "run" }`. `state`: `scheduled`, `running`, `done`, `failed`, `cancelled`, `skipped`.
   `ifLate` is only written when `"run"`. Once it fired: `firedAt` and `result`, `{ ticketId }` for a ticket job,
   `{ exitCode, durationMs, output, timedOut, message? }` for a command (output: the last 4 KB), `{ message }` when
-  skipped or cancelled because its ticket was deleted. A change, cancel or run now from a board run adds
+  skipped, or cancelled because the user chose to when deleting its ticket ("cancelled because you chose to when
+  deleting \"<title>\""). Deleting a ticket by itself never cancels its jobs. A job a ticket scheduled also saves
+  `sourceTicketTitle` (that ticket's title then, written after `result`), so it can still say who scheduled it once the
+  ticket is gone; a job without a source has no such key. A change, cancel or run now from a board run adds
   `changedBy: { ticketId, action: "changed" | "cancelled" | "run now", at }`; the user's next change removes it.
 - **Load-time migration:** an old `state: "missed"` reads as `skipped` with `result.message` "was due while the
   computer was off" (nothing written).

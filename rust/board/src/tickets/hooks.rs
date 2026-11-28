@@ -38,7 +38,58 @@ pub enum SelfMove {
     OnDone,
 }
 
+/// Which waiting jobs a delete cancels on purpose (`cancelJobs` of a delete request). Without it, none: a deleted
+/// ticket's jobs stay scheduled and run at their time.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub enum CancelJobs {
+    #[default]
+    None,
+    /// Every waiting job the deleted tickets scheduled.
+    All,
+    /// These job ids; each must be a waiting job of a ticket being deleted.
+    These(Vec<String>),
+}
+
+impl CancelJobs {
+    /// From a request: `true`/`"all"` is All, a list (or a comma-separated string) of job ids is These, and
+    /// `false`/null/empty is None. Err for anything else.
+    pub fn parse(v: Option<&Value>) -> Result<CancelJobs, String> {
+        const BAD: &str = "cancelJobs must be true, \"all\" or a list of job ids";
+        let ids = |it: Vec<String>| if it.is_empty() { CancelJobs::None } else { CancelJobs::These(it) };
+        match v {
+            None | Some(Value::Null) | Some(Value::Bool(false)) => Ok(CancelJobs::None),
+            Some(Value::Bool(true)) => Ok(CancelJobs::All),
+            Some(Value::String(s)) => match s.trim() {
+                "" | "false" | "0" | "none" => Ok(CancelJobs::None),
+                "all" | "true" | "1" => Ok(CancelJobs::All),
+                s => Ok(ids(s.split(',').map(str::trim).filter(|x| !x.is_empty()).map(str::to_string).collect())),
+            },
+            Some(Value::Array(a)) => {
+                let mut out = Vec::new();
+                for x in a {
+                    let Some(x) = x.as_str().map(str::trim).filter(|x| !x.is_empty()) else { return Err(BAD.into()) };
+                    out.push(x.to_string());
+                }
+                Ok(ids(out))
+            }
+            _ => Err(BAD.into()),
+        }
+    }
+}
+
 pub trait BoardHooks: Send + Sync {
+    /// The waiting jobs a delete of `ids` cancels (`pick`), checked before anything is deleted (R10). Err refuses
+    /// the delete. The stand-in: none, and an explicit pick is refused.
+    fn jobs_to_cancel(&self, _slug: &str, _ids: &[String], pick: &CancelJobs) -> Result<Vec<String>, (u16, String)> {
+        match pick {
+            CancelJobs::None => Ok(Vec::new()),
+            _ => Err((400, format!("cancelling jobs is {NOT_YET}"))),
+        }
+    }
+    /// Cancels them after the delete, each saying it was chosen when deleting its ticket (`titles`: id -> title).
+    fn cancel_jobs(&self, _slug: &str, _job_ids: &[String], _titles: &std::collections::HashMap<String, String>, _by: Option<&str>) -> Vec<Value> {
+        Vec::new()
+    }
     /// The ticket's run, if any (R7a).
     fn run_state(&self, _slug: &str, _id: &str) -> RunState {
         RunState::default()
@@ -140,3 +191,26 @@ pub trait BoardHooks: Send + Sync {
 pub struct NoHooks;
 
 impl BoardHooks for NoHooks {}
+
+#[cfg(test)]
+mod tests {
+    use super::CancelJobs;
+    use serde_json::json;
+
+    #[test]
+    fn cancel_jobs_from_a_request() {
+        let p = |v: serde_json::Value| CancelJobs::parse(Some(&v));
+        assert_eq!(CancelJobs::parse(None), Ok(CancelJobs::None));
+        assert_eq!(p(json!(null)), Ok(CancelJobs::None));
+        assert_eq!(p(json!(false)), Ok(CancelJobs::None));
+        assert_eq!(p(json!("")), Ok(CancelJobs::None));
+        assert_eq!(p(json!(true)), Ok(CancelJobs::All));
+        assert_eq!(p(json!("all")), Ok(CancelJobs::All));
+        assert_eq!(p(json!("a, b")), Ok(CancelJobs::These(vec!["a".into(), "b".into()])));
+        assert_eq!(p(json!(["a"])), Ok(CancelJobs::These(vec!["a".into()])));
+        assert_eq!(p(json!([])), Ok(CancelJobs::None));
+        assert!(p(json!([1])).is_err());
+        assert!(p(json!(3)).is_err());
+        assert!(p(json!({})).is_err());
+    }
+}

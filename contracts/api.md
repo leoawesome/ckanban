@@ -546,11 +546,22 @@ Changes from `x-ckanban-run` are credited to that ticket.
 | Method | Path | Request | Success | Errors |
 |---|---|---|---|---|
 | GET | `/jobs` | query `ticketId?`, `finishedDays?` (1..365) | 200 job views | |
+| GET | `/jobs?scheduledBy=<id>,<id>` | ticket ids | 200 job views: only the jobs still `scheduled` that those tickets scheduled (a main ticket counts with its tool tickets, which a delete takes with it), oldest due first | |
 | GET | `/jobs/:jid` | | 200 job view | `JobError` |
 | POST | `/jobs` | `JobInput` | 201 job view | 403 huddle agent, 403 run from another board, 404 run ticket, `JobError` |
 | PATCH | `/jobs/:jid` | partial `JobInput` | 200 job view | same |
 | POST | `/jobs/:jid/cancel` | body ignored | 200 job view | same |
 | POST | `/jobs/:jid/run` | body ignored | 200 job view once it started: a ticket job is `done` with `result.ticketId`; a command job may still be `running` | same |
+
+A job a ticket scheduled also shows `sourceTicketTitle` (the ticket's title, or the title saved with the job once the
+ticket is gone) and `sourceGone: true` once that ticket was deleted; a job with no `sourceTicketId` shows neither.
+
+**Deleting a ticket keeps its jobs.** A job whose ticket was deleted (or moved to another board) stays `scheduled` and
+fires at its time: a ticket job makes its new ticket as usual (the chain line says the scheduling ticket was deleted
+since), a command job runs with `CKANBAN_SOURCE_TICKET` still set to the old id (a failure comment is skipped, as there
+is no ticket to put it on). Only a delete that asks (`cancelJobs`, see DELETE `/tickets/:id`) cancels them. No other
+path (bulk delete, a feature's delete, a quiet schedule removing its own ticket, a ticket made and removed again on an
+error) cancels a job.
 
 Only a `scheduled` job can be changed, cancelled or run: otherwise `409 {"error":"job <id> is <state>: only a
 scheduled job can be changed"}`. `at` must be in the future (400). A PATCH `action` replaces the whole action.
@@ -676,7 +687,7 @@ Prefix `/api/profiles/:slug/tickets`. Ticket ids look like `t_...`. A route with
 | POST | `/tickets` | see below | 201 `TicketView` plus `gather?`, `planPaused?`, `note?` | 400, 403, 409 |
 | GET | `/tickets/:id` | | 200 `TicketView` | 404 |
 | PATCH | `/tickets/:id` | see below | 200 `TicketView` (plus `selfMove` for a self move) | 400, 403, 409 (with `confirm` for UI source) |
-| DELETE | `/tickets/:id` | | 204 | 403 from a run (except a main ticket deleting its own tool ticket), 409 merge running or delete failed |
+| DELETE | `/tickets/:id` | optional `cancelJobs` (query, or JSON body `{ "cancelJobs": ... }`) | 204; with `cancelJobs`: 200 `{ cancelledJobs: [job view] }` | 400 bad `cancelJobs` or a job id that isn't a waiting job of the tickets being deleted (nothing deleted), 403 from a run (except a main ticket deleting its own tool ticket), 409 merge running or delete failed |
 
 **GET scopes.**
 - none: every ticket as a JSON array of `TicketView` (old clients).
@@ -689,6 +700,17 @@ Prefix `/api/profiles/:slug/tickets`. Ticket ids look like `t_...`. A route with
 - `scope=search`: query `q`, `tags`; searches Done tickets only.
 - `scope=ids`: query `ids`.
 - board, done, search and ids answer `{tickets: TicketView[], doneTotal, doneHead?}`.
+
+**DELETE and waiting jobs.** A delete (one ticket, a bulk delete of many, a main ticket with its tool tickets, the
+confirm of a `propose_delete` card) leaves the one-time jobs those tickets scheduled `scheduled`: they run at their
+time (see "Jobs"). To find them first: GET `/jobs?scheduledBy=<ids>`. To cancel some on purpose, send `cancelJobs`:
+`true` / `"all"` (every waiting job the deleted tickets scheduled) or a list of job ids (JSON array, or comma-separated
+in the query). A listed id that isn't a waiting job of a ticket being deleted refuses the whole delete (400), so a delete
+never cancels another ticket's job. Each cancelled job is saved `cancelled` with `result.message` "cancelled because you
+chose to when deleting \"<ticket title>\"" ("its main ticket chose to" with `changedBy` when a main ticket's run deletes
+its tool ticket). Without `cancelJobs` nothing is cancelled. A `propose_delete` card's chat entry is `deletion: { ids,
+reason, cancelJobs? }`: `cancelJobs` (true or job ids) only when Claude proposed cancelling them too; the card looks
+up the waiting jobs itself and only the user's click cancels anything.
 
 **POST body.** `title` (required), `body`, `status` (one of `STATUSES`, default `backlog`), `mode` (`auto` or
 `interview`, default interview), `parentId`, `planKey`, `dependsOn: string[]`, `needs: string[]`, `tags: string[]`,
