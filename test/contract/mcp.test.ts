@@ -270,7 +270,7 @@ describe("family group", () => {
     const keep = await newTicket("Keeps its job");
     const kept = await jobOf(keep, "Kept job");
     const r = await user.call("delete_ticket", { id: keep });
-    expect(r.text).toStartWith(`Deleted ${keep}. 1 waiting job it scheduled stays scheduled and run at their time: 'Kept job' (${kept.id}, `);
+    expect(r.text).toStartWith(`Deleted ${keep}. 1 waiting job it scheduled stays scheduled and runs at its time: 'Kept job' (${kept.id}, `);
     expect(r.text).toEndWith("To stop one, call cancel_job.");
     expect((await d.api("GET", `${P}/jobs/${kept.id}`)).data.state).toBe("scheduled");
 

@@ -258,25 +258,25 @@ describe("deleting the ticket that scheduled a job", () => {
     expect(made.body).toEndWith("Post it.");
   }, 45_000);
 
-  test("cancelJobs cancels the chosen waiting jobs with a clear reason; other tickets' jobs can't be named", async () => {
+  test("cancelJobs cancels the chosen waiting jobs with a clear reason, never another ticket's", async () => {
     const src = await newTicket("Launch posts");
     const other = await newTicket("Someone else");
     const a = await jobOf(src.id, "Post A");
     const b = await jobOf(src.id, "Post B");
     const theirs = await jobOf(other.id, "Their post");
 
-    // Naming a job the ticket didn't schedule refuses the whole delete: nothing is deleted or cancelled.
-    const bad = await d.api("DELETE", `${P}/tickets/${src.id}`, { cancelJobs: [a.id, theirs.id] });
+    // An id that is no job refuses the whole delete: nothing is deleted or cancelled.
+    const bad = await d.api("DELETE", `${P}/tickets/${src.id}`, { cancelJobs: [a.id, "nojob123"] });
     expect(bad.status).toBe(400);
-    expect(bad.data.error).toContain(`job ${theirs.id} isn't a waiting job of the tickets being deleted`);
+    expect(bad.data.error).toContain("there is no job nojob123 on board");
     expect((await d.api("GET", `${P}/tickets/${src.id}`)).status).toBe(200);
     expect((await getJob(a.id)).state).toBe("scheduled");
-    expect((await getJob(theirs.id)).state).toBe("scheduled");
     expect((await d.api("DELETE", `${P}/tickets/${src.id}?cancelJobs=nope`)).status).toBe(400);
     expect((await d.api("GET", `${P}/tickets/${src.id}`)).status).toBe(200);
 
     // A list cancels only those; the rest stay.
-    const r = await d.api("DELETE", `${P}/tickets/${src.id}`, { cancelJobs: [a.id] });
+    // A card's whole list over several tickets goes with each ticket's DELETE: another ticket's job in it is left alone.
+    const r = await d.api("DELETE", `${P}/tickets/${src.id}`, { cancelJobs: [a.id, theirs.id] });
     expect(r.status).toBe(200);
     expect(r.data.cancelledJobs.map((x: any) => x.id)).toEqual([a.id]);
     const ca = await getJob(a.id);
@@ -284,6 +284,11 @@ describe("deleting the ticket that scheduled a job", () => {
     expect(ca.changedBy).toBeUndefined();
     expect((await getJob(b.id)).state).toBe("scheduled");
     expect((await getJob(theirs.id)).state).toBe("scheduled");
+    // The same list on the other ticket's DELETE cancels its job; the one already cancelled is skipped.
+    const r2 = await d.api("DELETE", `${P}/tickets/${other.id}`, { cancelJobs: [a.id, theirs.id] });
+    expect(r2.status).toBe(200);
+    expect(r2.data.cancelledJobs.map((x: any) => x.id)).toEqual([theirs.id]);
+    expect((await getJob(theirs.id)).result.message).toBe('cancelled because you chose to when deleting "Someone else"');
 
     // true (or ?cancelJobs=all) cancels every waiting job the deleted ticket scheduled, and nothing else.
     const src2 = await newTicket("More posts");
@@ -291,7 +296,6 @@ describe("deleting the ticket that scheduled a job", () => {
     const all = await d.api("DELETE", `${P}/tickets/${src2.id}?cancelJobs=all`);
     expect(all.status).toBe(200);
     expect(all.data.cancelledJobs.map((x: any) => [x.id, x.state])).toEqual([[c.id, "cancelled"]]);
-    expect((await getJob(theirs.id)).state).toBe("scheduled");
     expect((await getJob(b.id)).state).toBe("scheduled");
   });
 

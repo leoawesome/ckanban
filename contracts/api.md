@@ -687,7 +687,7 @@ Prefix `/api/profiles/:slug/tickets`. Ticket ids look like `t_...`. A route with
 | POST | `/tickets` | see below | 201 `TicketView` plus `gather?`, `planPaused?`, `note?` | 400, 403, 409 |
 | GET | `/tickets/:id` | | 200 `TicketView` | 404 |
 | PATCH | `/tickets/:id` | see below | 200 `TicketView` (plus `selfMove` for a self move) | 400, 403, 409 (with `confirm` for UI source) |
-| DELETE | `/tickets/:id` | optional `cancelJobs` (query, or JSON body `{ "cancelJobs": ... }`) | 204; with `cancelJobs`: 200 `{ cancelledJobs: [job view] }` | 400 bad `cancelJobs` or a job id that isn't a waiting job of the tickets being deleted (nothing deleted), 403 from a run (except a main ticket deleting its own tool ticket), 409 merge running or delete failed |
+| DELETE | `/tickets/:id` | optional `cancelJobs` (query, or JSON body `{ "cancelJobs": ... }`) | 204; with `cancelJobs`: 200 `{ cancelledJobs: [job view] }` | 400 bad `cancelJobs` or a job id that is no job on the board (nothing deleted), 403 from a run (except a main ticket deleting its own tool ticket), 409 merge running or delete failed |
 
 **GET scopes.**
 - none: every ticket as a JSON array of `TicketView` (old clients).
@@ -705,10 +705,12 @@ Prefix `/api/profiles/:slug/tickets`. Ticket ids look like `t_...`. A route with
 confirm of a `propose_delete` card) leaves the one-time jobs those tickets scheduled `scheduled`: they run at their
 time (see "Jobs"). To find them first: GET `/jobs?scheduledBy=<ids>`. To cancel some on purpose, send `cancelJobs`:
 `true` / `"all"` (every waiting job the deleted tickets scheduled) or a list of job ids (JSON array, or comma-separated
-in the query). A listed id that isn't a waiting job of a ticket being deleted refuses the whole delete (400), so a delete
-never cancels another ticket's job. Each cancelled job is saved `cancelled` with `result.message` "cancelled because you
+in the query). A list may be a card's whole list over several tickets, sent with each ticket's DELETE: each delete
+cancels only the listed jobs that are waiting jobs of the tickets it deletes and leaves the rest alone (another
+ticket's job, one that already ran), so a delete never cancels another ticket's job. Only an id that is no job on
+the board refuses the whole delete (400, nothing deleted). Each cancelled job is saved `cancelled` with `result.message` "cancelled because you
 chose to when deleting \"<ticket title>\"" ("its main ticket chose to" with `changedBy` when a main ticket's run deletes
-its tool ticket). Without `cancelJobs` nothing is cancelled. A `propose_delete` card's chat entry is `deletion: { ids,
+its tool ticket). A command job whose ticket was deleted and that fails sends the user a notification (there is no ticket to comment on). Without `cancelJobs` nothing is cancelled. A `propose_delete` card's chat entry is `deletion: { ids,
 reason, cancelJobs? }`: `cancelJobs` (true or job ids) only when Claude proposed cancelling them too; the card looks
 up the waiting jobs itself and only the user's click cancels anything.
 

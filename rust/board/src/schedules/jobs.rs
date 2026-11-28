@@ -94,21 +94,24 @@ impl Schedules {
         self.files.open_jobs(slug).into_iter().filter(|j| is_open(j) && j.get("sourceTicketId").and_then(Value::as_str).is_some_and(|s| ids.iter().any(|i| i == s))).collect()
     }
 
-    /// Which waiting jobs a delete of `ids` cancels: none unless asked; `All` is every waiting job they scheduled; a
-    /// list must name only such jobs (Err otherwise, so a delete can never cancel another ticket's job).
+    /// Which waiting jobs a delete of `ids` cancels: none unless asked; `All` is every waiting job they scheduled. A
+    /// list may come from a card over several tickets, deleted one request each: only its waiting jobs of these
+    /// tickets are cancelled, and the others are left alone (another ticket's job, or one that already ran). Only an
+    /// id that is no job on this board refuses the delete (Err, nothing deleted). A delete never cancels another
+    /// ticket's job.
     pub fn jobs_to_cancel(&self, slug: &str, ids: &[String], pick: &CancelJobs) -> Result<Vec<String>, Fail> {
         let waiting = || self.waiting_jobs_of(slug, ids).into_iter().map(|j| st(&j, "id").to_string()).collect::<Vec<_>>();
         match pick {
             CancelJobs::None => Ok(Vec::new()),
             CancelJobs::All => Ok(waiting()),
             CancelJobs::These(want) => {
-                let w = waiting();
-                if let Some(bad) = want.iter().find(|x| !w.contains(x)) {
-                    return Err(fail(400, format!("job {bad} isn't a waiting job of the tickets being deleted: cancelJobs can only cancel jobs those tickets scheduled that haven't run yet. Nothing was deleted.")));
+                if let Some(bad) = want.iter().find(|x| self.files.get_job(slug, x).is_none()) {
+                    return Err(fail(400, format!("there is no job {bad} on board {slug}: cancelJobs lists job ids from GET .../jobs?scheduledBy=. Nothing was deleted.")));
                 }
+                let w = waiting();
                 let mut out: Vec<String> = Vec::new();
                 for x in want {
-                    if !out.contains(x) {
+                    if w.contains(x) && !out.contains(x) {
                         out.push(x.clone());
                     }
                 }
@@ -347,6 +350,13 @@ impl Schedules {
         let saved = self.save_job(slug, &f);
         let source = j.get("sourceTicketId").and_then(Value::as_str).filter(|s| !s.is_empty());
         let command = j.get("action").and_then(|a| a.get("kind")).and_then(Value::as_str) == Some("command");
+        // Its ticket was deleted: no ticket to note it on, so the user gets a notification instead.
+        if let Some(src) = source.filter(|s| command && self.d.tickets.get(slug, s).is_none()) {
+            use crate::families::board::PlanRuns;
+            let by = j.get("sourceTicketTitle").and_then(Value::as_str).map(|t| format!("\"{t}\"")).unwrap_or_else(|| src.to_string());
+            let msg = result.get("message").and_then(Value::as_str).unwrap_or("unknown error");
+            self.d.runs.notify(&format!("Scheduled job '{}' failed", st(j, "name")), &format!("{msg}. It was scheduled by {by}, which has been deleted."), slug, "");
+        }
         if let Some(src) = source.filter(|s| command && self.d.tickets.get(slug, s).is_some()) {
             let output = result.get("output").and_then(Value::as_str).unwrap_or("");
             let lines: Vec<&str> = output.trim_end_matches(js::is_ws).split('\n').filter(|l| !js::trim(l).is_empty()).collect();

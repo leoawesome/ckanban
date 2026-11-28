@@ -92,9 +92,9 @@ async fn delete_ticket(a: &Value, cx: &Ctx) -> R<String> {
     }
     if !kept.is_empty() {
         out.push_str(&format!(
-            " {} it scheduled stay{} scheduled and run at their time: {}. To stop one, call cancel_job.",
+            " {} it scheduled {}: {}. To stop one, call cancel_job.",
             super::schedules::jobs_count(kept.len()),
-            if kept.len() == 1 { "s" } else { "" },
+            if kept.len() == 1 { "stays scheduled and runs at its time" } else { "stay scheduled and run at their time" },
             super::schedules::jobs_names(&kept)
         ));
     }
