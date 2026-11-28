@@ -386,3 +386,117 @@ impl crate::team::store::TicketCards for SquadCards {
         self.tickets.set_entry(slug, id, "squadCards", uuid, state).map(|_| ()).map_err(|(_, e)| e)
     }
 }
+
+#[cfg(test)]
+mod merged_pr_tests {
+    use super::*;
+    use crate::core::{Core, Services};
+    use crate::families::Families;
+    use crate::git::ops::BoardOps;
+    use serde_json::json;
+
+    struct B {
+        _d: tempfile::TempDir,
+        core: Arc<Core>,
+        fam: Arc<Families>,
+        ops: TicketOps,
+    }
+
+    fn board() -> B {
+        let d = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(d.path().join("profiles/b/tickets")).unwrap();
+        let profile = json!({ "name": "B", "slug": "b", "path": d.path().join("project"), "workspace": "folder", "createdAt": "2026-11-01T00:00:00.000Z" });
+        std::fs::write(d.path().join("profiles/b/profile.json"), profile.to_string()).unwrap();
+        let core = Core::new(d.path(), Services::stand_ins());
+        let fam = Families::new(core.tickets.clone(), core.reads.clone());
+        let ops = TicketOps { tickets: core.tickets.clone(), families: std::sync::OnceLock::new(), runs: std::sync::OnceLock::new() };
+        let _ = ops.families.set(fam.clone());
+        B { _d: d, core, fam, ops }
+    }
+
+    fn ticket(b: &B, fields: Value) -> String {
+        let mut m = Map::new();
+        m.insert("title".into(), "Customer enquiry".into());
+        m.insert("body".into(), "".into());
+        let id = b.core.tickets.create("b", m).unwrap().id.clone();
+        b.core.tickets.patch("b", &id, fields.as_object().unwrap().clone()).unwrap();
+        id
+    }
+
+    fn status(b: &B, id: &str) -> String {
+        b.core.tickets.get("b", id).unwrap().status.clone()
+    }
+
+    fn merged_said(b: &B, id: &str) -> usize {
+        b.ops.comments("b", id).iter().filter(|c| c["author"] == "ai" && c["text"] == "PR merged.").count()
+    }
+
+    async fn poll(b: &B, id: &str) {
+        crate::git::pr::check_pr(&b.ops, "b", id, |_| Box::pin(async { Some("MERGED".to_string()) })).await;
+    }
+
+    const ENDED: &str = "2026-11-27T10:00:00.000Z";
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_merged_pr_keeps_a_ticket_that_asks_in_review_until_the_ask_closes() {
+        let b = board();
+        let id = ticket(&b, json!({ "status": "review", "outcome": "needs_input", "prUrl": "u1", "runEndedAt": ENDED }));
+        assert!(b.fam.holds_review("b", &id));
+        poll(&b, &id).await;
+        poll(&b, &id).await;
+        assert_eq!(status(&b, &id), "review");
+        assert_eq!(merged_said(&b, &id), 1);
+        // The user closed the question: the next poll moves it to Done, without a second "PR merged.".
+        b.core.tickets.patch("b", &id, json!({ "closedForms": { "f1": { "run": ENDED } } }).as_object().unwrap().clone()).unwrap();
+        assert!(!b.fam.holds_review("b", &id));
+        poll(&b, &id).await;
+        assert_eq!(status(&b, &id), "done");
+        assert_eq!(merged_said(&b, &id), 1);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_merged_pr_waits_for_a_blocked_or_failed_run_and_frees_once_answered() {
+        let b = board();
+        for outcome in ["blocked", "failed"] {
+            let id = ticket(&b, json!({ "status": "review", "outcome": outcome, "prUrl": "u1" }));
+            poll(&b, &id).await;
+            assert_eq!(status(&b, &id), "review", "outcome {outcome}");
+        }
+        // Answered in chat: the next run ended done.
+        let id = ticket(&b, json!({ "status": "review", "outcome": "needs_input", "prUrl": "u1" }));
+        poll(&b, &id).await;
+        assert_eq!(status(&b, &id), "review");
+        b.core.tickets.patch("b", &id, json!({ "outcome": "done" }).as_object().unwrap().clone()).unwrap();
+        poll(&b, &id).await;
+        assert_eq!(status(&b, &id), "done");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_merged_pr_moves_a_ticket_with_nothing_pending_to_done() {
+        let b = board();
+        let id = ticket(&b, json!({ "status": "review", "outcome": "done", "prUrl": "u1" }));
+        assert!(!b.fam.holds_review("b", &id));
+        poll(&b, &id).await;
+        assert_eq!(status(&b, &id), "done");
+        assert_eq!(merged_said(&b, &id), 1);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_done_ticket_that_asks_goes_back_to_review() {
+        let b = board();
+        let id = ticket(&b, json!({ "status": "done", "outcome": "needs_input", "runEndedAt": ENDED }));
+        assert!(b.fam.unpark_asking("b", &id));
+        assert_eq!(status(&b, &id), "review");
+        assert!(b.ops.comments("b", &id).iter().any(|c| c["text"] == "Moved back from Done: it asks you a question."));
+        // Once back, nothing more happens.
+        assert!(!b.fam.unpark_asking("b", &id));
+        // Done tickets that don't ask stay: a closed ask, a plain done, a blocked run.
+        let closed = ticket(&b, json!({ "status": "done", "outcome": "needs_input", "runEndedAt": ENDED, "closedForms": { "f": { "run": ENDED } } }));
+        let plain = ticket(&b, json!({ "status": "done", "outcome": "done" }));
+        let blocked = ticket(&b, json!({ "status": "done", "outcome": "blocked" }));
+        for x in [&closed, &plain, &blocked] {
+            assert!(!b.fam.unpark_asking("b", x));
+            assert_eq!(status(&b, x), "done");
+        }
+    }
+}
